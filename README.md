@@ -4,6 +4,9 @@ Turn a social account into researched, on-brand, animated video creatives — en
 Claude Code. See [CLAUDE.md](CLAUDE.md) for how the agents themselves are instructed; this file is
 the human setup guide.
 
+For the full documentation set (architecture, running the pipeline, agents/skills reference,
+project conventions, troubleshooting), see **[docs/index.md](docs/index.md)**.
+
 ## What's in here
 
 - **`orchestrator`** agent — default entry point, runs the full pipeline.
