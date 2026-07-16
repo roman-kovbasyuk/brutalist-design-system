@@ -5,7 +5,12 @@ CLAUDE.local.md
 
 # Raw scraped media (large, regenerable)
 projects/*/01-research/raw/
+projects/*/01-research-static/raw/
 
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Python bytecode (regenerable, version/platform-specific — shouldn't be committed)
+__pycache__/
+*.pyc

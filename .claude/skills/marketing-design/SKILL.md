@@ -1,15 +1,22 @@
 ---
 name: marketing-design
-description: Brand and creative-direction template for marketing campaign design — palette, typography, voice, campaign frameworks, and platform specs. Use when creating or reviewing marketing creative, ad copy, or campaign visuals, or when the design-strategist agent needs brand direction for a client.
+description: Brand and creative-direction template for marketing campaign design — palette, typography, voice, campaign frameworks, platform specs, and the Stage 0 campaign-request intake. Use when creating or reviewing marketing creative, ad copy, or campaign visuals, or when a design agent needs brand direction for a client, or when starting a new campaign's Stage 0 brief.
 ---
 
 # Marketing Design
 
 This skill is a **template**. Every `[PLACEHOLDER]` below should be replaced with a specific
-client's real brand direction before `design-strategist` uses it for real creative work. If you run
-multiple accounts through this system, fill in a separate copy of
+client's real brand direction before `design-strategist` or `static-banner-designer` uses it for
+real creative work. If you run multiple accounts through this system, fill in a separate copy of
 [assets/brand-brief.template.md](assets/brand-brief.template.md) per client and save it under that
-client's `projects/<slug>/02-design/` folder rather than overwriting this shared skill.
+client's `projects/<slug>/02-design/` (or `02-design-static/`) folder rather than overwriting this
+shared skill.
+
+**Before any of the above, this skill also holds Stage 0's standardized intake:**
+[assets/campaign-request.template.md](assets/campaign-request.template.md) — marketing input,
+competitor analysis, and the marketer's brief, human-confirmed before Stage 1 starts. It's the
+single entry document for both pipelines; the static pipeline's brief-driven variant (B) designs
+straight from it with no separate brief template of its own.
 
 ## Brand identity
 
