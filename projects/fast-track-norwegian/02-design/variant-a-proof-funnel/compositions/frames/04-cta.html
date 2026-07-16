@@ -1,0 +1,377 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        /* Self-hosted — matches the same declaration in index.html so this
+           scene also renders correctly if ever previewed/linted standalone. */
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          font-style: normal;
+          font-weight: 400;
+          font-display: swap;
+          src: url("assets/fonts/PlusJakartaSans-400.ttf") format("truetype");
+        }
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          font-style: normal;
+          font-weight: 600;
+          font-display: swap;
+          src: url("assets/fonts/PlusJakartaSans-600.ttf") format("truetype");
+        }
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          font-style: normal;
+          font-weight: 700;
+          font-display: swap;
+          src: url("assets/fonts/PlusJakartaSans-700.ttf") format("truetype");
+        }
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          font-style: normal;
+          font-weight: 800;
+          font-display: swap;
+          src: url("assets/fonts/PlusJakartaSans-700.ttf") format("truetype");
+        }
+
+        #root {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          background:
+            linear-gradient(rgba(2, 9, 189, 0.34), rgba(2, 9, 189, 0.34)),
+            linear-gradient(135deg, #3a42ff 0%, #a5a8ff 100%);
+          font-family: "Inter", system-ui, sans-serif;
+        }
+
+        .glow {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.9;
+        }
+        .glow-a {
+          width: 600px;
+          height: 600px;
+          top: -180px;
+          right: -160px;
+          background: rgba(165, 168, 255, 0.32);
+        }
+        .glow-b {
+          width: 520px;
+          height: 520px;
+          bottom: -150px;
+          left: -140px;
+          background: rgba(17, 26, 250, 0.36);
+        }
+
+        .content {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 330px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 90px;
+        }
+
+        .panel {
+          width: 860px;
+          background: rgba(2, 9, 189, 0.24);
+          backdrop-filter: blur(10px);
+          border-radius: 34px;
+          padding: 46px 52px 40px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 22px;
+          opacity: 0;
+          transform: translateY(140px);
+        }
+
+        .logo-pill {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          background: #3b42ea;
+          border-radius: 17px;
+          padding: 12px 24px;
+          transform: scale(0);
+          opacity: 0;
+          transform-origin: 50% 50%;
+        }
+        .logo-pill img {
+          width: 40px;
+          height: 40px;
+        }
+        .logo-pill span {
+          font-weight: 700;
+          font-size: 30px;
+          color: #ffffff;
+          letter-spacing: -0.01em;
+        }
+
+        .flourish-wrap {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          transform: scale(0);
+          opacity: 0;
+          transform-origin: 50% 50%;
+        }
+        .flourish {
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 800;
+          font-size: 220px;
+          line-height: 1;
+          letter-spacing: -0.02em;
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.37) 0%, #ffffff 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+        }
+        .off-label {
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 600;
+          font-size: 40px;
+          letter-spacing: 0.24em;
+          text-transform: uppercase;
+          color: #ffffff;
+          transform: scale(0);
+          opacity: 0;
+          transform-origin: 50% 50%;
+        }
+
+        .code-line {
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-size: 32px;
+          color: rgba(255, 255, 255, 0.85);
+          text-align: center;
+          transform: scale(0);
+          opacity: 0;
+          transform-origin: 50% 50%;
+        }
+        .code-line .code {
+          font-weight: 700;
+          color: #ffffff;
+          letter-spacing: 0.04em;
+        }
+
+        .cta-button-wrap {
+          position: relative;
+          transform: scale(0);
+          opacity: 0;
+          transform-origin: 50% 50%;
+        }
+        .cta-glow {
+          position: absolute;
+          inset: -22px;
+          border-radius: 999px;
+          background: radial-gradient(circle, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 70%);
+          opacity: 0;
+        }
+        .cta-button {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          background: #ffffff;
+          border: 1px solid rgba(6, 11, 19, 0.15);
+          border-radius: 26px;
+          padding: 20px 38px;
+        }
+        .cta-button span {
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 600;
+          font-size: 34px;
+          color: #060b13;
+        }
+        .cta-button svg {
+          width: 20px;
+          height: 20px;
+        }
+
+        .caption-bar {
+          position: absolute;
+          left: 50%;
+          bottom: 260px;
+          transform: translateX(-50%);
+          max-width: 860px;
+          background: rgba(2, 9, 189, 0.32);
+          backdrop-filter: blur(6px);
+          border-radius: 30px;
+          padding: 22px 40px;
+        }
+        .caption-phrase {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 12px 26px;
+          font-family: "Inter", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 36px;
+          line-height: 1.25;
+          text-align: center;
+        }
+        .cword {
+          display: inline-block;
+          /* Solid (non-transparent) rest color — contrast is guaranteed
+             regardless of envelope value; only element opacity animates
+             (same fix as 02-proof-stat.html — a color alpha here would
+             compound with the opacity tween and fail the 3:1 floor). */
+          color: rgb(200, 203, 247);
+          transform-origin: 50% 50%;
+          will-change: transform, color;
+        }
+      </style>
+
+      <div id="root" data-composition-id="cta" data-width="1080" data-height="1920">
+        <div class="glow glow-a" data-layout-allow-overflow></div>
+        <div class="glow glow-b" data-layout-allow-overflow></div>
+
+        <div class="content">
+          <div class="panel" id="cta-panel">
+            <div class="logo-pill" id="cta-logo">
+              <img src="assets/images/logo-mark.png" alt="" />
+              <span>Fast-Track Norwegian</span>
+            </div>
+
+            <div class="flourish-wrap" id="cta-flourish">
+              <div class="flourish">15%</div>
+            </div>
+            <div class="off-label" id="cta-off">Off</div>
+
+            <div class="code-line" id="cta-code">with code <span class="code">FASTTRACK</span></div>
+
+            <div class="cta-button-wrap" id="cta-button-wrap">
+              <div class="cta-glow" id="cta-glow"></div>
+              <div class="cta-button">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M9 6l6 6-6 6" stroke="#060b13" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>Start Learning</span>
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M9 6l6 6-6 6" stroke="#060b13" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="caption-bar">
+          <div class="caption-phrase" id="cta-caption">
+            <span class="cword" data-w="0">Start</span>
+            <span class="cword" data-w="1">Fast-Track</span>
+            <span class="cword" data-w="2">Norwegian</span>
+            <span class="cword" data-w="3">today</span>
+            <span class="cword" data-w="4">—</span>
+            <span class="cword" data-w="5">15%</span>
+            <span class="cword" data-w="6">off</span>
+            <span class="cword" data-w="7">with</span>
+            <span class="cword" data-w="8">code</span>
+            <span class="cword" data-w="9">FASTTRACK.</span>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+
+        const SCENE_DURATION = 4.416;
+
+        // Crossfade in (storyboard transition_in: crossfade) — frame 3 holds an
+        // extra 0.3s in index.html so this scene can fade in on top of it.
+        tl.fromTo("#root", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power1.out" }, 0);
+
+        // Panel slides up and settles — the storyboard's signature CTA move.
+        tl.fromTo(
+          "#cta-panel",
+          { y: 140, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" },
+          0.05,
+        );
+
+        // Inner elements arrive as one staggered beat while the panel settles.
+        const GROUP = ["#cta-logo", "#cta-flourish", "#cta-off", "#cta-code", "#cta-button-wrap"];
+        const GROUP_ENTRY_AT = 0.45;
+        const STAGGER = 0.08;
+        GROUP.forEach((sel, i) => {
+          tl.fromTo(
+            sel,
+            { scale: 0, opacity: 0 },
+            { scale: 1, opacity: 1, duration: 0.4, ease: "power3.out" },
+            GROUP_ENTRY_AT + i * STAGGER,
+          );
+        });
+
+        // Word-synced accent pulses — each element "answers" its VO beat.
+        // "Norwegian" (1.068s) — logo lockup pulse.
+        tl.to("#cta-logo", { scale: 1.08, duration: 0.14, ease: "power2.out", yoyo: true, repeat: 1 }, 1.068);
+        // "15%" (2.28s) — flourish pulse.
+        tl.to("#cta-flourish", { scale: 1.06, duration: 0.16, ease: "power2.out", yoyo: true, repeat: 1 }, 2.28);
+        // "FASTTRACK." (3.638s) — code line pulse.
+        tl.to("#cta-code", { scale: 1.08, duration: 0.16, ease: "power2.out", yoyo: true, repeat: 1 }, 3.638);
+        // Closing glow bloom behind the button — the final "click me" beat.
+        tl.to("#cta-glow", { opacity: 1, duration: 0.5, ease: "power1.out" }, 3.9);
+
+        // Burned-in caption — karaoke word sweep (same pattern as prior scenes)
+        const TIMINGS = [
+          { start: 0.0, end: 0.378 },
+          { start: 0.423, end: 1.023 },
+          { start: 1.068, end: 1.668 },
+          { start: 1.713, end: 2.091 },
+          { start: 2.136, end: 2.235 },
+          { start: 2.28, end: 2.547 },
+          { start: 2.592, end: 2.859 },
+          { start: 2.904, end: 3.226 },
+          { start: 3.271, end: 3.593 },
+          { start: 3.638, end: 4.416 },
+        ];
+        const ATTACK_DUR = 0.15;
+        const RELEASE = 0.3;
+        const REST_LEVEL = 0.15;
+        const MAX_SCALE_BOOST = 0.1;
+
+        function envelope(time, start, end) {
+          const releaseEnd = end + RELEASE;
+          if (time < start) return 0;
+          if (time < end) return Math.min((time - start) / ATTACK_DUR, 1);
+          if (time < releaseEnd) return 1 - ((time - end) / RELEASE) * (1 - REST_LEVEL);
+          return REST_LEVEL;
+        }
+
+        const words = document.querySelectorAll("#cta-caption .cword");
+        const driver = { t: 0 };
+        tl.to(
+          driver,
+          {
+            t: SCENE_DURATION,
+            duration: SCENE_DURATION,
+            ease: "none",
+            onUpdate: () => {
+              words.forEach((el) => {
+                const i = Number(el.dataset.w);
+                const timing = TIMINGS[i];
+                if (!timing) return;
+                const env = envelope(driver.t, timing.start, timing.end);
+                const scale = 1 + MAX_SCALE_BOOST * env;
+                el.style.transform = `scale(${scale})`;
+                el.style.opacity = String(0.4 + env * 0.6);
+              });
+            },
+          },
+          0,
+        );
+
+        window.__timelines["cta"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

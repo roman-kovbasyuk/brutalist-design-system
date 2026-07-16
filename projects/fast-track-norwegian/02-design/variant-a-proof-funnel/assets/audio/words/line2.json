@@ -1,0 +1,86 @@
+[
+  {
+    "id": "w0",
+    "text": "83",
+    "start": 0.0,
+    "end": 0.48
+  },
+  {
+    "id": "w1",
+    "text": "%",
+    "start": 0.48,
+    "end": 0.9
+  },
+  {
+    "id": "w2",
+    "text": "of",
+    "start": 0.9,
+    "end": 1.08
+  },
+  {
+    "id": "w3",
+    "text": "fast",
+    "start": 1.08,
+    "end": 1.32
+  },
+  {
+    "id": "w4",
+    "text": "-track",
+    "start": 1.32,
+    "end": 1.62
+  },
+  {
+    "id": "w5",
+    "text": "learners",
+    "start": 1.62,
+    "end": 2.0
+  },
+  {
+    "id": "w6",
+    "text": "can",
+    "start": 2.0,
+    "end": 2.62
+  },
+  {
+    "id": "w7",
+    "text": "follow",
+    "start": 2.62,
+    "end": 3.0
+  },
+  {
+    "id": "w8",
+    "text": "a",
+    "start": 3.0,
+    "end": 3.22
+  },
+  {
+    "id": "w9",
+    "text": "real",
+    "start": 3.22,
+    "end": 3.46
+  },
+  {
+    "id": "w10",
+    "text": "conversation",
+    "start": 3.46,
+    "end": 4.02
+  },
+  {
+    "id": "w11",
+    "text": "within",
+    "start": 4.02,
+    "end": 4.48
+  },
+  {
+    "id": "w12",
+    "text": "six",
+    "start": 4.48,
+    "end": 4.78
+  },
+  {
+    "id": "w13",
+    "text": "weeks.",
+    "start": 4.78,
+    "end": 5.06
+  }
+]

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #000;
+      }
+
+      /* Brand tokens — Lingu / Fast-Track Norwegian (from ../brand-tokens.css) */
+      :root {
+        --color-primary: #3a42ff;
+        --color-secondary: #a5a8ff;
+        --color-accent: #111afa;
+        --color-glass: #0209bd;
+        --color-text: #ffffff;
+        --color-text-on-light: #060b13;
+        --color-text-muted: #ffffff99;
+
+        --gradient-brand: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+
+        --font-primary: "Inter", system-ui, sans-serif;
+        --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
+
+        --radius-pill-label: 17px;
+        --radius-pill-panel: 34px;
+        --radius-pill-button: 26px;
+        --stroke-button: 1px solid rgba(6, 11, 19, 0.15);
+
+        --ease-standard: power2.out;
+        --ease-emphasis: back.out(1.5);
+        --stagger-default: 0.08;
+      }
+
+      /* Self-hosted Plus Jakarta Sans — no render-time network fetch */
+      @font-face {
+        font-family: "Plus Jakarta Sans";
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url("assets/fonts/PlusJakartaSans-400.ttf") format("truetype");
+      }
+      @font-face {
+        font-family: "Plus Jakarta Sans";
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url("assets/fonts/PlusJakartaSans-600.ttf") format("truetype");
+      }
+      @font-face {
+        font-family: "Plus Jakarta Sans";
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url("assets/fonts/PlusJakartaSans-700.ttf") format("truetype");
+      }
+
+      body {
+        font-family: var(--font-primary);
+      }
+      code,
+      pre,
+      .monospace {
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      /* Sub-comp slots stretch to fill the root. */
+      #root > div[data-composition-src] {
+        position: absolute;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="16.82"
+      data-width="1080"
+      data-height="1920"
+    >
+      <!-- Scene 1 — Hook.
+           Visual slot holds 0.3s past its own VO (3.691s) so Frame 2 can
+           crossfade in over the tail — see composition-patterns.md: "for a
+           cross-fade between two scenes, put one on a higher track and
+           overlap their times by the fade duration." Frame 2's own #root
+           fromTo (compositions/frames/02-proof-stat.html) does the actual
+           fade-in; this frame needs no exit animation (holds as-is). -->
+      <div
+        id="el-hook"
+        data-composition-id="hook"
+        data-composition-src="compositions/frames/01-hook.html"
+        data-start="0"
+        data-duration="3.991"
+        data-track-index="1"
+        data-width="1080"
+        data-height="1920"
+      ></div>
+
+      <!-- Scene 2 — Proof (animated stat).
+           Starts exactly at its own VO (3.691s, unchanged) so audio sync is
+           untouched; overlaps Frame 1's 0.3s hold on the alternate track
+           (2) and fades itself in over that window (see 02-proof-stat.html
+           #root fromTo). Its own visual slot then holds 0.3s past its VO
+           (9.067s) for Frame 3's incoming fade. -->
+      <div
+        id="el-proof"
+        data-composition-id="proof-stat"
+        data-composition-src="compositions/frames/02-proof-stat.html"
+        data-start="3.691"
+        data-duration="5.676"
+        data-track-index="2"
+        data-width="1080"
+        data-height="1920"
+      ></div>
+
+      <!-- Scene 3 — Method (animated node schema).
+           Starts exactly at its own VO (9.067s, unchanged); overlaps Frame
+           2's 0.3s hold on the alternate track (1) and fades itself in
+           (03-method-schema.html #root fromTo). Holds 0.3s past its VO
+           (12.395s) for Frame 4's incoming fade. -->
+      <div
+        id="el-method"
+        data-composition-id="method-schema"
+        data-composition-src="compositions/frames/03-method-schema.html"
+        data-start="9.067"
+        data-duration="3.628"
+        data-track-index="1"
+        data-width="1080"
+        data-height="1920"
+      ></div>
+
+      <!-- Scene 4 — CTA.
+           Starts exactly at its own VO (12.395s, unchanged); overlaps Frame
+           3's 0.3s hold on the alternate track (2) and fades itself in
+           (04-cta.html #root fromTo). Final frame — no trailing hold
+           needed, duration matches its VO exactly. -->
+      <div
+        id="el-cta"
+        data-composition-id="cta"
+        data-composition-src="compositions/frames/04-cta.html"
+        data-start="12.395"
+        data-duration="4.416"
+        data-track-index="2"
+        data-width="1080"
+        data-height="1920"
+      ></div>
+
+      <!-- Continuous voiceover, one clip per scene, sequential on one audio track -->
+      <audio
+        id="vo-1"
+        class="clip"
+        src="assets/audio/line1-hook.wav"
+        data-start="0"
+        data-duration="3.691"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+      <audio
+        id="vo-2"
+        class="clip"
+        src="assets/audio/line2-proof.wav"
+        data-start="3.691"
+        data-duration="5.376"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+      <audio
+        id="vo-3"
+        class="clip"
+        src="assets/audio/line3-method.wav"
+        data-start="9.067"
+        data-duration="3.328"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+      <audio
+        id="vo-4"
+        class="clip"
+        src="assets/audio/line4-cta.wav"
+        data-start="12.395"
+        data-duration="4.416"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      // Root timeline stays near-empty — all animation lives in the sub-comps.
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

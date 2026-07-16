@@ -1,0 +1,74 @@
+[
+  {
+    "id": "w0",
+    "text": "You",
+    "start": 0.0,
+    "end": 0.16
+  },
+  {
+    "id": "w1",
+    "text": "know",
+    "start": 0.16,
+    "end": 0.34
+  },
+  {
+    "id": "w2",
+    "text": "that",
+    "start": 0.34,
+    "end": 0.56
+  },
+  {
+    "id": "w3",
+    "text": "moment,",
+    "start": 0.56,
+    "end": 0.92
+  },
+  {
+    "id": "w4",
+    "text": "the",
+    "start": 1.36,
+    "end": 1.46
+  },
+  {
+    "id": "w5",
+    "text": "cashier",
+    "start": 1.46,
+    "end": 1.82
+  },
+  {
+    "id": "w6",
+    "text": "says",
+    "start": 1.82,
+    "end": 2.02
+  },
+  {
+    "id": "w7",
+    "text": "something",
+    "start": 2.02,
+    "end": 2.36
+  },
+  {
+    "id": "w8",
+    "text": "and",
+    "start": 2.36,
+    "end": 2.7
+  },
+  {
+    "id": "w9",
+    "text": "you",
+    "start": 2.7,
+    "end": 2.84
+  },
+  {
+    "id": "w10",
+    "text": "just",
+    "start": 2.84,
+    "end": 3.02
+  },
+  {
+    "id": "w11",
+    "text": "nod.",
+    "start": 3.02,
+    "end": 3.28
+  }
+]

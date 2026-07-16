@@ -1,0 +1,390 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        /* Self-hosted — matches the same declaration in index.html so this
+           scene also renders correctly if ever previewed/linted standalone. */
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          font-style: normal;
+          font-weight: 400;
+          font-display: swap;
+          src: url("assets/fonts/PlusJakartaSans-400.ttf") format("truetype");
+        }
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          font-style: normal;
+          font-weight: 600;
+          font-display: swap;
+          src: url("assets/fonts/PlusJakartaSans-600.ttf") format("truetype");
+        }
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          font-style: normal;
+          font-weight: 700;
+          font-display: swap;
+          src: url("assets/fonts/PlusJakartaSans-700.ttf") format("truetype");
+        }
+
+        #root {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          background:
+            linear-gradient(rgba(2, 9, 189, 0.34), rgba(2, 9, 189, 0.34)),
+            linear-gradient(135deg, #3a42ff 0%, #a5a8ff 100%);
+          font-family: "Inter", system-ui, sans-serif;
+        }
+
+        .glow {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.9;
+        }
+        .glow-a {
+          width: 600px;
+          height: 600px;
+          top: -180px;
+          left: -160px;
+          background: rgba(165, 168, 255, 0.3);
+        }
+        .glow-b {
+          width: 520px;
+          height: 520px;
+          bottom: -160px;
+          right: -140px;
+          background: rgba(17, 26, 250, 0.36);
+        }
+
+        .content {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 330px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 64px;
+          padding: 0 100px;
+        }
+
+        .lead {
+          text-align: center;
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 600;
+          font-size: 46px;
+          letter-spacing: 0.01em;
+          color: rgba(255, 255, 255, 0.85);
+        }
+        .lead .lw {
+          display: inline-block;
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        .lead .lw + .lw {
+          margin-left: 0.28em;
+        }
+
+        .node-row {
+          position: relative;
+          width: 840px;
+          height: 300px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+        }
+        .connectors {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+        }
+        .connectors line {
+          stroke: #ffffff;
+          stroke-width: 6;
+          stroke-linecap: round;
+        }
+
+        .node {
+          width: 210px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          /* Initial scale/opacity are set by the GSAP fromTo below (explicit
+             from-state), not by CSS — avoids a CSS/GSAP transform conflict on
+             the later unified pulse tween that also targets .node. */
+          transform-origin: 50% 50%;
+        }
+        .node-circle {
+          width: 200px;
+          height: 200px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.16);
+          border: 2px solid rgba(255, 255, 255, 0.55);
+          display: grid;
+          place-items: center;
+        }
+        .node-circle svg {
+          width: 78px;
+          height: 78px;
+        }
+        .node-label {
+          margin-top: 22px;
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 36px;
+          color: #ffffff;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+
+        .caption-bar {
+          position: absolute;
+          left: 50%;
+          bottom: 260px;
+          transform: translateX(-50%);
+          max-width: 860px;
+          background: rgba(2, 9, 189, 0.32);
+          backdrop-filter: blur(6px);
+          border-radius: 30px;
+          padding: 22px 40px;
+        }
+        .caption-phrase {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 12px 26px;
+          font-family: "Inter", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 38px;
+          line-height: 1.25;
+          text-align: center;
+        }
+        .cword {
+          display: inline-block;
+          /* Solid (non-transparent) rest color — contrast is guaranteed
+             regardless of envelope value; only element opacity animates
+             (same fix as 02-proof-stat.html — a color alpha here would
+             compound with the opacity tween and fail the 3:1 floor). */
+          color: rgb(200, 203, 247);
+          transform-origin: 50% 50%;
+          will-change: transform, color;
+        }
+      </style>
+
+      <div id="root" data-composition-id="method-schema" data-width="1080" data-height="1920">
+        <div class="glow glow-a" data-layout-allow-overflow></div>
+        <div class="glow glow-b" data-layout-allow-overflow></div>
+
+        <div class="content">
+          <div class="lead" id="ms-lead">
+            <span class="lw" data-w="0">The</span>
+            <span class="lw" data-w="1">method</span>
+            <span class="lw" data-w="2">is</span>
+            <span class="lw" data-w="3">simple:</span>
+          </div>
+
+          <div class="node-row">
+            <svg class="connectors" viewBox="0 0 840 300" preserveAspectRatio="none">
+              <line id="conn-1" x1="200" y1="100" x2="315" y2="100" />
+              <line id="conn-2" x1="525" y1="100" x2="640" y2="100" />
+            </svg>
+
+            <div class="node" id="node-listen">
+              <div class="node-circle">
+                <svg viewBox="0 0 64 64" fill="none">
+                  <rect x="10" y="24" width="8" height="16" rx="4" fill="#fff" />
+                  <rect x="24" y="14" width="8" height="36" rx="4" fill="#fff" />
+                  <rect x="38" y="20" width="8" height="24" rx="4" fill="#fff" />
+                  <rect x="52" y="10" width="8" height="44" rx="4" fill="#fff" />
+                </svg>
+              </div>
+              <div class="node-label">Listen</div>
+            </div>
+
+            <div class="node" id="node-repeat">
+              <div class="node-circle">
+                <svg viewBox="0 0 64 64" fill="none">
+                  <path
+                    d="M14 24a18 18 0 0 1 30-13"
+                    stroke="#fff"
+                    stroke-width="5"
+                    stroke-linecap="round"
+                    fill="none"
+                  />
+                  <path d="M50 40a18 18 0 0 1-30 13" stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none" />
+                  <polygon points="44,7 50,15 40,17" fill="#fff" />
+                  <polygon points="20,57 14,49 24,47" fill="#fff" />
+                </svg>
+              </div>
+              <div class="node-label">Repeat</div>
+            </div>
+
+            <div class="node" id="node-speak">
+              <div class="node-circle">
+                <svg viewBox="0 0 64 64" fill="none">
+                  <path
+                    d="M8 16h34a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H24l-10 9v-9H8a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4z"
+                    fill="#fff"
+                  />
+                  <path d="M50 20c4 4 4 12 0 16" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none" />
+                  <path d="M56 15c7 7 7 19 0 26" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none" />
+                </svg>
+              </div>
+              <div class="node-label">Speak</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="caption-bar">
+          <div class="caption-phrase" id="ms-caption">
+            <span class="cword" data-w="0">The</span>
+            <span class="cword" data-w="1">method</span>
+            <span class="cword" data-w="2">is</span>
+            <span class="cword" data-w="3">simple:</span>
+            <span class="cword" data-w="4">Listen.</span>
+            <span class="cword" data-w="5">Repeat.</span>
+            <span class="cword" data-w="6">Speak</span>
+            <span class="cword" data-w="7">—</span>
+            <span class="cword" data-w="8">for</span>
+            <span class="cword" data-w="9">real.</span>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+
+        // This scene's slot in index.html is data-start=9.067, data-duration=3.328 —
+        // SCENE_DURATION here must match that slot exactly (it's the real audio length).
+        const SCENE_DURATION = 3.328;
+
+        // Crossfade in (storyboard transition_in: crossfade) — frame 2 holds an
+        // extra 0.3s in index.html so this scene can fade in on top of it.
+        tl.fromTo("#root", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power1.out" }, 0);
+
+        // Lead-in words, matches the first four spoken words. Timings are a
+        // deterministic character-weighted proportional split of the real
+        // audio duration (no local ASR engine was available this session).
+        const LEAD_WORDS = [
+          { start: 0.0, end: 0.2 },
+          { start: 0.245, end: 0.57 },
+          { start: 0.615, end: 0.773 },
+          { start: 0.818, end: 1.209 },
+        ];
+        LEAD_WORDS.forEach((w, i) => {
+          tl.fromTo(
+            `.lw[data-w="${i}"]`,
+            { opacity: 0, y: 10 },
+            { opacity: 1, y: 0, duration: 0.2, ease: "power3.out" },
+            w.start,
+          );
+        });
+
+        // Measure + prep connector strokes for stroke-draw (svg-path-draw)
+        const conn1 = document.getElementById("conn-1");
+        const conn2 = document.getElementById("conn-2");
+        [conn1, conn2].forEach((el) => {
+          const len = el.getTotalLength();
+          el.style.strokeDasharray = String(len);
+          el.style.strokeDashoffset = String(len);
+        });
+
+        // Node 1 "Listen" pops in as its word is spoken (1.254s)
+        tl.fromTo(
+          "#node-listen",
+          { scale: 0, opacity: 0 },
+          { scale: 1, opacity: 1, duration: 0.4, ease: "power3.out" },
+          1.254,
+        );
+
+        // Connector 1 draws, landing just before node 2 arrives
+        tl.to(conn1, { strokeDashoffset: 0, duration: 0.26, ease: "power2.out" }, 1.5);
+
+        // Node 2 "Repeat" pops in (1.757s)
+        tl.fromTo(
+          "#node-repeat",
+          { scale: 0, opacity: 0 },
+          { scale: 1, opacity: 1, duration: 0.4, ease: "power3.out" },
+          1.757,
+        );
+
+        // Connector 2 draws, landing just before node 3 arrives
+        tl.to(conn2, { strokeDashoffset: 0, duration: 0.26, ease: "power2.out" }, 2.0);
+
+        // Node 3 "Speak" pops in (2.26s)
+        tl.fromTo(
+          "#node-speak",
+          { scale: 0, opacity: 0 },
+          { scale: 1, opacity: 1, duration: 0.4, ease: "power3.out" },
+          2.26,
+        );
+
+        // Unified settle pulse on "for real." — the method locks in as one system.
+        tl.to(
+          [".node"],
+          { scale: 1.06, duration: 0.15, ease: "power2.out", yoyo: true, repeat: 1 },
+          2.953,
+        );
+
+        // Burned-in caption — karaoke word sweep (same pattern as scene 2)
+        const TIMINGS = [
+          { start: 0.0, end: 0.2 },
+          { start: 0.245, end: 0.57 },
+          { start: 0.615, end: 0.773 },
+          { start: 0.818, end: 1.209 },
+          { start: 1.254, end: 1.712 },
+          { start: 1.757, end: 2.215 },
+          { start: 2.26, end: 2.543 },
+          { start: 2.588, end: 2.663 },
+          { start: 2.708, end: 2.908 },
+          { start: 2.953, end: 3.328 },
+        ];
+        const ATTACK_DUR = 0.15;
+        const RELEASE = 0.28;
+        const REST_LEVEL = 0.15;
+        const MAX_SCALE_BOOST = 0.1;
+
+        function envelope(time, start, end) {
+          const releaseEnd = end + RELEASE;
+          if (time < start) return 0;
+          if (time < end) return Math.min((time - start) / ATTACK_DUR, 1);
+          if (time < releaseEnd) return 1 - ((time - end) / RELEASE) * (1 - REST_LEVEL);
+          return REST_LEVEL;
+        }
+
+        const words = document.querySelectorAll("#ms-caption .cword");
+        const driver = { t: 0 };
+        tl.to(
+          driver,
+          {
+            t: SCENE_DURATION,
+            duration: SCENE_DURATION,
+            ease: "none",
+            onUpdate: () => {
+              words.forEach((el) => {
+                const i = Number(el.dataset.w);
+                const timing = TIMINGS[i];
+                if (!timing) return;
+                const env = envelope(driver.t, timing.start, timing.end);
+                const scale = 1 + MAX_SCALE_BOOST * env;
+                el.style.transform = `scale(${scale})`;
+                el.style.opacity = String(0.4 + env * 0.6);
+              });
+            },
+          },
+          0,
+        );
+
+        window.__timelines["method-schema"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

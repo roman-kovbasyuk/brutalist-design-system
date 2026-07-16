@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: "Inter";
+          src: url("assets/fonts/Inter-Variable.woff2") format("woff2");
+          font-weight: 100 900;
+          font-style: normal;
+          font-display: block;
+        }
+
+        #root {
+          position: relative;
+          width: 1080px;
+          height: 1920px;
+          overflow: hidden;
+          font-family: "Inter", system-ui, sans-serif;
+          color: #ffffff;
+        }
+
+        .bg-gradient {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #3a42ff 0%, #a5a8ff 100%);
+        }
+
+        .row-top {
+          position: absolute;
+          top: 190px;
+          left: 0;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+        }
+
+        .label-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 14px;
+          background: #3b42ea;
+          border-radius: 15px;
+          padding: 16px 28px;
+        }
+
+        .label-pill img {
+          width: 36px;
+          height: 36px;
+          display: block;
+        }
+
+        .label-pill span {
+          font-family: "Inter", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 30px;
+          white-space: nowrap;
+          color: #ffffff;
+        }
+
+        .headline-wrap {
+          position: absolute;
+          inset: 0;
+        }
+
+        .phrase {
+          position: absolute;
+          top: 50%;
+          left: 0;
+          width: 100%;
+          transform: translateY(-50%);
+          padding: 0 84px;
+          text-align: center;
+          font-family: "Inter", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 88px;
+          line-height: 1.16;
+          letter-spacing: -0.01em;
+        }
+      </style>
+
+      <div id="root" data-composition-id="01-hook" data-width="1080" data-height="1920" data-duration="3.7">
+        <div
+          id="bg"
+          class="clip bg-gradient"
+          data-start="0"
+          data-duration="3.7"
+          data-track-index="0"
+        ></div>
+
+        <div id="label-row" class="clip row-top" data-start="0" data-duration="3.7" data-track-index="1">
+          <div id="label-pill" class="label-pill">
+            <img src="assets/image_001.png" alt="" />
+            <span data-layout-allow-overlap="true">Fast-Track Norwegian</span>
+          </div>
+        </div>
+
+        <div
+          id="headline-scene"
+          class="clip headline-wrap"
+          data-start="0"
+          data-duration="3.7"
+          data-track-index="2"
+        >
+          <div id="phrase-a" class="phrase">Ever wanted to just&hellip;</div>
+          <div id="phrase-b" class="phrase">
+            Ever wanted to just&hellip; say what you think? In Norwegian?
+          </div>
+        </div>
+      </div>
+
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+
+        // Label pill: the frame's one entrance beat, then a static hold — no other motion.
+        tl.fromTo(
+          "#label-pill",
+          { autoAlpha: 0, scale: 0.9 },
+          { autoAlpha: 1, scale: 1, duration: 0.3, ease: "back.out(1.6)" },
+          0,
+        );
+
+        // Headline: kinetic-type-beats in-place hard-cut token swap (Adapt), timed to the
+        // real TTS word timestamps for this line (audio_meta.json frame 1 words[]):
+        // Ever(0-.2) wanted(.2-.44) to(.44-.62) just...(.62-.92) say(.92-1.34) what(1.34-1.48)
+        // you(1.48-1.64) think?(1.64-1.88) In(1.88-2.22) Norwegian?(2.22-2.6)
+        // Clause A holds through "just", clause B (full question) swaps in exactly when the
+        // VO reaches "say" — a hard cut (autoAlpha, no fade), never a CSS transition.
+        tl.set("#phrase-a", { autoAlpha: 1 }, 0);
+        tl.set("#phrase-b", { autoAlpha: 0 }, 0);
+        tl.set("#phrase-a", { autoAlpha: 0 }, 0.92);
+        tl.set("#phrase-b", { autoAlpha: 1 }, 0.92);
+
+        window.__timelines["01-hook"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

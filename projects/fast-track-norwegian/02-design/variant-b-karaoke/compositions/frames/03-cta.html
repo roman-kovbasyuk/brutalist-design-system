@@ -1,0 +1,223 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: "Inter";
+          src: url("assets/fonts/Inter-Variable.woff2") format("woff2");
+          font-weight: 100 900;
+          font-style: normal;
+          font-display: block;
+        }
+        @font-face {
+          font-family: "Plus Jakarta Sans";
+          src: url("assets/fonts/PlusJakartaSans-Variable.woff2") format("woff2");
+          font-weight: 100 900;
+          font-style: normal;
+          font-display: block;
+        }
+
+        #root {
+          position: relative;
+          width: 1080px;
+          height: 1920px;
+          overflow: hidden;
+          font-family: "Inter", system-ui, sans-serif;
+          color: #ffffff;
+        }
+
+        .bg-gradient {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #3a42ff 0%, #a5a8ff 100%);
+        }
+
+        .row-top {
+          position: absolute;
+          top: 190px;
+          left: 0;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+        }
+
+        .label-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 14px;
+          background: #3b42ea;
+          border-radius: 15px;
+          padding: 16px 28px;
+        }
+
+        .label-pill img {
+          width: 36px;
+          height: 36px;
+          display: block;
+        }
+
+        .label-pill span {
+          font-family: "Inter", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 30px;
+          white-space: nowrap;
+        }
+
+        .panel-row {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .promo-panel {
+          width: 820px;
+          border-radius: 31px;
+          background: rgba(2, 9, 189, 0.24);
+          padding: 64px 56px 56px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+        }
+
+        .price-line {
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 118px;
+          line-height: 1.05;
+          opacity: 0;
+        }
+
+        .code-line {
+          margin-top: 18px;
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 400;
+          font-size: 32px;
+          color: rgba(255, 255, 255, 0.72);
+          opacity: 0;
+        }
+
+        .code-line strong {
+          font-weight: 600;
+          color: #ffffff;
+        }
+
+        .cta-button {
+          margin-top: 40px;
+          display: inline-flex;
+          align-items: center;
+          gap: 18px;
+          background: #ffffff;
+          color: #060b13;
+          border: 1px solid rgba(6, 11, 19, 0.15);
+          border-radius: 23px;
+          padding: 22px 40px;
+          opacity: 0;
+        }
+
+        .cta-button .chevron {
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 26px;
+          color: #060b13;
+        }
+
+        .cta-button .cta-label {
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-weight: 600;
+          font-size: 34px;
+          color: #060b13;
+          white-space: nowrap;
+        }
+      </style>
+
+      <div id="root" data-composition-id="03-cta" data-width="1080" data-height="1920" data-duration="3.691">
+        <div
+          id="bg"
+          class="clip bg-gradient"
+          data-start="0"
+          data-duration="3.691"
+          data-track-index="0"
+        ></div>
+
+        <div id="label-row" class="clip row-top" data-start="0" data-duration="3.691" data-track-index="1">
+          <div id="label-pill" class="label-pill">
+            <img src="assets/image_001.png" alt="" />
+            <span data-layout-allow-overlap="true">Fast-Track Norwegian</span>
+          </div>
+        </div>
+
+        <div id="panel-scene" class="clip panel-row" data-start="0" data-duration="3.691" data-track-index="2">
+          <div id="promo-panel" class="promo-panel">
+            <div id="price-line" class="price-line">15% off</div>
+            <div id="code-line" class="code-line">
+              with code <strong>FASTTRACK</strong>
+            </div>
+            <div id="cta-button" class="cta-button">
+              <span class="chevron">&lsaquo;</span>
+              <span class="cta-label">Get started</span>
+              <span class="chevron">&rsaquo;</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+
+        // logo-assemble-lockup (Adapt): the lockup settles in first, then the promo panel's
+        // elements settle in turn — each landing on its real TTS word timestamp
+        // (audio_meta.json frame 3 words[]): Fast-Track(0-.58) Norwegian.(.58-1.14)
+        // 15%(1.66-2.24) off(2.24-2.46) with(2.46-2.68) code(2.68-2.94) FASTTRACK.(2.94-3.46)
+        tl.fromTo(
+          "#label-pill",
+          { autoAlpha: 0, y: -24 },
+          { autoAlpha: 1, y: 0, duration: 0.4, ease: "back.out(1.5)" },
+          0,
+        );
+
+        // Promo panel container itself: one settle-in as the VO reaches "15%".
+        tl.fromTo(
+          "#promo-panel",
+          { autoAlpha: 0, y: 24 },
+          { autoAlpha: 1, y: 0, duration: 0.4, ease: "power2.out" },
+          1.66,
+        );
+        tl.fromTo(
+          "#price-line",
+          { autoAlpha: 0, scale: 0.92 },
+          { autoAlpha: 1, scale: 1, duration: 0.4, ease: "back.out(1.4)" },
+          1.66,
+        );
+
+        // Code line + CTA button land together as the VO says "with code FASTTRACK".
+        tl.fromTo(
+          "#code-line",
+          { autoAlpha: 0, y: 12 },
+          { autoAlpha: 1, y: 0, duration: 0.3, ease: "power2.out" },
+          2.46,
+        );
+        tl.fromTo(
+          "#cta-button",
+          { autoAlpha: 0, y: 12 },
+          { autoAlpha: 1, y: 0, duration: 0.3, ease: "power2.out" },
+          2.46,
+        );
+
+        // Settle-and-hold to the end — this is the final frame; no exit tween.
+
+        window.__timelines["03-cta"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

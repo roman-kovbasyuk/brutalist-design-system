@@ -1,0 +1,5 @@
+{
+  "env": {
+    "APIFY_TOKEN": "your-apify-token-here"
+  }
+}

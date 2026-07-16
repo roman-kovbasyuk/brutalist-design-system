@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: "Inter";
+          src: url("assets/fonts/Inter-Variable.woff2") format("woff2");
+          font-weight: 100 900;
+          font-style: normal;
+          font-display: block;
+        }
+
+        #root {
+          position: relative;
+          width: 1080px;
+          height: 1920px;
+          overflow: hidden;
+          font-family: "Inter", system-ui, sans-serif;
+          color: #ffffff;
+        }
+
+        .bg-gradient {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #3a42ff 0%, #a5a8ff 100%);
+        }
+
+        .row-top {
+          position: absolute;
+          top: 190px;
+          left: 0;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+        }
+
+        .label-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 14px;
+          background: #3b42ea;
+          border-radius: 15px;
+          padding: 16px 28px;
+        }
+
+        #logo-mark {
+          width: 36px;
+          height: 36px;
+          display: block;
+          transform-origin: center;
+        }
+
+        .label-pill span {
+          font-family: "Inter", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 30px;
+          white-space: nowrap;
+          color: #ffffff;
+        }
+
+        .karaoke-wrap {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 74px;
+        }
+
+        .karaoke-text {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          align-content: center;
+          row-gap: 18px;
+          column-gap: 20px;
+        }
+
+        .word {
+          display: inline-block;
+          font-family: "Inter", system-ui, sans-serif;
+          font-weight: 700;
+          font-size: 62px;
+          line-height: 1.2;
+          color: #ffffff;
+          transform-origin: center;
+          opacity: 0.38;
+        }
+      </style>
+
+      <div id="root" data-composition-id="02-karaoke-body" data-width="1080" data-height="1920" data-duration="5.833">
+        <div
+          id="bg"
+          class="clip bg-gradient"
+          data-start="0"
+          data-duration="5.833"
+          data-track-index="0"
+        ></div>
+
+        <div id="label-row" class="clip row-top" data-start="0" data-duration="5.833" data-track-index="1">
+          <div class="label-pill">
+            <img id="logo-mark" src="assets/image_001.png" alt="" />
+            <span data-layout-allow-overlap="true">Fast-Track Norwegian</span>
+          </div>
+        </div>
+
+        <div
+          id="karaoke-scene"
+          class="clip karaoke-wrap"
+          data-start="0"
+          data-duration="5.833"
+          data-track-index="2"
+        >
+          <div class="karaoke-text">
+            <span class="word" id="w0">Not</span>
+            <span class="word" id="w1">memorize</span>
+            <span class="word" id="w2">it.</span>
+            <span class="word" id="w3">Not</span>
+            <span class="word" id="w4">rehearse</span>
+            <span class="word" id="w5">it</span>
+            <span class="word" id="w6">in</span>
+            <span class="word" id="w7">your</span>
+            <span class="word" id="w8">head</span>
+            <span class="word" id="w9">for</span>
+            <span class="word" id="w10">ten</span>
+            <span class="word" id="w11">minutes.</span>
+            <span class="word" id="w12">Just</span>
+            <span class="word" id="w13">say</span>
+            <span class="word" id="w14">it &mdash;</span>
+            <span class="word" id="w15">like</span>
+            <span class="word" id="w16">a</span>
+            <span class="word" id="w17">local</span>
+            <span class="word" id="w18">would.</span>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+
+        // Real TTS word timestamps — audio_meta.json frame 2 `words[]` (Whisper-aligned,
+        // small.en, against the locked SCRIPT.md line). Karaoke sync depends on these being
+        // the actual timing, not an estimate.
+        const words = [
+          { id: "w0", start: 0.0, end: 0.24 },
+          { id: "w1", start: 0.24, end: 0.82 },
+          { id: "w2", start: 0.82, end: 1.1 },
+          { id: "w3", start: 1.3, end: 1.42 },
+          { id: "w4", start: 1.42, end: 1.8 },
+          { id: "w5", start: 1.8, end: 1.92 },
+          { id: "w6", start: 1.92, end: 2.0 },
+          { id: "w7", start: 2.0, end: 2.1 },
+          { id: "w8", start: 2.1, end: 2.28 },
+          { id: "w9", start: 2.28, end: 2.5 },
+          { id: "w10", start: 2.5, end: 2.7 },
+          { id: "w11", start: 2.7, end: 3.06 },
+          { id: "w12", start: 3.66, end: 3.78 },
+          { id: "w13", start: 3.78, end: 4.06 },
+          { id: "w14", start: 4.06, end: 4.26 },
+          { id: "w15", start: 4.26, end: 4.44 },
+          { id: "w16", start: 4.44, end: 4.58 },
+          { id: "w17", start: 4.58, end: 4.84 },
+          { id: "w18", start: 4.84, end: 5.1 },
+        ];
+
+        // Stressed words get the logo beat-pulse — the frame's only other motion.
+        const stressed = new Set(["w1", "w4", "w13", "w17"]);
+
+        // All words start at rest (CSS default 0.38 opacity / scale 1); make it explicit on
+        // the timeline too so the rest state is timeline-owned, not just a CSS fallback.
+        tl.set(
+          words.map((w) => "#" + w.id).join(","),
+          { opacity: 0.38, scale: 1 },
+          0,
+        );
+
+        words.forEach((w, i) => {
+          const sel = "#" + w.id;
+          // Activate exactly on the word's real timestamp — the karaoke highlight sweep.
+          tl.to(sel, { opacity: 1, scale: 1.06, duration: 0.1, ease: "power2.out" }, w.start);
+          // Settle to a "read" state (still legible, not full rest) the instant the NEXT
+          // word activates — except the last word, which stays fully lit to the frame's end.
+          const next = words[i + 1];
+          if (next) {
+            tl.to(sel, { opacity: 0.7, scale: 1.0, duration: 0.12, ease: "power2.out" }, next.start);
+          }
+          // Logo beat-pulse on stressed words — one finite yoyo tween, no infinite repeat.
+          if (stressed.has(w.id)) {
+            const half = Math.max(0.09, ((w.end - w.start) * 0.9) / 2);
+            tl.to(
+              "#logo-mark",
+              { scale: 1.14, duration: half, ease: "sine.inOut", yoyo: true, repeat: 1 },
+              w.start,
+            );
+          }
+        });
+
+        window.__timelines["02-karaoke-body"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

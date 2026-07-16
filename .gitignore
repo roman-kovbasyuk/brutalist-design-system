@@ -1,0 +1,11 @@
+# Secrets / machine-local
+.claude/settings.local.json
+CLAUDE.local.md
+.env
+
+# Raw scraped media (large, regenerable)
+projects/*/01-research/raw/
+
+# OS noise
+.DS_Store
+Thumbs.db
