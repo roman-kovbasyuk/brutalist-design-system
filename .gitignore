@@ -14,3 +14,7 @@ Thumbs.db
 # Python bytecode (regenerable, version/platform-specific — shouldn't be committed)
 __pycache__/
 *.pyc
+
+# Lingu Studio web app
+node_modules/
+dist/

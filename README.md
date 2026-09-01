@@ -1,4 +1,25 @@
-# Lingu Agents — Marketing Pipeline System
+# Lingu Studio V1
+
+The active product prototype is now a local-first React application. It demonstrates the complete
+client workflow: free-form brief → generated copy and media prompts → five visual directions → one
+of twenty template compositions → explicit Figma designer review → four delivery resizes.
+
+```bash
+npm install
+npm run dev
+```
+
+The V1 has no runtime dependency on Claude Code, Apify, HyperFrames, Figma APIs, or any cloud
+provider. Generation and review are deterministic local simulations with explicit labels. See
+[README-MVP.md](README-MVP.md) for scope and architecture, and
+[the V1 specification](docs/superpowers/specs/2026-09-01-lingu-studio-v1-design.md) for the full PRD.
+
+The original Claude-oriented marketing pipeline remains below as legacy/reference material. The
+new web application does not import from or execute anything under `.claude/`.
+
+---
+
+# Legacy: Lingu Agents — Marketing Pipeline System
 
 Turn a social account into researched, on-brand marketing creative — end to end, inside Claude Code
 — with a real **human review checkpoint in Figma** built into both pipelines. HyperFrames (motion)
