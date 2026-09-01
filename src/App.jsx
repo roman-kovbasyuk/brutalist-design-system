@@ -13,15 +13,15 @@ export default function App() {
   }, [view])
 
   function chooseTemplate(templateId) {
-    setRequestedTemplate(templateId)
+    setRequestedTemplate({ id: templateId, requestedAt: Date.now() })
     setView('workflow')
   }
 
   return (
     <AppShell activeView={view} onNavigate={setView}>
-      {view === 'workflow' && <WorkflowScreen requestedTemplate={requestedTemplate} />}
-      {view === 'templates' && <TemplatesScreen onChoose={chooseTemplate} />}
-      {view === 'system' && <DesignSystemScreen />}
+      <div hidden={view !== 'workflow'}><WorkflowScreen requestedTemplate={requestedTemplate} /></div>
+      <div hidden={view !== 'templates'}><TemplatesScreen onChoose={chooseTemplate} /></div>
+      <div hidden={view !== 'system'}><DesignSystemScreen /></div>
     </AppShell>
   )
 }

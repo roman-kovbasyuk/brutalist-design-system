@@ -17,7 +17,7 @@ export function StepRail({ currentStep, maxStep, onStepChange }) {
       <ol>
         {steps.map(([label, detail], index) => {
           const number = index + 1
-          const isComplete = number < currentStep
+          const isComplete = number < maxStep && number !== currentStep
           const isAvailable = number <= maxStep
           return (
             <li key={label}>
@@ -26,6 +26,8 @@ export function StepRail({ currentStep, maxStep, onStepChange }) {
                 className="step-button"
                 data-current={number === currentStep}
                 data-complete={isComplete}
+                aria-current={number === currentStep ? 'step' : undefined}
+                aria-label={`${number}. ${label}: ${detail}`}
                 disabled={!isAvailable}
                 onClick={() => onStepChange(number)}
               >

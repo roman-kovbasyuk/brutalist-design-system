@@ -8,9 +8,10 @@ export function TemplateCard({ template, selected = false, onChoose, mode = 'lib
         type="button"
         className="template-card-button"
         aria-label={`Выбрать шаблон ${template.name}`}
+        aria-pressed={selected}
         onClick={() => onChoose?.(template.id)}
       >
-        <BannerPreview template={template} compact ratio={template.masterRatio === 'story' ? '9 / 12' : '4 / 5'} />
+        <BannerPreview template={template} compact />
         <span className="template-meta">
           <span>
             <strong>{template.name}</strong>

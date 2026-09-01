@@ -7,12 +7,13 @@ const fallbackContent = {
   cta: 'Начать обучение',
 }
 
-export function BannerPreview({ template, visual, content = fallbackContent, ratio = '4 / 5', compact = false }) {
+export function BannerPreview({ template, visual, content = fallbackContent, ratio, resizeLayout, compact = false }) {
   const currentTemplate = template ?? { layout: 'split-left', alignment: 'left', index: 1 }
+  const effectiveRatio = ratio ?? (currentTemplate.masterRatio === 'story' ? '9 / 16' : '4 / 5')
   return (
     <article
-      className={`banner banner--${currentTemplate.layout} banner--${currentTemplate.alignment} ${compact ? 'banner--compact' : ''}`}
-      style={{ aspectRatio: ratio }}
+      className={`banner banner--${currentTemplate.layout} banner--${currentTemplate.alignment} ${resizeLayout ? `banner--format-${resizeLayout}` : ''} ${compact ? 'banner--compact' : ''}`}
+      style={{ aspectRatio: effectiveRatio }}
       aria-label={`Превью шаблона ${currentTemplate.name ?? ''}`}
     >
       <div className="banner-media"><VisualArtwork visual={visual} compact /></div>

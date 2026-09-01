@@ -60,3 +60,41 @@ export function getResizeLayouts(template) {
     { label: 'Landscape', size: '1200×628', ratio: '1200 / 628', layout: 'wide-reflow' },
   ]
 }
+
+export function getContentWarnings(content) {
+  const limits = [
+    ['headline', 54, 'Заголовок'],
+    ['body', 120, 'Основной текст'],
+    ['offer', 28, 'Оффер'],
+    ['cta', 24, 'CTA'],
+  ]
+  return limits
+    .filter(([field, limit]) => (content?.[field]?.trim().length ?? 0) > limit)
+    .map(([, limit, label]) => `${label} длиннее ${limit} символов`)
+}
+
+export function createCreativeFingerprint({ brief, strategy, selectedVisualId, selectedTemplateId }) {
+  return JSON.stringify({
+    brief: brief?.trim() ?? '',
+    headline: strategy?.headline ?? '',
+    body: strategy?.body ?? '',
+    offer: strategy?.offer ?? '',
+    cta: strategy?.cta ?? '',
+    selectedVisualId: selectedVisualId ?? '',
+    selectedTemplateId: selectedTemplateId ?? '',
+  })
+}
+
+export function isApprovalCurrent(approvedFingerprint, currentFingerprint) {
+  return Boolean(approvedFingerprint && approvedFingerprint === currentFingerprint)
+}
+
+export function isValidFigmaUrl(value) {
+  try {
+    const url = new URL(value)
+    const isFigmaHost = url.hostname === 'figma.com' || url.hostname === 'www.figma.com'
+    return url.protocol === 'https:' && isFigmaHost && /^\/(design|file|proto|board)\/[^/]+/i.test(url.pathname)
+  } catch {
+    return false
+  }
+}

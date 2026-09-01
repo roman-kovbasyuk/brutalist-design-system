@@ -10,7 +10,7 @@ export function AppShell({ activeView, onNavigate, children }) {
   return (
     <div className="app-shell">
       <aside className="global-rail">
-        <button className="brand" type="button" onClick={() => onNavigate('workflow')}>
+        <button className="brand" type="button" aria-label="Lingu Studio — открыть процесс" onClick={() => onNavigate('workflow')}>
           <span className="brand-mark" aria-hidden="true">L</span>
           <span>Lingu Studio</span>
         </button>
@@ -20,6 +20,7 @@ export function AppShell({ activeView, onNavigate, children }) {
             <button
               className="nav-item"
               data-active={activeView === id}
+              aria-current={activeView === id ? 'page' : undefined}
               key={id}
               type="button"
               onClick={() => onNavigate(id)}

@@ -2,8 +2,12 @@ import { describe, expect, test } from 'vitest'
 import {
   analyzeBrief,
   canAdvance,
+  createCreativeFingerprint,
   generateVisuals,
+  getContentWarnings,
   getResizeLayouts,
+  isApprovalCurrent,
+  isValidFigmaUrl,
 } from './campaign.js'
 import { templates } from '../data/templates.js'
 
@@ -56,6 +60,39 @@ describe('campaign domain', () => {
       '1200×628',
     ])
     expect(new Set(layouts.map((item) => item.layout)).size).toBeGreaterThan(1)
+  })
+
+  test('reports copy that exceeds the template content contract', () => {
+    expect(getContentWarnings({ headline: 'Очень длинный заголовок '.repeat(4), body: 'Коротко', cta: 'Начать', offer: '' })).toEqual([
+      'Заголовок длиннее 54 символов',
+    ])
+    expect(getContentWarnings({ headline: 'Короткий заголовок', body: 'Коротко', cta: 'Начать', offer: '' })).toEqual([])
+  })
+
+  test('binds approval to the exact creative that the designer reviewed', () => {
+    const approved = createCreativeFingerprint({
+      brief: 'Campaign idea',
+      strategy: { headline: 'First version', body: 'Body', offer: 'Offer', cta: 'Go' },
+      selectedVisualId: 'visual-01',
+      selectedTemplateId: 'template-01',
+    })
+    const changed = createCreativeFingerprint({
+      brief: 'Campaign idea',
+      strategy: { headline: 'Changed version', body: 'Body', offer: 'Offer', cta: 'Go' },
+      selectedVisualId: 'visual-01',
+      selectedTemplateId: 'template-01',
+    })
+
+    expect(isApprovalCurrent(approved, approved)).toBe(true)
+    expect(isApprovalCurrent(approved, changed)).toBe(false)
+    expect(isApprovalCurrent(null, changed)).toBe(false)
+  })
+
+  test('accepts only a concrete HTTPS Figma link for designer approval', () => {
+    expect(isValidFigmaUrl('https://www.figma.com/design/abc/campaign')).toBe(true)
+    expect(isValidFigmaUrl('https://figma.com/file/abc')).toBe(true)
+    expect(isValidFigmaUrl('javascript:alert(1)')).toBe(false)
+    expect(isValidFigmaUrl('https://example.com/mockup')).toBe(false)
   })
 })
 

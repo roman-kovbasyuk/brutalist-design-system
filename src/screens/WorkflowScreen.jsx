@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Check, ClipboardCheck, Download, ExternalLink, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, ClipboardCheck, Download, ExternalLink, Sparkles } from 'lucide-react'
 import { BannerPreview } from '../components/BannerPreview.jsx'
 import { StepRail } from '../components/StepRail.jsx'
 import { TemplateCard } from '../components/TemplateCard.jsx'
 import { VisualArtwork } from '../components/VisualArtwork.jsx'
-import { analyzeBrief, generateVisuals, getResizeLayouts } from '../domain/campaign.js'
+import {
+  analyzeBrief,
+  createCreativeFingerprint,
+  generateVisuals,
+  getContentWarnings,
+  getResizeLayouts,
+  isApprovalCurrent,
+  isValidFigmaUrl,
+} from '../domain/campaign.js'
 import { templates } from '../data/templates.js'
 
 const initialBrief = 'Запускаем интенсив норвежского языка для людей, которые собираются переехать в Осло. Скидка 15% до воскресенья. Нужно показать, что человек сможет говорить в бытовых ситуациях уже во время курса.'
@@ -17,16 +25,35 @@ export function WorkflowScreen({ requestedTemplate }) {
   const [strategy, setStrategy] = useState(null)
   const [visuals, setVisuals] = useState([])
   const [selectedVisualId, setSelectedVisualId] = useState(null)
-  const [selectedTemplateId, setSelectedTemplateId] = useState(requestedTemplate)
+  const [selectedTemplateId, setSelectedTemplateId] = useState(requestedTemplate?.id ?? null)
   const [reviewStatus, setReviewStatus] = useState('ready')
+  const [figmaUrl, setFigmaUrl] = useState('https://figma.com/file/demo-lingu-studio')
+  const [approvedFingerprint, setApprovedFingerprint] = useState(null)
 
   useEffect(() => {
-    if (requestedTemplate) setSelectedTemplateId(requestedTemplate)
-  }, [requestedTemplate])
+    if (!requestedTemplate?.id) return
+    setSelectedTemplateId(requestedTemplate.id)
+    setReviewStatus('ready')
+    setApprovedFingerprint(null)
+    if (strategy && selectedVisualId) {
+      setStep(5)
+      setMaxStep(5)
+    }
+  }, [requestedTemplate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedVisual = visuals.find((visual) => visual.id === selectedVisualId)
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId)
   const resizeLayouts = useMemo(() => getResizeLayouts(selectedTemplate), [selectedTemplate])
+  const copyWarnings = useMemo(() => getContentWarnings(strategy), [strategy])
+  const creativeFingerprint = createCreativeFingerprint({
+    brief,
+    strategy,
+    selectedVisualId,
+    selectedTemplateId,
+  })
+  const reviewIsCurrent = reviewStatus === 'approved' && isApprovalCurrent(approvedFingerprint, creativeFingerprint)
+  const visibleReviewStatus = reviewIsCurrent ? 'approved' : reviewStatus === 'in-review' ? 'in-review' : 'ready'
+  const figmaLinkIsValid = isValidFigmaUrl(figmaUrl.trim())
 
   function advance(nextStep) {
     setStep(nextStep)
@@ -38,6 +65,9 @@ export function WorkflowScreen({ requestedTemplate }) {
       const nextStrategy = analyzeBrief(brief)
       setStrategy(nextStrategy)
       setVisuals(generateVisuals(nextStrategy))
+      setSelectedVisualId(null)
+      setReviewStatus('ready')
+      setApprovedFingerprint(null)
       setError('')
       advance(2)
     } catch (nextError) {
@@ -47,6 +77,40 @@ export function WorkflowScreen({ requestedTemplate }) {
 
   function updateStrategy(field, value) {
     setStrategy((current) => ({ ...current, [field]: value }))
+    setSelectedVisualId(null)
+    setReviewStatus('ready')
+    setApprovedFingerprint(null)
+    setMaxStep((current) => Math.min(current, 2))
+  }
+
+  function updateBrief(value) {
+    setBrief(value)
+    setStrategy(null)
+    setVisuals([])
+    setSelectedVisualId(null)
+    setSelectedTemplateId(null)
+    setReviewStatus('ready')
+    setApprovedFingerprint(null)
+    setMaxStep(1)
+  }
+
+  function selectVisual(visualId) {
+    setSelectedVisualId(visualId)
+    setReviewStatus('ready')
+    setApprovedFingerprint(null)
+    setMaxStep((current) => Math.min(current, 4))
+  }
+
+  function selectTemplate(templateId) {
+    setSelectedTemplateId(templateId)
+    setReviewStatus('ready')
+    setApprovedFingerprint(null)
+    setMaxStep((current) => Math.min(current, 5))
+  }
+
+  function approveReview() {
+    setReviewStatus('approved')
+    setApprovedFingerprint(creativeFingerprint)
   }
 
   function downloadManifest() {
@@ -56,7 +120,11 @@ export function WorkflowScreen({ requestedTemplate }) {
       strategy,
       selectedVisual,
       selectedTemplate,
-      reviewStatus,
+      review: {
+        status: visibleReviewStatus,
+        figmaUrl,
+        approvedFingerprint,
+      },
       outputs: resizeLayouts,
     }
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }))
@@ -77,7 +145,7 @@ export function WorkflowScreen({ requestedTemplate }) {
             <div className="stage-grid stage-grid--brief">
               <div className="field-group field-group--large">
                 <label htmlFor="campaign-brief">Идея кампании</label>
-                <textarea id="campaign-brief" value={brief} onChange={(event) => setBrief(event.target.value)} />
+                <textarea id="campaign-brief" value={brief} onChange={(event) => updateBrief(event.target.value)} />
                 <div className="field-meta"><span>{brief.length} символов</span><span>Можно писать в свободной форме</span></div>
                 {error && <p className="inline-error" role="alert">{error}</p>}
               </div>
@@ -118,7 +186,7 @@ export function WorkflowScreen({ requestedTemplate }) {
             <div className="visual-grid">
               {visuals.map((visual, index) => (
                 <article className="visual-option" data-selected={selectedVisualId === visual.id} key={visual.id}>
-                  <button type="button" aria-label={`Выбрать визуал ${visual.name}`} onClick={() => setSelectedVisualId(visual.id)}>
+                  <button type="button" aria-label={`Выбрать визуал ${visual.name}`} aria-pressed={selectedVisualId === visual.id} onClick={() => selectVisual(visual.id)}>
                     <VisualArtwork visual={visual} />
                     <span className="visual-option-meta"><span>{String(index + 1).padStart(2, '0')} · {visual.direction}</span><strong>{visual.name}</strong></span>
                   </button>
@@ -134,7 +202,7 @@ export function WorkflowScreen({ requestedTemplate }) {
           <>
             <StageHeader count="04 / 07" title="Выберите композицию" description="Шаблон определяет иерархию и баланс. Текст и выбранный визуал останутся теми же." />
             <div className="template-picker">
-              {templates.map((template) => <TemplateCard key={template.id} template={template} selected={selectedTemplateId === template.id} onChoose={setSelectedTemplateId} mode="picker" />)}
+              {templates.map((template) => <TemplateCard key={template.id} template={template} selected={selectedTemplateId === template.id} onChoose={selectTemplate} mode="picker" />)}
             </div>
             <StageActions><SecondaryButton onClick={() => setStep(3)}>Назад</SecondaryButton><PrimaryButton disabled={!selectedTemplateId} onClick={() => advance(5)}>Собрать черновик</PrimaryButton></StageActions>
           </>
@@ -151,7 +219,11 @@ export function WorkflowScreen({ requestedTemplate }) {
                 <MetaBlock label="Визуал" value={selectedVisual?.name} />
                 <MetaBlock label="Мастер" value={selectedTemplate.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
                 <MetaBlock label="Анимация" value={selectedTemplate.motion} />
-                <div className="check-list"><p><Check size={15} /> Контент помещается</p><p><Check size={15} /> Контраст AA</p><p><Check size={15} /> Safe zones учтены</p></div>
+                {copyWarnings.length === 0 ? (
+                  <div className="check-list"><p><Check size={15} /> Автопроверка: текст в пределах лимитов</p><p>Контраст и safe zones проверит дизайнер</p></div>
+                ) : (
+                  <div className="content-warning" role="alert"><AlertTriangle size={17} /><div><strong>Нужно проверить текст</strong>{copyWarnings.map((warning) => <span key={warning}>{warning}</span>)}</div></div>
+                )}
               </aside>
             </div>
             <StageActions><SecondaryButton onClick={() => setStep(4)}>Сменить шаблон</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Подготовить Figma-пакет</PrimaryButton></StageActions>
@@ -161,22 +233,42 @@ export function WorkflowScreen({ requestedTemplate }) {
         {step === 6 && (
           <>
             <StageHeader count="06 / 07" title="Дизайнерское ревью" description="Финальный рендер заблокирован, пока дизайнер не проверит мастер в Figma." />
-            <div className="review-panel" data-status={reviewStatus}>
+            <section className="review-packet" aria-label="Review packet">
+              <header><span>Review packet · local simulation</span><code>{selectedTemplate?.id}</code></header>
+              <div className="review-packet-meta">
+                <ReviewField label="Шаблон" value={selectedTemplate?.name} />
+                <ReviewField label="Визуал" value={selectedVisual?.name} />
+                <ReviewField label="Мастер" value={selectedTemplate?.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
+              </div>
+              <div className="review-packet-copy">
+                <ReviewField label="Исходный бриф" value={brief} wide />
+                <ReviewField label="Заголовок" value={strategy?.headline} />
+                <ReviewField label="Оффер" value={strategy?.offer} />
+                <ReviewField label="Основной текст" value={strategy?.body} wide />
+                <ReviewField label="CTA" value={strategy?.cta} />
+              </div>
+              <div className="review-packet-prompts">
+                <ReviewField label="Static image prompt" value={strategy?.imagePrompt} />
+                <ReviewField label="Video prompt" value={strategy?.videoPrompt} />
+              </div>
+            </section>
+            <div className="review-panel" data-status={visibleReviewStatus} aria-live="polite">
               <div className="review-icon"><ClipboardCheck size={24} aria-hidden="true" /></div>
               <div>
-                <span className="status-label"><span className="status-dot" />{reviewStatus === 'ready' ? 'Пакет готов' : reviewStatus === 'in-review' ? 'На проверке' : 'Проверено'}</span>
-                <h2>{reviewStatus === 'approved' ? 'Макет утверждён дизайнером' : 'Проверка композиции и качества'}</h2>
-                <p>{reviewStatus === 'approved' ? 'Утверждённая версия становится источником для финальных ресайзов.' : 'Дизайнер проверит переполнение, контраст, кадрирование, safe zones и согласованность анимации.'}</p>
+                <span className="status-label"><span className="status-dot" />{visibleReviewStatus === 'ready' ? 'Пакет готов' : visibleReviewStatus === 'in-review' ? 'На проверке' : 'Проверено'}</span>
+                <h2>{visibleReviewStatus === 'approved' ? 'Макет утверждён дизайнером' : 'Проверка композиции и качества'}</h2>
+                <p>{visibleReviewStatus === 'approved' ? 'Утверждённая версия становится источником для финальных ресайзов.' : 'Симуляция V1: пакет не отправляется автоматически. Дизайнер проверяет его в Figma и возвращает ссылку на утверждённую версию.'}</p>
+                {visibleReviewStatus === 'in-review' && <label className="figma-field" htmlFor="figma-url"><span>Ссылка на макет / версия</span><input id="figma-url" value={figmaUrl} onChange={(event) => setFigmaUrl(event.target.value)} /></label>}
               </div>
               <div className="review-actions">
-                {reviewStatus === 'ready' && <PrimaryButton onClick={() => setReviewStatus('in-review')}>Отправить на ревью</PrimaryButton>}
-                {reviewStatus === 'in-review' && <PrimaryButton onClick={() => setReviewStatus('approved')}>Подтвердить ревью</PrimaryButton>}
-                {reviewStatus === 'approved' && <PrimaryButton onClick={() => advance(7)}>Собрать финальный пакет</PrimaryButton>}
-                <a href="https://www.figma.com" target="_blank" rel="noreferrer">Открыть Figma <ExternalLink size={14} /></a>
+                {visibleReviewStatus === 'ready' && <PrimaryButton onClick={() => setReviewStatus('in-review')}>Отправить на ревью</PrimaryButton>}
+                {visibleReviewStatus === 'in-review' && <PrimaryButton disabled={!figmaLinkIsValid} onClick={approveReview}>Подтвердить ревью</PrimaryButton>}
+                {visibleReviewStatus === 'approved' && <PrimaryButton onClick={() => advance(7)}>Собрать финальный пакет</PrimaryButton>}
+                <a href={figmaLinkIsValid ? figmaUrl.trim() : 'https://www.figma.com'} target="_blank" rel="noreferrer">Открыть Figma <ExternalLink size={14} /></a>
               </div>
             </div>
             <div className="review-checks">
-              {['Композиция', 'Контраст', 'Переполнение', 'Кадрирование', 'Анимация'].map((item, index) => <span key={item}><i>{reviewStatus === 'approved' ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</i>{item}</span>)}
+              {['Композиция', 'Контраст', 'Переполнение', 'Кадрирование', 'Анимация'].map((item, index) => <span key={item}><i>{visibleReviewStatus === 'approved' ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</i>{item}</span>)}
             </div>
             <StageActions><SecondaryButton onClick={() => setStep(5)}>Назад к мастеру</SecondaryButton></StageActions>
           </>
@@ -189,7 +281,7 @@ export function WorkflowScreen({ requestedTemplate }) {
             <div className="resize-grid">
               {resizeLayouts.map((format) => (
                 <article className="resize-output" key={format.size}>
-                  <div className="resize-preview-wrap"><BannerPreview template={selectedTemplate} visual={selectedVisual} content={strategy} ratio={format.ratio} compact /></div>
+                  <div className="resize-preview-wrap"><BannerPreview template={selectedTemplate} visual={selectedVisual} content={strategy} ratio={format.ratio} resizeLayout={format.layout} compact /></div>
                   <div><span>{format.label}</span><strong>{format.size}</strong><small>{format.layout}</small></div>
                 </article>
               ))}
@@ -228,5 +320,9 @@ function TextField({ label, value, onChange, multiline = false }) {
 }
 
 function PromptBlock({ label, value }) {
-  return <div className="prompt-block"><span>{label}</span><p>{value}</p><button type="button" aria-label={`Перегенерировать ${label}`}><RefreshCw size={14} aria-hidden="true" /></button></div>
+  return <div className="prompt-block"><span>{label}</span><p>{value}</p></div>
+}
+
+function ReviewField({ label, value, wide = false }) {
+  return <div className="review-field" data-wide={wide}><strong>{label}</strong><p>{value}</p></div>
 }

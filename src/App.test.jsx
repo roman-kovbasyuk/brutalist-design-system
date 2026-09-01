@@ -8,7 +8,7 @@ describe('Lingu Studio app', () => {
     render(<App />)
 
     const navigation = screen.getByRole('navigation', { name: 'Основная навигация' })
-    expect(within(navigation).getByRole('button', { name: 'Процесс' })).toBeVisible()
+    expect(within(navigation).getByRole('button', { name: 'Процесс' })).toHaveAttribute('aria-current', 'page')
     expect(within(navigation).getByRole('button', { name: 'Шаблоны' })).toBeVisible()
     expect(within(navigation).getByRole('button', { name: 'Дизайн-система' })).toBeVisible()
   })
@@ -36,18 +36,23 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: /Выбрать шаблон/ })[0])
     await user.click(screen.getByRole('button', { name: 'Собрать черновик' }))
 
-    expect(screen.getByText('Заговорите до переезда')).toBeVisible()
+    expect(screen.getAllByText('Заговорите до переезда').some((element) => !element.closest('[hidden]'))).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Подготовить Figma-пакет' }))
+    const reviewPacket = screen.getByRole('region', { name: 'Review packet' })
+    expect(within(reviewPacket).getByText('split-left')).toBeVisible()
+    expect(within(reviewPacket).getByText(/Запускаем интенсив норвежского языка/)).toBeVisible()
+    expect(within(reviewPacket).getByText(/editorial campaign image/)).toBeVisible()
+    expect(within(reviewPacket).getByText(/vertical motion loop/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Отправить на ревью' }))
 
-    expect(screen.queryByText('1200×628')).not.toBeInTheDocument()
+    expect(screen.getAllByText('1200×628').every((element) => element.closest('[hidden]'))).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Подтвердить ревью' }))
     await user.click(screen.getByRole('button', { name: 'Собрать финальный пакет' }))
 
-    expect(screen.getByText('1080×1080')).toBeVisible()
-    expect(screen.getByText('1080×1350')).toBeVisible()
-    expect(screen.getByText('1080×1920')).toBeVisible()
-    expect(screen.getByText('1200×628')).toBeVisible()
+    expect(screen.getAllByText('1080×1080').some((element) => !element.closest('[hidden]'))).toBe(true)
+    expect(screen.getAllByText('1080×1350').some((element) => !element.closest('[hidden]'))).toBe(true)
+    expect(screen.getAllByText('1080×1920').some((element) => !element.closest('[hidden]'))).toBe(true)
+    expect(screen.getAllByText('1200×628').some((element) => !element.closest('[hidden]'))).toBe(true)
   })
 
   test('shows all twenty templates in the library view', async () => {
@@ -56,6 +61,18 @@ describe('Lingu Studio app', () => {
 
     await user.click(screen.getByRole('button', { name: 'Шаблоны' }))
     expect(screen.getAllByTestId('template-card')).toHaveLength(20)
+  })
+
+  test('preserves campaign progress while visiting reference screens', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Разобрать бриф' }))
+    expect(screen.getByDisplayValue('Заговорите до переезда')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Шаблоны' }))
+    await user.click(screen.getByRole('button', { name: 'Процесс' }))
+
+    expect(screen.getByDisplayValue('Заговорите до переезда')).toBeVisible()
   })
 
   test('documents tokens and the shared banner content contract', async () => {
