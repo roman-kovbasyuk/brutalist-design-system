@@ -162,6 +162,11 @@ export function WorkflowScreen({ requestedTemplate }) {
     setVideoAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
   }
 
+  function viewSourceStaticAsset(staticId) {
+    selectVisual(staticId)
+    setAssetTab('static')
+  }
+
   function confirmVideoBatch() {
     setVideoAssets((current) => {
       const existing = new Set(current.map((asset) => asset.id))
@@ -268,6 +273,7 @@ export function WorkflowScreen({ requestedTemplate }) {
               onGenerateStatic={generateStaticAsset}
               onGenerateVideo={generateVideoAsset}
               onSelectStatic={selectVisual}
+              onViewSource={viewSourceStaticAsset}
               onRequestVideoBatch={() => setShowVideoCostDialog(true)}
               onCancelVideoBatch={() => setShowVideoCostDialog(false)}
               onConfirmVideoBatch={confirmVideoBatch}

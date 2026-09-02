@@ -1,13 +1,30 @@
+import { useEffect, useRef } from 'react'
+
 function formatCurrency(value) {
   return `$${value.toFixed(2)}`
 }
 
 export function CostDialog({ estimate, onCancel, onConfirm }) {
+  const dialogRef = useRef(null)
   const imageLabel = `${estimate.count} eligible image${estimate.count === 1 ? '' : 's'}`
   const confirmLabel = `Generate ${estimate.count} video${estimate.count === 1 ? '' : 's'} for ${formatCurrency(estimate.totalCost)}`
 
+  useEffect(() => {
+    const dialog = dialogRef.current
+    dialog.showModal()
+
+    return () => {
+      if (dialog.open) dialog.close()
+    }
+  }, [])
+
+  function handleCancel(event) {
+    event.preventDefault()
+    onCancel()
+  }
+
   return (
-    <dialog className="cost-dialog" open aria-modal="true" aria-labelledby="video-cost-title">
+    <dialog ref={dialogRef} className="cost-dialog" aria-labelledby="video-cost-title" onCancel={handleCancel}>
       <div className="cost-dialog__warning" aria-hidden="true">!</div>
       <div>
         <p className="cost-dialog__eyebrow">High-cost simulated generation</p>

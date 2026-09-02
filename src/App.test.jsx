@@ -94,6 +94,16 @@ describe('Lingu Studio app', () => {
       expect(within(card).getAllByRole('mark')).toHaveLength(2)
       expect(within(card).getByText('$0.12 estimated cost')).toBeVisible()
     })
+
+    const promptTab = within(tabs).getByRole('tab', { name: 'Prompts' })
+    promptTab.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(within(tabs).getByRole('tab', { name: 'Static visuals' })).toHaveFocus()
+    expect(within(tabs).getByRole('tab', { name: 'Static visuals' })).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{End}')
+    expect(within(tabs).getByRole('tab', { name: 'Videos' })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(within(tabs).getByRole('tab', { name: 'Prompts' })).toHaveFocus()
   })
 
   test('generates a static visual and then a video from that image without leaving duplicate outputs', async () => {
@@ -105,15 +115,38 @@ describe('Lingu Studio app', () => {
     await user.click(within(firstPrompt).getByRole('button', { name: /Generate static visual/ }))
     await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
 
+    const staticAsset = screen.getByTestId('static-asset')
     expect(screen.getAllByTestId('static-asset')).toHaveLength(1)
-    await user.click(screen.getByRole('button', { name: /Generate video from this image/ }))
+    expect(within(staticAsset).getByText('$1.80 per video')).toBeVisible()
+    await user.click(within(staticAsset).getByRole('button', { name: 'Generate video from this image for $1.80' }))
     await user.click(screen.getByRole('tab', { name: 'Videos' }))
     expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'View source static visual Nordic portrait' }))
+    expect(screen.getByRole('tab', { name: 'Static visuals' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('static-asset')).toHaveAttribute('data-selected', 'true')
 
     await user.click(screen.getByRole('tab', { name: 'Prompts' }))
     await user.click(within(firstPrompt).getByRole('button', { name: /Generate static visual/ }))
     await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
     expect(screen.getAllByTestId('static-asset')).toHaveLength(1)
+  })
+
+  test('supports a keyboard-only flow to generate a video from a static visual', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+
+    const videoAction = screen.getByRole('button', { name: 'Generate video from this image for $1.80' })
+    await user.tab()
+    await user.tab()
+    expect(videoAction).toHaveFocus()
+    await user.keyboard('{Enter}')
+    await user.click(screen.getByRole('tab', { name: 'Videos' }))
+    expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
   })
 
   test('confirms the exact bulk video cost and only generates videos that are missing', async () => {
@@ -127,12 +160,22 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
     await user.click(screen.getAllByRole('button', { name: /Generate video from this image/ })[0])
 
-    await user.click(screen.getByRole('button', { name: 'Generate videos for all images' }))
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
+    const bulkAction = screen.getByRole('button', { name: 'Generate videos for all images' })
+    await user.click(bulkAction)
     const dialog = screen.getByRole('dialog', { name: 'Confirm video generation cost' })
+    expect(showModal).toHaveBeenCalledTimes(1)
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
     expect(within(dialog).getByText('1 eligible image')).toBeVisible()
     expect(within(dialog).getByText('$1.80 per video')).toBeVisible()
     expect(within(dialog).getByText('$1.80 total estimated cost')).toBeVisible()
-    await user.click(within(dialog).getByRole('button', { name: 'Generate 1 video for $1.80' }))
+    fireEvent(dialog, new Event('cancel', { cancelable: true }))
+    expect(bulkAction).toHaveFocus()
+    expect(screen.queryByRole('dialog', { name: 'Confirm video generation cost' })).not.toBeInTheDocument()
+
+    await user.click(bulkAction)
+    await user.click(screen.getByRole('button', { name: 'Generate 1 video for $1.80' }))
+    showModal.mockRestore()
 
     await user.click(screen.getByRole('tab', { name: 'Videos' }))
     expect(screen.getAllByTestId('video-asset')).toHaveLength(2)

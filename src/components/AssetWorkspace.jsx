@@ -1,4 +1,5 @@
 import { Play } from 'lucide-react'
+import { useRef } from 'react'
 import { VisualArtwork } from './VisualArtwork.jsx'
 import { CostDialog } from './CostDialog.jsx'
 
@@ -24,10 +25,13 @@ export function AssetWorkspace({
   onGenerateStatic,
   onGenerateVideo,
   onSelectStatic,
+  onViewSource,
   onRequestVideoBatch,
   onCancelVideoBatch,
   onConfirmVideoBatch,
 }) {
+  const tabRefs = useRef({})
+
   function moveTab(event) {
     const index = tabs.findIndex(([id]) => id === activeTab)
     const nextIndex = event.key === 'ArrowRight' ? (index + 1) % tabs.length
@@ -36,7 +40,9 @@ export function AssetWorkspace({
           : event.key === 'End' ? tabs.length - 1 : null
     if (nextIndex === null) return
     event.preventDefault()
-    onTabChange(tabs[nextIndex][0])
+    const nextTabId = tabs[nextIndex][0]
+    onTabChange(nextTabId)
+    tabRefs.current[nextTabId]?.focus()
   }
 
   return (
@@ -51,6 +57,7 @@ export function AssetWorkspace({
             aria-controls={`asset-panel-${id}`}
             aria-selected={activeTab === id}
             tabIndex={activeTab === id ? 0 : -1}
+            ref={(node) => { tabRefs.current[id] = node }}
             onClick={() => onTabChange(id)}
           >
             {label}
@@ -95,8 +102,8 @@ export function AssetWorkspace({
                         <span className="asset-card__selection">{selectedStaticId === asset.id ? 'Selected for banner preview' : 'Select for banner preview'}</span>
                       </button>
                       <div className="asset-card__details"><span>From prompt · {asset.title}</span><strong>{asset.name}</strong><small>Static visual · simulated locally</small></div>
-                      <button type="button" className="asset-card__video-action button button--primary" onClick={() => onGenerateVideo(asset)} disabled={hasVideo}>
-                        {hasVideo ? 'Video generated' : 'Generate video from this image'}
+                      <button type="button" className="asset-card__video-action button button--primary" aria-label={`Generate video from this image for ${formatCurrency(videoEstimate.unitCost)}`} onClick={() => onGenerateVideo(asset)} disabled={hasVideo}>
+                        {hasVideo ? 'Video generated' : <><span>Generate video from this image</span><span>{formatCurrency(videoEstimate.unitCost)} per video</span></>}
                       </button>
                     </article>
                   )
@@ -116,7 +123,7 @@ export function AssetWorkspace({
               {videoAssets.map((asset) => (
                 <article className="asset-card asset-card--video" data-testid="video-asset" key={asset.id}>
                   <div className="asset-card__artwork asset-card__artwork--video"><VisualArtwork visual={asset} /><span className="asset-card__play"><Play size={20} fill="currentColor" aria-hidden="true" /> Simulated motion</span></div>
-                  <div className="asset-card__details"><span>Source static visual · {asset.title}</span><strong>{asset.name}</strong><small>6 seconds · video · simulated locally</small></div>
+                  <div className="asset-card__details"><button type="button" className="asset-card__source" onClick={() => onViewSource(asset.sourceStaticId)}>View source static visual {asset.title}</button><strong>{asset.name}</strong><small>6 seconds · video · simulated locally</small></div>
                 </article>
               ))}
             </div>
