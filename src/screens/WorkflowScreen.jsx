@@ -124,6 +124,10 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   const deliveryBanners = review?.selectedBanners ?? []
   const hasPersistedReviewPackage = reviewStatus !== 'draft' && deliveryBanners.length > 0
   const hasReviewPackage = selectedBannerIds.length > 0 || hasPersistedReviewPackage
+  const isPersistedOnlyWorkflow = hasPersistedReviewPackage
+    && !strategy
+    && staticAssets.length === 0
+    && videoAssets.length === 0
   const visibleReviewBanners = reviewStatus === 'draft' ? reviewBanners : deliveryBanners
   const deliveryOutputs = useMemo(() => deliveryBanners.flatMap((banner) => getResizeLayouts(banner.template).map((format) => ({ ...format, banner }))), [deliveryBanners])
   const generatedAssets = review?.generatedAssets ?? [...staticAssets, ...videoAssets]
@@ -199,6 +203,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   }
 
   function changeStep(nextStep) {
+    if (isPersistedOnlyWorkflow && nextStep < 5) return
     if (nextStep === 5 && !hasReviewPackage) return
     if (nextStep === 6 && !hasPersistedReviewPackage) return
     if (nextStep === 7 && (reviewStatus !== 'approved' || deliveryBanners.length === 0)) return
@@ -526,7 +531,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
             <StageHeader count="05 / 07" title="Prepare for review" description="Review every selected banner before sending the immutable local package to the designer endpoint." />
             <ReviewWorkspace banners={visibleReviewBanners} status={reviewStatus} />
             {reviewStatus === 'draft' ? (
-              <StageActions><SecondaryButton onClick={() => setStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={submitReviewPackage}>Send to Figma for review</PrimaryButton></StageActions>
+              <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={submitReviewPackage}>Send to Figma for review</PrimaryButton></StageActions>
             ) : (
               <>
                 <section className="review-submission-status" data-status={reviewStatus} aria-live="polite">
@@ -535,7 +540,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                   <p>You will be notified by email and Slack</p>
                   <p className="local-simulation-label">Local simulation</p>
                 </section>
-                <StageActions><SecondaryButton onClick={() => setStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Continue to Approval</PrimaryButton></StageActions>
+                <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Continue to Approval</PrimaryButton></StageActions>
               </>
             )}
           </>

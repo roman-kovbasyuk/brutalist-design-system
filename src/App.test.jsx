@@ -266,6 +266,30 @@ describe('Lingu Studio app', () => {
     expect(screen.getByTestId('review-banner-thumbnail')).toBeVisible()
   })
 
+  test('keeps persisted-only review navigation out of empty earlier stages', async () => {
+    const user = userEvent.setup()
+    writeReview('campaign-first-week', createPersistedReview('in-review'))
+    window.history.replaceState({}, '', '/campaign/campaign-first-week')
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: 'Waiting for designer review' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '5. Prepare for review: Review package' }))
+    expect(screen.getByRole('heading', { name: 'Prepare for review' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Back to banner preview' }))
+
+    expect(screen.getByRole('heading', { name: 'Prepare for review' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Banner preview' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Copy' })).not.toBeInTheDocument()
+
+    for (const number of [1, 2, 3, 4]) {
+      await user.click(screen.getByRole('button', { name: new RegExp(`^${number}\\.`) }))
+      expect(screen.getByRole('heading', { name: 'Prepare for review' })).toBeVisible()
+      expect(screen.queryByRole('heading', { name: 'Banner preview' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Copy' })).not.toBeInTheDocument()
+    }
+  })
+
   test('keeps the designer endpoint honest when no submitted package exists', () => {
     window.history.replaceState({}, '', '/designer/campaign-first-week')
     render(<App />)
