@@ -478,15 +478,6 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     })
   }
 
-  function downloadManifest() {
-    downloadPackage('lingu-studio-manifest.json', {
-      simulation: 'local',
-      kind: 'manifest',
-      review,
-      outputs: deliveryOutputs.map(serializeDeliveryOutput),
-    })
-  }
-
   function serializeDeliveryOutput({ banner, ...format }) {
     return {
       bannerId: banner.id,
@@ -656,7 +647,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 </article>
               ))}
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(6)}>Review</SecondaryButton><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton><PrimaryButton onClick={downloadManifest}><Download size={15} />Download manifest</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(6)}>Review</SecondaryButton><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
           </>
         )}
       </section>

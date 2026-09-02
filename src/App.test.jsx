@@ -579,7 +579,7 @@ describe('Lingu Studio app', () => {
     expect(within(productionSummary).getByText('Total assets: 4')).toBeVisible()
     expect(within(productionSummary).getByText('Total simulated production cost: $0.12')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Download assets' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Download manifest' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Download manifest' })).not.toBeInTheDocument()
 
     const createObjectURL = vi.fn(() => 'blob:lingu-download')
     const revokeObjectURL = vi.fn()
@@ -591,10 +591,9 @@ describe('Lingu Studio app', () => {
     vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
     vi.stubGlobal('Blob', BlobMock)
     await user.click(screen.getByRole('button', { name: 'Download assets' }))
-    await user.click(screen.getByRole('button', { name: 'Download manifest' }))
-    expect(createObjectURL).toHaveBeenCalledTimes(2)
-    expect(revokeObjectURL).toHaveBeenCalledTimes(2)
-    expect(anchorClick).toHaveBeenCalledTimes(2)
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1)
+    expect(anchorClick).toHaveBeenCalledTimes(1)
     expect(JSON.parse(BlobMock.mock.calls[0][0][0]).assets[0]).toMatchObject({
       mediaType: 'static',
       motionPreset: { text: 'type-reveal' },
