@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, ClipboardCheck, Download, ExternalLink, Sparkles } from 'lucide-react'
 import { BannerPreview } from '../components/BannerPreview.jsx'
+import { ProcessingScreen } from '../components/ProcessingScreen.jsx'
 import { StepRail } from '../components/StepRail.jsx'
 import { TemplateCard } from '../components/TemplateCard.jsx'
 import { VisualArtwork } from '../components/VisualArtwork.jsx'
 import {
   analyzeBrief,
   createCreativeFingerprint,
+  generatePromptIdeas,
   generateVisuals,
   getContentWarnings,
   getResizeLayouts,
@@ -17,12 +19,23 @@ import { templates } from '../data/templates.js'
 
 const initialBrief = 'Launch a Norwegian language intensive for people planning to move to Oslo. Offer 15% off until Sunday. Show that learners can handle everyday conversations while still taking the course.'
 
+const analysisStates = [
+  'Analyzing the brief with AI',
+  'Identifying audience and offer',
+  'Creating copy for banners',
+  'Developing visual directions',
+  'Preparing image and video prompts',
+]
+const analysisPhaseDuration = 250
+
 export function WorkflowScreen({ requestedTemplate }) {
   const [step, setStep] = useState(1)
   const [maxStep, setMaxStep] = useState(1)
   const [brief, setBrief] = useState(initialBrief)
   const [error, setError] = useState('')
   const [strategy, setStrategy] = useState(null)
+  const [promptIdeas, setPromptIdeas] = useState([])
+  const [processing, setProcessing] = useState(null)
   const [visuals, setVisuals] = useState([])
   const [selectedVisualId, setSelectedVisualId] = useState(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState(requestedTemplate?.id ?? null)
@@ -40,6 +53,29 @@ export function WorkflowScreen({ requestedTemplate }) {
       setMaxStep(5)
     }
   }, [requestedTemplate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!processing) return undefined
+
+    const timerId = window.setTimeout(() => {
+      if (processing.activeIndex < analysisStates.length - 1) {
+        setProcessing((current) => current && { ...current, activeIndex: current.activeIndex + 1 })
+        return
+      }
+
+      const nextStrategy = processing.strategy
+      setStrategy(nextStrategy)
+      setPromptIdeas(generatePromptIdeas(nextStrategy))
+      setVisuals(generateVisuals(nextStrategy))
+      setSelectedVisualId(null)
+      setReviewStatus('ready')
+      setApprovedFingerprint(null)
+      setProcessing(null)
+      advance(2)
+    }, analysisPhaseDuration)
+
+    return () => window.clearTimeout(timerId)
+  }, [processing]) // The timer is replaced and cleared for every deterministic phase.
 
   const selectedVisual = visuals.find((visual) => visual.id === selectedVisualId)
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId)
@@ -63,13 +99,8 @@ export function WorkflowScreen({ requestedTemplate }) {
   function handleAnalyze() {
     try {
       const nextStrategy = analyzeBrief(brief)
-      setStrategy(nextStrategy)
-      setVisuals(generateVisuals(nextStrategy))
-      setSelectedVisualId(null)
-      setReviewStatus('ready')
-      setApprovedFingerprint(null)
       setError('')
-      advance(2)
+      setProcessing({ strategy: nextStrategy, activeIndex: 0 })
     } catch (nextError) {
       setError(nextError.message)
     }
@@ -86,6 +117,8 @@ export function WorkflowScreen({ requestedTemplate }) {
   function updateBrief(value) {
     setBrief(value)
     setStrategy(null)
+    setPromptIdeas([])
+    setProcessing(null)
     setVisuals([])
     setSelectedVisualId(null)
     setSelectedTemplateId(null)
@@ -137,9 +170,10 @@ export function WorkflowScreen({ requestedTemplate }) {
 
   return (
     <div className="workflow-layout">
-      <StepRail currentStep={step} maxStep={maxStep} onStepChange={setStep} />
-      <section className="workflow-stage" key={step}>
-        {step === 1 && (
+      <StepRail currentStep={processing ? null : step} maxStep={maxStep} onStepChange={setStep} />
+      <section className="workflow-stage" key={processing ? 'processing' : step}>
+        {processing && <ProcessingScreen states={analysisStates} activeIndex={processing.activeIndex} progress={(processing.activeIndex + 1) * 20} />}
+        {!processing && step === 1 && (
           <>
             <StageHeader count="01 / 07" title="Tell us your campaign idea" description="A free-form brief is the only required input. We’ll prepare the copy and prompts." />
             <div className="stage-grid stage-grid--brief">
@@ -159,14 +193,14 @@ export function WorkflowScreen({ requestedTemplate }) {
           </>
         )}
 
-        {step === 2 && strategy && (
+        {!processing && step === 2 && strategy && (
           <>
-            <StageHeader count="02 / 07" title="Message and prompts" description="Review this interpretation of the brief. You can edit the copy before generating visuals." />
-            <div className="strategy-summary">
-              <MetaBlock label="Audience" value={strategy.audience} />
-              <MetaBlock label="Objective" value={strategy.goal} />
-              <MetaBlock label="Offer" value={strategy.offer} />
-            </div>
+            <StageHeader count="02 / 07" title="Copy" description="Review this interpretation of the brief. You can edit the copy before generating visuals." />
+            <dl className="strategy-summary">
+              <DescriptionRow label="Audience" value={strategy.audience} />
+              <DescriptionRow label="Objective" value={strategy.goal} />
+              <DescriptionRow label="Offer" value={strategy.offer} />
+            </dl>
             <div className="copy-editor">
               <TextField label="Headline" value={strategy.headline} onChange={(value) => updateStrategy('headline', value)} />
               <TextField label="Body copy" value={strategy.body} onChange={(value) => updateStrategy('body', value)} multiline />
@@ -312,6 +346,10 @@ function SecondaryButton({ children, ...props }) {
 
 function MetaBlock({ label, value }) {
   return <div className="meta-block"><span>{label}</span><strong>{value}</strong></div>
+}
+
+function DescriptionRow({ label, value }) {
+  return <div className="strategy-summary__row"><dt>{label}</dt><dd>{value}</dd></div>
 }
 
 function TextField({ label, value, onChange, multiline = false }) {

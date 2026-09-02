@@ -2,12 +2,12 @@ import { Check } from 'lucide-react'
 
 export const steps = [
   ['Brief', 'Campaign idea'],
-  ['Copy', 'Message and prompts'],
-  ['Visuals', 'Five directions'],
-  ['Template', 'Composition'],
-  ['Assembly', 'Draft master'],
-  ['Review', 'Figma review'],
-  ['Delivery', 'Four formats'],
+  ['Copy', 'Audience, offer, and copy'],
+  ['AI assets', 'Prompts, static, and video'],
+  ['Banner preview', 'Select banner drafts'],
+  ['Prepare for review', 'Review package'],
+  ['Approval', 'Marketer confirmation'],
+  ['Delivery', 'Assets and manifest'],
 ]
 
 export function StepRail({ currentStep, maxStep, onStepChange }) {

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import App from './App.jsx'
@@ -46,6 +46,34 @@ describe('Lingu Studio app', () => {
 
     expect(window.location.pathname).toBe('/campaign/campaign-oslo-intensive')
     expect(screen.getByLabelText('Campaign idea')).toBeVisible()
+  })
+
+  test('shows determinate local brief processing before opening Copy', async () => {
+    vi.useFakeTimers()
+    try {
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Campaign' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Analyze brief' }))
+
+      expect(screen.getByRole('progressbar', { name: 'Brief analysis progress' })).toHaveAttribute('aria-valuenow', '20')
+      expect(screen.getByText('Analyzing the brief with AI', { selector: '[aria-live]' })).toBeVisible()
+      expect(screen.queryByDisplayValue('Speak before you move')).not.toBeInTheDocument()
+
+      await act(async () => {
+        vi.advanceTimersByTime(250)
+      })
+      expect(screen.getByText('Identifying audience and offer', { selector: '[aria-live]' })).toBeVisible()
+
+      for (let phase = 0; phase < 4; phase += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(250)
+        })
+      }
+      expect(screen.getByDisplayValue('Speak before you move')).toBeVisible()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('routes supported pathnames and responds to browser navigation', async () => {
@@ -107,7 +135,7 @@ describe('Lingu Studio app', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Analyze brief' }))
 
-    expect(screen.getByDisplayValue('Speak before you move')).toBeVisible()
+    expect(await screen.findByDisplayValue('Speak before you move', {}, { timeout: 2000 })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Generate visuals' }))
 
     expect(screen.getAllByRole('button', { name: /Select visual/ })).toHaveLength(5)
@@ -152,7 +180,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('button', { name: 'Campaign' }))
 
     await user.click(screen.getByRole('button', { name: 'Analyze brief' }))
-    expect(screen.getByDisplayValue('Speak before you move')).toBeVisible()
+    expect(await screen.findByDisplayValue('Speak before you move', {}, { timeout: 2000 })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Templates' }))
     await user.click(screen.getByRole('button', { name: 'Campaign' }))
 
