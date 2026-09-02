@@ -117,7 +117,7 @@ export function AssetWorkspace({
                         <VisualArtwork visual={asset} />
                         <span className="asset-card__selection">{selectedStaticId === asset.id ? 'Selected for banner preview' : 'Select for banner preview'}</span>
                       </button>
-                      <div className="asset-card__details"><span>From prompt · {asset.title}</span><strong>{asset.name}</strong><small>Static visual · simulated locally</small></div>
+                      <div className="asset-card__details"><span>From prompt · {asset.title}</span><strong>{asset.name}</strong></div>
                       <button type="button" className="asset-card__video-action button button--primary" aria-label={hasVideo ? 'Video generated' : `Generate video from this image for ${formatCurrency(videoEstimate.unitCost)}`} onClick={() => onGenerateVideo(asset)} disabled={hasVideo}>
                         {hasVideo ? 'Video generated' : <><span>Generate video from this image</span><span>{formatCurrency(videoEstimate.unitCost)} per video</span></>}
                       </button>
