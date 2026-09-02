@@ -48,12 +48,6 @@ export function AppShell({ activeView, campaignId, onNavigate, children }) {
         </div>
       </aside>
       <main className="app-main">
-        <nav className="workspace-tabs" aria-label="Workspace">
-          <button type="button" data-active={activeView === 'dashboard'} onClick={() => onNavigate('/')}>Dashboards</button>
-          <button type="button" data-active={activeView === 'dashboard'} onClick={() => onNavigate('/')}>Dashboard</button>
-          <button type="button" data-active={activeView === 'system'} onClick={() => onNavigate('/system')}>System</button>
-          <button type="button" data-active={activeView === 'campaign'} onClick={() => onNavigate(`/campaign/${campaignId}`)}>Campaigns</button>
-        </nav>
         {children}
       </main>
     </div>

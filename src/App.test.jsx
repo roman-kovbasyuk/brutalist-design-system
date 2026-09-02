@@ -24,6 +24,7 @@ describe('Lingu Studio app', () => {
   test('shows the dashboard by default with the production metric strip', () => {
     render(<App />)
 
+    expect(screen.queryByRole('navigation', { name: 'Workspace' })).not.toBeInTheDocument()
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     expect(within(navigation).getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Campaign production' })).toBeVisible()

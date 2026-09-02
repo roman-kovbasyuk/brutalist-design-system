@@ -97,10 +97,6 @@
 .campaign-list__item:hover, .campaign-list__item[data-active="true"] { background: var(--surface-subtle); color: var(--ink); }
 .campaign-list__item:hover span, .campaign-list__item[data-active="true"] span { color: var(--ink); }
 
-.workspace-tabs { position: sticky; top: 0; z-index: 15; display: flex; gap: 4px; min-height: 52px; padding: 8px clamp(28px, 4vw, 64px); border-bottom: 1px solid var(--rule); background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(10px); }
-.workspace-tabs button { min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--secondary); font-size: 13px; font-weight: 620; cursor: pointer; }
-.workspace-tabs button:hover, .workspace-tabs button[data-active="true"] { background: var(--surface-subtle); color: var(--ink); }
-
 .workflow-anchor { display: block; height: 1px; scroll-margin-top: 72px; }
 .workflow-extra-section { display: grid; gap: 24px; padding-top: 42px; margin-top: 18px; border-top: 1px solid var(--rule); }
 .workflow-card { padding: 24px 24px 20px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--paper); box-shadow: 0 8px 24px rgba(29, 42, 67, 0.04); transition: opacity var(--duration-standard) var(--ease-standard), filter var(--duration-standard) var(--ease-standard); }
