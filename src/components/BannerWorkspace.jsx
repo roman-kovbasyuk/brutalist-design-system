@@ -112,7 +112,6 @@ export function BannerWorkspace({
     <section className="banner-workspace" aria-label="Banner preview workspace">
       <div className="banner-toolbar">
         <div className="banner-filter">
-          <span>Format</span>
           <FormatSelect value={filters.format} onChange={(value) => setFilter('format', value)} />
         </div>
         <label className="banner-filter banner-filter--platform">

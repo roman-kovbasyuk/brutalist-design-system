@@ -88,6 +88,7 @@ describe('BannerWorkspace', () => {
     const user = userEvent.setup()
     const { container } = render(<BannerWorkspaceHarness />)
 
+    expect(container.querySelector('.banner-filter:not(.banner-filter--platform) > span')).not.toBeInTheDocument()
     expect(container.querySelector('.banner-filter--platform > span')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('banner-candidate')).toHaveLength(1)
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
