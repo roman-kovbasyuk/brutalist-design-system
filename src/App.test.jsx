@@ -261,12 +261,18 @@ describe('Lingu Studio app', () => {
     expect(screen.getByRole('button', { name: '7. Delivery: Assets and manifest' })).toBeDisabled()
     expect(screen.getByRole('link', { name: 'Open designer review' })).toHaveAttribute('href', '/review/campaign-oslo-intensive')
 
+    const submittedReview = readReview('campaign-oslo-intensive')
     act(() => {
       writeReview('campaign-oslo-intensive', {
-        ...readReview('campaign-oslo-intensive'),
+        ...submittedReview,
         status: 'ready-for-approval',
         designerName: 'Avery Brooks',
         reviewedAt: '2026-09-02T09:15:00.000Z',
+        selectedBanners: submittedReview.selectedBanners.map(({ motionPreset, ...banner }) => banner),
+        motionByBannerId: {
+          ...submittedReview.motionByBannerId,
+          [submittedReview.selectedBanners[0].id]: { text: 'type-reveal' },
+        },
       })
     })
 

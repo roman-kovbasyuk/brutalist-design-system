@@ -35,3 +35,16 @@
 - GREEN: `npm test -- --run src/domain/reviewStore.test.js src/App.test.jsx` passed with 32 tests after the fixes. The focused download assertion required a test-double adjustment because this test environment's Blob does not expose `.text()`; the final test asserts the simulated JSON passed to the Blob constructor.
 - Full suite: `npm test -- --run` passed with 58 tests.
 - Build: `npm run build` completed successfully.
+
+## Fix round 2 — persisted-package sanitization
+
+- Reconstructed each persisted banner, template, visual, content block, motion preset, selected ID, and generated-asset record from safe primitive fields before UI consumption. Object-shaped values now become conservative strings/defaults or are dropped, preventing object-valued React children.
+- Hydrated legacy top-level `motionByBannerId` entries into selected banners that lack their own motion snapshot, so Delivery previews and simulated downloads retain approved motion.
+- Changed storage resolution to default only for `undefined`; explicit `null` storage remains unavailable rather than falling back to `window.localStorage`. Subscription options likewise avoid storage acquisition.
+
+### Fix-round evidence
+
+- RED: `npm test -- --run src/domain/reviewStore.test.js src/App.test.jsx` failed for unsafe banner/asset object fields and for missing legacy motion in the Delivery payload.
+- GREEN: `npm test -- --run src/domain/reviewStore.test.js src/App.test.jsx` passed with 34 tests, covering object-valued `templateName` and `content.headline`, explicit null storage, and legacy motion hydration.
+- Full suite: `npm test -- --run` passed with 60 tests.
+- Build: `npm run build` completed successfully.
