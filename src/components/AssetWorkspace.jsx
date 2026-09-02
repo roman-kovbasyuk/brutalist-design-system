@@ -86,8 +86,14 @@ export function AssetWorkspace({
                   </div>
                   <div className="prompt-row__action">
                     <p className="prompt-row__cost">{formatCurrency(prompt.estimatedStaticCost)} estimated cost</p>
-                    <button type="button" className="button button--secondary" onClick={() => onGenerateStatic(prompt)} disabled={created}>
-                      {created ? 'Generate static visual (already generated)' : `Generate static visual for ${prompt.title}`}
+                    <button
+                      type="button"
+                      className="button button--secondary"
+                      aria-label={created ? `Generate static visual for ${prompt.title} (already generated)` : `Generate static visual for ${prompt.title}`}
+                      onClick={() => onGenerateStatic(prompt)}
+                      disabled={created}
+                    >
+                      {created ? 'Generated' : 'Generate visual'}
                     </button>
                   </div>
                 </li>

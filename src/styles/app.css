@@ -818,9 +818,9 @@
 .prompt-row__content details { margin-top: 8px; color: var(--secondary); font-size: var(--text-meta); }
 .prompt-row__content summary { width: max-content; cursor: pointer; text-decoration: underline; text-decoration-color: var(--strong-rule); text-underline-offset: 3px; }
 .prompt-row__content details p { max-width: 70ch; margin: 8px 0 0; overflow-wrap: anywhere; line-height: 1.45; }
-.prompt-row__action { display: grid; justify-items: stretch; gap: 10px; min-width: 0; }
+.prompt-row__action { display: grid; justify-items: end; gap: 10px; min-width: 0; }
 .prompt-row__cost { margin: 0; color: var(--ink); font-size: var(--text-meta); font-weight: 700; text-align: right; }
-.prompt-row__action .button { width: 100%; padding-inline: 10px; font-size: var(--text-meta); }
+.prompt-row__action .button { width: auto; min-width: 132px; padding-inline: 12px; font-size: var(--text-meta); }
 
 @media (hover: hover) {
   .prompt-row:hover { background: #fafbfe; }
@@ -1556,7 +1556,7 @@ mark {
   .step-button small { display: none; }
   .prompt-row { grid-template-columns: minmax(180px, 0.72fr) minmax(320px, 1.4fr); }
   .prompt-row__action { display: flex; align-items: center; justify-content: flex-end; grid-column: 1 / -1; }
-  .prompt-row__action .button { width: auto; min-width: 220px; }
+  .prompt-row__action .button { width: auto; min-width: 132px; }
   .visual-grid { grid-template-columns: repeat(3, 1fr); }
   .asset-gallery { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
   .template-picker,
