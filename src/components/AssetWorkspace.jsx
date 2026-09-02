@@ -74,7 +74,7 @@ export function AssetWorkspace({
               return (
                 <article className="prompt-card" data-testid="prompt-card" key={prompt.id}>
                   <div><p className="prompt-card__number">Direction {prompt.id.replace('prompt-', '').replaceAll('-', ' ')}</p><h2>{prompt.title}</h2></div>
-                  <p className="prompt-card__direction">A <mark>{prompt.subject}</mark> <mark>{prompt.action}</mark>, shaped for the campaign message and clear copy space.</p>
+                  <p className="prompt-card__direction"><mark>{prompt.hero}</mark> <mark>{prompt.action}</mark>, shaped for the campaign message and clear copy space.</p>
                   <p className="prompt-card__cost">{formatCurrency(prompt.estimatedStaticCost)} estimated cost</p>
                   <details><summary>Full generated prompt</summary><p>{prompt.prompt}</p></details>
                   <button type="button" className="button button--secondary" onClick={() => onGenerateStatic(prompt)} disabled={created}>

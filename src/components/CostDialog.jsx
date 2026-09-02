@@ -25,10 +25,14 @@ export function CostDialog({ estimate, onCancel, onConfirm }) {
 
   return (
     <dialog ref={dialogRef} className="cost-dialog" aria-labelledby="video-cost-title" onCancel={handleCancel}>
-      <div className="cost-dialog__warning" aria-hidden="true">!</div>
-      <div>
-        <p className="cost-dialog__eyebrow">High-cost simulated generation</p>
-        <h2 id="video-cost-title">Confirm video generation cost</h2>
+      <div className="cost-dialog__content">
+        <header className="cost-dialog__header">
+          <div className="cost-dialog__warning" aria-hidden="true">!</div>
+          <div>
+            <p className="cost-dialog__eyebrow">High-cost simulated generation</p>
+            <h2 id="video-cost-title">Confirm video generation cost</h2>
+          </div>
+        </header>
         <p>Each motion asset is locally simulated, but this estimate models the higher production cost before you continue.</p>
         <dl className="cost-dialog__estimate">
           <div><dt>Eligible images</dt><dd>{imageLabel}</dd></div>

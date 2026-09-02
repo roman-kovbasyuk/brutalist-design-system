@@ -52,13 +52,21 @@ describe('campaign domain', () => {
     expect(prompts).toHaveLength(5)
     expect(prompts[0]).toMatchObject({
       id: 'prompt-nordic-portrait',
-      title: 'Nordic portrait',
-      subject: 'person',
-      action: 'in an urban setting',
+      title: 'Arrival portrait',
+      hero: 'A new Oslo resident',
+      subject: 'A new Oslo resident',
+      action: 'rehearses a first-day Norwegian greeting',
+      shot: 'Eye-level medium portrait · soft morning light',
       estimatedStaticCost: 0.12,
-      prompt:
-        'editorial campaign image, tactile natural light, clear subject separation, generous copy space, premium art direction, no text, no logos; direction 1: a person in an urban setting',
     })
+    expect(prompts.map((prompt) => prompt.title)).toEqual([
+      'Arrival portrait',
+      'Tram rehearsal',
+      'Café exchange',
+      'Everyday win',
+      'Evening recap',
+    ])
+    expect(prompts.every((prompt) => prompt.hero && prompt.action && prompt.prompt.includes(prompt.hero))).toBe(true)
     expect(new Set(prompts.map((prompt) => prompt.id)).size).toBe(5)
   })
 

@@ -94,6 +94,26 @@ describe('Lingu Studio app', () => {
     }
   })
 
+  test('presents five shot prompts with separately identified heroes and actions on Copy', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }))
+
+    try {
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Campaign' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Analyze brief' }))
+
+      const workbench = screen.getByRole('region', { name: 'Copy and shot planning' })
+      expect(within(workbench).getAllByTestId('shot-prompt')).toHaveLength(5)
+      expect(within(workbench).getAllByLabelText(/^Hero:/)).toHaveLength(5)
+      expect(within(workbench).getAllByLabelText(/^Action:/)).toHaveLength(5)
+      expect(within(workbench).getByText('Arrival portrait')).toBeVisible()
+      expect(within(workbench).getByText('Evening recap')).toBeVisible()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   test('shows five prompt directions with semantic tabs and marked subjects and actions', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -141,7 +161,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('tab', { name: 'Videos' }))
     expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: 'View source static visual Nordic portrait' }))
+    await user.click(screen.getByRole('button', { name: 'View source static visual Arrival portrait' }))
     expect(screen.getByRole('tab', { name: 'Static visuals' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByTestId('static-asset')).toHaveAttribute('data-selected', 'true')
 
@@ -184,6 +204,7 @@ describe('Lingu Studio app', () => {
     await user.click(bulkAction)
     const dialog = screen.getByRole('dialog', { name: 'Confirm video generation cost' })
     expect(showModal).toHaveBeenCalledTimes(1)
+    expect(dialog.querySelector(':scope > .cost-dialog__content')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
     expect(within(dialog).getByText('1 eligible image')).toBeVisible()
     expect(within(dialog).getByText('$1.80 per video')).toBeVisible()

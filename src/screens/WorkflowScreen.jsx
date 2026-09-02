@@ -4,6 +4,7 @@ import { BannerPreview } from '../components/BannerPreview.jsx'
 import { BannerWorkspace } from '../components/BannerWorkspace.jsx'
 import { ReviewWorkspace } from '../components/ReviewWorkspace.jsx'
 import { AssetWorkspace } from '../components/AssetWorkspace.jsx'
+import { CopyWorkspace } from '../components/CopyWorkspace.jsx'
 import { ProcessingScreen } from '../components/ProcessingScreen.jsx'
 import { StepRail } from '../components/StepRail.jsx'
 import {
@@ -460,21 +461,8 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
 
         {!processing && step === 2 && strategy && (
           <>
-            <StageHeader count="02 / 07" title="Copy" description="Review this interpretation of the brief. You can edit the copy before generating visuals." />
-            <dl className="strategy-summary">
-              <DescriptionRow label="Audience" value={strategy.audience} />
-              <DescriptionRow label="Objective" value={strategy.goal} />
-              <DescriptionRow label="Offer" value={strategy.offer} />
-            </dl>
-            <div className="copy-editor">
-              <TextField label="Headline" value={strategy.headline} onChange={(value) => updateStrategy('headline', value)} />
-              <TextField label="Body copy" value={strategy.body} onChange={(value) => updateStrategy('body', value)} multiline />
-              <TextField label="CTA" value={strategy.cta} onChange={(value) => updateStrategy('cta', value)} />
-            </div>
-            <div className="prompt-grid">
-              <PromptBlock label="Static image prompt" value={strategy.imagePrompt} />
-              <PromptBlock label="Video prompt" value={strategy.videoPrompt} />
-            </div>
+            <StageHeader count="02 / 07" title="Copy" description="Refine the campaign message and review five visual moments generated from the brief." />
+            <CopyWorkspace strategy={strategy} promptIdeas={promptIdeas} onCopyChange={updateStrategy} />
             <StageActions><SecondaryButton onClick={() => setStep(1)}>Back</SecondaryButton><PrimaryButton onClick={() => advance(3)}>Generate visuals</PrimaryButton></StageActions>
           </>
         )}
@@ -618,19 +606,6 @@ function PrimaryButton({ children, ...props }) {
 
 function SecondaryButton({ children, ...props }) {
   return <button className="button button--secondary" type="button" {...props}>{children}</button>
-}
-
-function DescriptionRow({ label, value }) {
-  return <div className="strategy-summary__row"><dt>{label}</dt><dd>{value}</dd></div>
-}
-
-function TextField({ label, value, onChange, multiline = false }) {
-  const id = `field-${label}`
-  return <label className="text-field" htmlFor={id}><span>{label}</span>{multiline ? <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} /> : <input id={id} value={value} onChange={(event) => onChange(event.target.value)} />}</label>
-}
-
-function PromptBlock({ label, value }) {
-  return <div className="prompt-block"><span>{label}</span><p>{value}</p></div>
 }
 
 function getProductionCost(assets) {

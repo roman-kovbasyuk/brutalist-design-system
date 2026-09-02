@@ -4,6 +4,22 @@ import { templates as templateLibrary } from '../data/templates.js'
 const staticImageCost = 0.12
 const videoCost = 1.8
 
+const languageShotDirections = [
+  { title: 'Arrival portrait', hero: 'A new Oslo resident', action: 'rehearses a first-day Norwegian greeting', shot: 'Eye-level medium portrait · soft morning light' },
+  { title: 'Tram rehearsal', hero: 'The learner by a tram window', action: 'practises asking for directions as Oslo moves past', shot: 'Three-quarter profile · gentle transit motion' },
+  { title: 'Café exchange', hero: 'Two coursemates at a neighbourhood café', action: 'order coffee in Norwegian with relaxed confidence', shot: 'Warm two-shot · candid documentary framing' },
+  { title: 'Everyday win', hero: 'The learner in a local grocery shop', action: 'asks where to find an everyday item', shot: 'Over-the-shoulder scene · clear human interaction' },
+  { title: 'Evening recap', hero: 'The learner at home after class', action: 'shares the story of a successful first conversation', shot: 'Intimate close portrait · blue-hour window light' },
+]
+
+const generalShotDirections = [
+  { title: 'First encounter', hero: 'A curious new customer', action: 'discovers the product in a calm everyday setting', shot: 'Eye-level medium portrait · soft natural light' },
+  { title: 'Product in motion', hero: 'The customer', action: 'uses the product while moving through their day', shot: 'Three-quarter profile · gentle camera travel' },
+  { title: 'Shared result', hero: 'Two customers', action: 'compare the result with visible confidence', shot: 'Warm two-shot · candid documentary framing' },
+  { title: 'Proof moment', hero: 'The customer in context', action: 'completes the key task with ease', shot: 'Over-the-shoulder scene · clear product interaction' },
+  { title: 'Satisfied close', hero: 'The customer at the end of the day', action: 'reflects on a simple, successful experience', shot: 'Intimate close portrait · quiet evening light' },
+]
+
 const bannerFormats = [
   { id: 'horizontal', label: 'Horizontal', dimensions: '1200×628', platform: 'Google Ads' },
   { id: 'vertical', label: 'Vertical', dimensions: '1080×1350', platform: 'SMM Static' },
@@ -60,18 +76,18 @@ export function generateVisuals(strategy) {
 }
 
 export function generatePromptIdeas(strategy) {
-  return visualSeeds.map((seed, index) => {
-    const direction = seed.direction.toLowerCase()
-    const [, action = direction] = direction.match(/^a person (.+)$/) ?? []
+  const isLanguageCampaign = /language|norwegian|move|moving|oslo|язык|норвеж|переезд|осло/i.test(strategy.sourceBrief ?? '')
+  const shots = isLanguageCampaign ? languageShotDirections : generalShotDirections
 
+  return visualSeeds.map((seed, index) => {
+    const shot = shots[index]
     return {
       ...seed,
+      ...shot,
       id: `prompt-${seed.id}`,
-      title: seed.name,
-      subject: seed.motif === 'portrait' ? 'person' : seed.motif,
-      action: seed.motif === 'portrait' ? action : direction,
+      subject: shot.hero,
       estimatedStaticCost: staticImageCost,
-      prompt: `${strategy.imagePrompt}; direction ${index + 1}: ${direction}`,
+      prompt: `${strategy.imagePrompt}; shot ${index + 1}: ${shot.hero} ${shot.action}; ${shot.shot.toLowerCase()}; preserve deliberate negative space for the campaign copy`,
     }
   })
 }
