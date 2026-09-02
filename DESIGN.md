@@ -2,7 +2,7 @@
 
 ## Direction
 
-An editorial production desk: white paper, black ink, fine rules, compact controls, and large typographic hierarchy. The interface recedes so campaign visuals remain the only color-bearing objects.
+A modern creative-operations SaaS: white canvas, precise neutral layers, compact data views, and restrained semantic color. The interface recedes so campaign visuals remain expressive, while indigo actions, yellow AI/review signals, and green approval states make the workflow immediately legible.
 
 ## Modes
 
@@ -12,29 +12,32 @@ An editorial production desk: white paper, black ink, fine rules, compact contro
 ## Typography
 
 - Display and UI: Inter, loaded locally through the system stack for the prototype.
-- Large headings use 600 weight, tight but never below `-0.04em` tracking.
-- Body copy is 14–16px with a comfortable 1.5 line height.
+- Page headings use a fixed 28–40px operating scale at 600 weight, tight but never below `-0.03em` tracking.
+- Body copy is 13–15px with a comfortable 1.5 line height.
 - Measurements and format labels use tabular numerals.
 
 ## Color
 
-- Canvas: `#f4f4f1`
+- Canvas: `#ffffff`
 - Surface: `#ffffff`
-- Ink: `#111111`
-- Secondary: `#666660`
-- Muted: `#a2a29b`
-- Rule: `#d9d9d2`
-- Strong rule: `#b9b9b1`
-- Success: `#1d6b43`
-- Warning: `#8a5a00`
+- Navigation: `#fafafa`
+- Ink: `#17171b`
+- Secondary: `#64646f`
+- Muted: `#9696a0`
+- Rule: `#e8e8ec`
+- Strong rule: `#d4d4da`
+- Accent: `#5b5bd6`
+- Success: `#27835b`
+- Warning: `#9a6500`
+- Highlight: `#ffe27a`
 - Error: `#9a2929`
 
 Generated campaign visuals may use color. Application chrome remains monochrome.
 
 ## Layout
 
-- Desktop shell: 248px navigation rail plus fluid workspace.
-- Workflow pages use a narrow 184px step rail and a flexible work area.
+- Desktop shell: 232px navigation rail plus fluid workspace.
+- Workflow pages use a compact horizontal stage tracker above a flexible work area.
 - Content max width: 1440px.
 - Major gaps: 32–48px; grouped controls: 8–16px.
 - Mobile collapses both rails into horizontal navigation and stacked content.
@@ -50,14 +53,16 @@ Generated campaign visuals may use color. Application chrome remains monochrome.
 
 ## Interaction
 
-- One authored transition: the work area crossfades and rises slightly when the workflow step advances.
-- Hover states increase border contrast and move thumbnails by at most 2px.
+- Screen and tab changes crossfade and rise 6–10px over 180–220ms.
+- Hover states increase border contrast and move interactive thumbnails by at most 2px.
+- AI text and in-review surfaces use a dynamic yellow wash; selected objects use an indigo outline.
+- Buttons move their trailing icon 2–3px on hover.
 - Loading generation shows progressive text states rather than a decorative spinner.
 - `prefers-reduced-motion` removes movement while retaining state changes.
 
 ## Copy
 
-Russian, concise, operational, and specific. Controls use actions: «Разобрать бриф», «Выбрать визуал», «Отправить на ревью», «Собрать пакет».
+English, concise, operational, and specific. Controls use explicit actions: “Analyze brief”, “Generate visual”, “Send to Figma for review”, and “Download assets”.
 
 ## Browser Surfaces
 
