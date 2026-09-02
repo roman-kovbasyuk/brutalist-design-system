@@ -1599,6 +1599,7 @@ mark {
 
 .format-select__trigger:hover { border-color: var(--accent); background: #fbfcff; }
 .format-select__trigger[aria-expanded="true"] { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.format-select__trigger > span { font-size: 14px; }
 .format-select__trigger svg:first-child { color: var(--secondary); }
 .format-select__chevron { justify-self: end; color: var(--muted); transition: transform var(--duration-fast) var(--ease-standard); }
 .format-select__trigger[aria-expanded="true"] .format-select__chevron { transform: rotate(180deg); }

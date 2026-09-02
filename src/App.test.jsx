@@ -19,6 +19,7 @@ describe('Lingu Studio app', () => {
     expect(tokenStyles).toMatch(/--content-max:\s*1400px;/)
     expect(appStyles).toMatch(/\.workflow-stage > \*\s*{[^}]*max-width:\s*var\(--content-max\);/)
     expect(appStyles).toMatch(/\.review-workspace\s*{[^}]*width:\s*100%;/)
+    expect(appStyles).toMatch(/\.format-select__trigger > span\s*{[^}]*font-size:\s*14px;/)
   })
 
   test('shows the dashboard by default with the production metric strip', () => {
