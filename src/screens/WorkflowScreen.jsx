@@ -48,6 +48,7 @@ export function WorkflowScreen({ requestedTemplate }) {
   const [bannerFilters, setBannerFilters] = useState({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
   const [selectedBannerIds, setSelectedBannerIds] = useState([])
   const [activeBannerId, setActiveBannerId] = useState(null)
+  const [pendingTemplateId, setPendingTemplateId] = useState(null)
   const [motionByBannerId, setMotionByBannerId] = useState({})
   const [reviewStatus, setReviewStatus] = useState('ready')
   const [figmaUrl, setFigmaUrl] = useState('https://figma.com/file/demo-lingu-studio')
@@ -56,13 +57,14 @@ export function WorkflowScreen({ requestedTemplate }) {
   useEffect(() => {
     if (!requestedTemplate?.id) return
     setSelectedTemplateId(requestedTemplate.id)
+    setPendingTemplateId(requestedTemplate.id)
     setActiveBannerId(null)
     setSelectedBannerIds([])
     setReviewStatus('ready')
     setApprovedFingerprint(null)
     if (strategy && selectedVisualId) {
       setStep(4)
-      setMaxStep((current) => Math.max(current, 4))
+      setMaxStep(4)
     }
   }, [requestedTemplate]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -104,7 +106,9 @@ export function WorkflowScreen({ requestedTemplate }) {
     videoAssets: linkedVideos,
   }), [strategy, selectedStaticVisual, linkedVideos])
   const selectedBanners = selectedBannerIds.map((id) => bannerCandidates.find((candidate) => candidate.id === id)).filter(Boolean)
-  const activeBanner = bannerCandidates.find((candidate) => candidate.id === activeBannerId) ?? selectedBanners[0] ?? null
+  const activeBanner = selectedBannerIds.includes(activeBannerId)
+    ? bannerCandidates.find((candidate) => candidate.id === activeBannerId)
+    : null
   const compatibilityBanner = activeBanner ?? selectedBanners[0] ?? null
   const selectedVisual = staticAssets.find((visual) => visual.id === (compatibilityBanner?.sourceStaticId ?? selectedVisualId))
   const videoEligibleAssets = staticAssets.filter((asset) => !videoAssets.some((video) => video.sourceStaticId === asset.id))
@@ -123,6 +127,17 @@ export function WorkflowScreen({ requestedTemplate }) {
   const figmaLinkIsValid = isValidFigmaUrl(figmaUrl.trim())
 
   useEffect(() => {
+    if (!pendingTemplateId || bannerCandidates.length === 0) return
+    const candidate = bannerCandidates.find((item) => item.templateId === pendingTemplateId && item.mediaType === bannerFilters.media)
+      ?? bannerCandidates.find((item) => item.templateId === pendingTemplateId)
+    if (!candidate) return
+
+    setBannerFilters({ format: candidate.format, platform: candidate.platform, media: candidate.mediaType })
+    setActiveBannerId(candidate.id)
+    setPendingTemplateId(null)
+  }, [bannerCandidates, bannerFilters.media, pendingTemplateId])
+
+  useEffect(() => {
     if (bannerCandidates.length === 0) {
       setActiveBannerId(null)
       return
@@ -139,8 +154,14 @@ export function WorkflowScreen({ requestedTemplate }) {
   }, [bannerCandidates, bannerFilters, selectedTemplateId])
 
   function advance(nextStep) {
+    if (nextStep === 5 && selectedBannerIds.length === 0) return
     setStep(nextStep)
     setMaxStep((current) => Math.max(current, nextStep))
+  }
+
+  function changeStep(nextStep) {
+    if (nextStep === 5 && selectedBannerIds.length === 0) return
+    setStep(nextStep)
   }
 
   function handleAnalyze() {
@@ -160,6 +181,7 @@ export function WorkflowScreen({ requestedTemplate }) {
     setAssetTab('prompts')
     setShowVideoCostDialog(false)
     setSelectedVisualId(null)
+    setPendingTemplateId(null)
     setSelectedBannerIds([])
     setActiveBannerId(null)
     setMotionByBannerId({})
@@ -179,6 +201,7 @@ export function WorkflowScreen({ requestedTemplate }) {
     setShowVideoCostDialog(false)
     setSelectedVisualId(null)
     setSelectedTemplateId(null)
+    setPendingTemplateId(null)
     setSelectedBannerIds([])
     setActiveBannerId(null)
     setMotionByBannerId({})
@@ -232,6 +255,14 @@ export function WorkflowScreen({ requestedTemplate }) {
     setApprovedFingerprint(null)
   }
 
+  function updateSelectedBanners(nextBannerIds) {
+    setSelectedBannerIds(nextBannerIds)
+    if (nextBannerIds.length === 0) {
+      setMaxStep((current) => Math.min(current, 4))
+      setStep((current) => Math.min(current, 4))
+    }
+  }
+
   function updateBannerMotion(bannerId, channel, preset) {
     setMotionByBannerId((current) => ({
       ...current,
@@ -282,7 +313,7 @@ export function WorkflowScreen({ requestedTemplate }) {
 
   return (
     <div className="workflow-layout">
-      <StepRail currentStep={processing ? null : step} maxStep={maxStep} onStepChange={setStep} />
+      <StepRail currentStep={processing ? null : step} maxStep={maxStep} onStepChange={changeStep} />
       <section className="workflow-stage" key={processing ? 'processing' : step}>
         {processing && <ProcessingScreen states={analysisStates} activeIndex={processing.activeIndex} progress={(processing.activeIndex + 1) * 20} />}
         {!processing && step === 1 && (
@@ -362,7 +393,7 @@ export function WorkflowScreen({ requestedTemplate }) {
               filters={bannerFilters}
               onFiltersChange={setBannerFilters}
               selectedBannerIds={selectedBannerIds}
-              onSelectedBannerIdsChange={setSelectedBannerIds}
+              onSelectedBannerIdsChange={updateSelectedBanners}
               activeBannerId={activeBannerId}
               onActiveBannerChange={selectBannerCandidate}
               motionByBannerId={motionByBannerId}

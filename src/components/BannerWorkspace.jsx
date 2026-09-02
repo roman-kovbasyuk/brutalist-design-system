@@ -1,15 +1,15 @@
 import { LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { BannerPreview } from './BannerPreview.jsx'
 
 const formatOptions = [
-  ['all', 'All formats'],
+  ['all', 'All'],
   ['Horizontal', 'Horizontal'],
   ['Vertical', 'Vertical'],
   ['Square', 'Square'],
 ]
 const platformOptions = [
-  ['all', 'All platforms'],
+  ['all', 'All'],
   ['SMM Static', 'SMM Static'],
   ['Google Ads', 'Google Ads'],
   ['Video Reels', 'Video Reels'],
@@ -65,6 +65,12 @@ export function BannerWorkspace({
   const templateById = useMemo(() => new Map(templates.map((template) => [template.id, template])), [templates])
   const staticById = useMemo(() => new Map(staticAssets.map((asset) => [asset.id, asset])), [staticAssets])
   const videoById = useMemo(() => new Map(videoAssets.map((asset) => [asset.id, asset])), [videoAssets])
+
+  useEffect(() => {
+    if (!hasLinkedVideo && filters.media === 'video') {
+      onFiltersChange({ media: 'static', format: 'Vertical', platform: 'SMM Static' })
+    }
+  }, [filters.media, hasLinkedVideo, onFiltersChange])
 
   function setFilter(name, value) {
     onFiltersChange({ ...filters, [name]: value })

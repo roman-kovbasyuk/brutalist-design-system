@@ -28,7 +28,7 @@ export function BannerPreview({ template, visual, content = fallbackContent, rat
         </div>
       </div>
       <div className="banner-copy">
-        <div className={`motion-copy motion-copy--${motion.text}`} data-motion-preset={motion.text} key={`copy-${motion.text}-${motionVersion}`}>
+        <div className={`motion-copy motion-copy--${motion.text} ${currentTemplate.layout === 'type-led' ? 'motion-copy--type-led-distribution' : ''}`} data-motion-preset={motion.text} key={`copy-${motion.text}-${motionVersion}`}>
           <span className="banner-offer">{content.offer}</span>
           <h3>{content.headline}</h3>
           <p>{content.body}</p>

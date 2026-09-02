@@ -48,4 +48,13 @@ describe('BannerPreview', () => {
     expect(preview.querySelector('.motion-media')).toHaveClass('motion-media--pan-up')
     expect(preview.querySelector('.motion-cta')).toHaveClass('motion-cta--pulse')
   })
+
+  test('preserves the authored type-led copy distribution inside its motion wrapper', () => {
+    const typeLedTemplate = templates.find((template) => template.layout === 'type-led')
+    render(<BannerPreview template={typeLedTemplate} motionPreset={{ text: 'fade-up', image: 'soft-zoom', cta: 'pop-in' }} />)
+
+    const preview = screen.getByRole('article')
+    expect(preview).toHaveClass('banner--type-led')
+    expect(preview.querySelector('.motion-copy')).toHaveClass('motion-copy--type-led-distribution')
+  })
 })

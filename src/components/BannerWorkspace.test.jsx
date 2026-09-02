@@ -12,7 +12,12 @@ const candidates = [
   { id: 'banner-video-vertical', templateId: 'split-left', templateName: 'Split frame', format: 'Vertical', dimensions: '1080×1920', platform: 'Video Reels', mediaType: 'video', sourceAssetId: 'video-static-nordic', sourceStaticId: 'static-nordic' },
 ]
 
-function BannerWorkspaceHarness({ withVideo = true }) {
+const comparisonCandidates = [
+  candidates[0],
+  { id: 'banner-reverse-static-vertical', templateId: 'split-right', templateName: 'Reverse split', format: 'Vertical', dimensions: '1080×1350', platform: 'SMM Static', mediaType: 'static', sourceAssetId: 'static-nordic', sourceStaticId: 'static-nordic' },
+]
+
+function BannerWorkspaceHarness({ withVideo = true, candidateSet = candidates }) {
   const [filters, setFilters] = useState({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
   const [selectedBannerIds, setSelectedBannerIds] = useState([])
   const [activeBannerId, setActiveBannerId] = useState('banner-static-vertical')
@@ -34,7 +39,7 @@ function BannerWorkspaceHarness({ withVideo = true }) {
 
   return (
     <BannerWorkspace
-      candidates={withVideo ? candidates : candidates.filter((candidate) => candidate.mediaType === 'static')}
+      candidates={withVideo ? candidateSet : candidateSet.filter((candidate) => candidate.mediaType === 'static')}
       templates={templates}
       staticAssets={[{ id: 'static-nordic', name: 'Nordic portrait' }]}
       videoAssets={[{ id: 'video-static-nordic', name: 'Nordic portrait motion' }]}
@@ -59,6 +64,7 @@ describe('BannerWorkspace', () => {
 
     expect(screen.getAllByTestId('banner-candidate')).toHaveLength(1)
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
+    expect(screen.getAllByRole('option', { name: 'All' })).toHaveLength(2)
 
     await user.selectOptions(screen.getByLabelText('Format'), 'Horizontal')
     expect(screen.getByText('No banner compositions match these filters.')).toBeVisible()
@@ -78,6 +84,20 @@ describe('BannerWorkspace', () => {
 
     rerender(<BannerWorkspaceHarness withVideo />)
     expect(screen.getByRole('group', { name: 'Banner media' })).toBeVisible()
+  })
+
+  test('normalizes video filters when the selected static visual has no linked video', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<BannerWorkspaceHarness />)
+
+    await user.click(screen.getByRole('button', { name: 'Video' }))
+    expect(screen.getByLabelText('Platform')).toHaveValue('Video Reels')
+
+    rerender(<BannerWorkspaceHarness withVideo={false} />)
+    expect(screen.queryByRole('group', { name: 'Banner media' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Format')).toHaveValue('Vertical')
+    expect(screen.getByLabelText('Platform')).toHaveValue('SMM Static')
+    expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
   })
 
   test('keeps Figma assembly selections while filters change', async () => {
@@ -102,14 +122,45 @@ describe('BannerWorkspace', () => {
 
     await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
     const detail = screen.getByRole('region', { name: 'Banner detail preview' })
-    expect(within(detail).getByText('1080×1350')).toBeVisible()
-    expect(within(detail).getByText('Nordic portrait')).toBeVisible()
-    expect(within(detail).getByText('Static')).toBeVisible()
+    ;[
+      ['Template', 'Split frame'],
+      ['Dimensions', '1080×1350'],
+      ['Format', 'Vertical'],
+      ['Platform', 'SMM Static'],
+      ['Media type', 'Static'],
+      ['Source visual', 'Nordic portrait'],
+    ].forEach(([label, value]) => {
+      expect(within(detail).getByText(label)).toBeVisible()
+      expect(within(detail).getByText(value)).toBeVisible()
+    })
 
     await user.selectOptions(within(detail).getByLabelText('Text motion'), 'type-reveal')
     expect(within(detail).getByRole('article').querySelector('.motion-copy')).toHaveAttribute('data-motion-preset', 'type-reveal')
     const initialVersion = within(detail).getByRole('article').getAttribute('data-motion-version')
     fireEvent.click(within(detail).getByRole('button', { name: 'Replay motion' }))
     expect(within(detail).getByRole('article')).toHaveAttribute('data-motion-version', String(Number(initialVersion) + 1))
+  })
+
+  test('keeps text, image, and CTA motion independent for every banner', async () => {
+    const user = userEvent.setup()
+    render(<BannerWorkspaceHarness withVideo={false} candidateSet={comparisonCandidates} />)
+
+    await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
+    let detail = screen.getByRole('region', { name: 'Banner detail preview' })
+    await user.selectOptions(within(detail).getByLabelText('Text motion'), 'type-reveal')
+
+    await user.click(screen.getByRole('button', { name: /Open Reverse split, 1080×1350 preview/ }))
+    detail = screen.getByRole('region', { name: 'Banner detail preview' })
+    await user.selectOptions(within(detail).getByLabelText('Image motion'), 'pan-up')
+    await user.selectOptions(within(detail).getByLabelText('CTA motion'), 'pulse')
+    expect(within(detail).getByRole('article').querySelector('.motion-copy')).toHaveAttribute('data-motion-preset', 'fade-up')
+    expect(within(detail).getByRole('article').querySelector('.motion-media')).toHaveAttribute('data-motion-preset', 'pan-up')
+    expect(within(detail).getByRole('article').querySelector('.motion-cta')).toHaveAttribute('data-motion-preset', 'pulse')
+
+    await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
+    detail = screen.getByRole('region', { name: 'Banner detail preview' })
+    expect(within(detail).getByRole('article').querySelector('.motion-copy')).toHaveAttribute('data-motion-preset', 'type-reveal')
+    expect(within(detail).getByRole('article').querySelector('.motion-media')).toHaveAttribute('data-motion-preset', 'soft-zoom')
+    expect(within(detail).getByRole('article').querySelector('.motion-cta')).toHaveAttribute('data-motion-preset', 'pop-in')
   })
 })

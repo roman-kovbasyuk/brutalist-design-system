@@ -119,6 +119,7 @@ describe('Lingu Studio app', () => {
     expect(screen.getAllByTestId('static-asset')).toHaveLength(1)
     expect(within(staticAsset).getByText('$1.80 per video')).toBeVisible()
     await user.click(within(staticAsset).getByRole('button', { name: 'Generate video from this image for $1.80' }))
+    expect(within(staticAsset).getByRole('button', { name: 'Video generated' })).toBeDisabled()
     await user.click(screen.getByRole('tab', { name: 'Videos' }))
     expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
 
@@ -292,6 +293,73 @@ describe('Lingu Studio app', () => {
     expect(screen.getByRole('heading', { name: 'Banner preview' })).toBeVisible()
     expect(within(screen.getByRole('region', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Continue to prepare for review' })).toBeDisabled()
+  })
+
+  test('focuses a library template candidate after incompatible banner filters', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    const staticAction = screen.getAllByRole('button', { name: /Generate static visual/ })[0]
+    await user.click(staticAction)
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    await user.click(screen.getByRole('button', { name: 'Generate video from this image for $1.80' }))
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
+    await user.click(screen.getByRole('button', { name: 'Video' }))
+    await user.selectOptions(screen.getByLabelText('Format'), 'Horizontal')
+    expect(screen.getByText('No banner compositions match these filters.')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Templates' }))
+    await user.click(screen.getByRole('button', { name: 'Select template Reverse split' }))
+
+    expect(screen.getByLabelText('Format')).toHaveValue('Vertical')
+    expect(screen.getByLabelText('Platform')).toHaveValue('Video Reels')
+    expect(screen.getByRole('button', { name: 'Video' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(screen.getByRole('region', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
+  })
+
+  test('uses a selected banner rather than an unselected preview for Stage 5 compatibility', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: /Open Reverse split, 1080×1350 preview/ }))
+    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+
+    expect(screen.getByText('01 · Split frame')).toBeVisible()
+  })
+
+  test('closes the Stage 5 rail path after the last banner selection is cleared', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+    await user.click(screen.getByRole('button', { name: 'Back to banner preview' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+
+    expect(screen.getByRole('button', { name: '5. Prepare for review: Review package' })).toBeDisabled()
+  })
+
+  test('closes the Stage 5 rail path when a library choice replaces selected banners', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+    await user.click(screen.getByRole('button', { name: 'Templates' }))
+    await user.click(screen.getByRole('button', { name: 'Select template Reverse split' }))
+
+    expect(screen.getByRole('button', { name: '5. Prepare for review: Review package' })).toBeDisabled()
   })
 
   test('preserves campaign progress while visiting reference screens', async () => {
