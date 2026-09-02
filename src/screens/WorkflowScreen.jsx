@@ -1,23 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Check, ClipboardCheck, Download, ExternalLink, Sparkles } from 'lucide-react'
+import { ArrowRight, Check, Download, Sparkles } from 'lucide-react'
 import { BannerPreview } from '../components/BannerPreview.jsx'
 import { BannerWorkspace } from '../components/BannerWorkspace.jsx'
+import { ReviewWorkspace } from '../components/ReviewWorkspace.jsx'
 import { AssetWorkspace } from '../components/AssetWorkspace.jsx'
 import { ProcessingScreen } from '../components/ProcessingScreen.jsx'
 import { StepRail } from '../components/StepRail.jsx'
 import {
   analyzeBrief,
   createBannerCandidates,
-  createCreativeFingerprint,
   createStaticAsset,
   createVideoAsset,
   estimateVideoBatch,
   generatePromptIdeas,
-  getContentWarnings,
   getResizeLayouts,
-  isApprovalCurrent,
-  isValidFigmaUrl,
 } from '../domain/campaign.js'
+import { readReview, subscribeToReview, writeReview } from '../domain/reviewStore.js'
 import { templates } from '../data/templates.js'
 
 const initialBrief = 'Launch a Norwegian language intensive for people planning to move to Oslo. Offer 15% off until Sunday. Show that learners can handle everyday conversations while still taking the course.'
@@ -31,7 +29,7 @@ const analysisStates = [
 ]
 const analysisPhaseDuration = 250
 
-export function WorkflowScreen({ requestedTemplate }) {
+export function WorkflowScreen({ requestedTemplate, campaignId }) {
   const [step, setStep] = useState(1)
   const [maxStep, setMaxStep] = useState(1)
   const [brief, setBrief] = useState(initialBrief)
@@ -50,9 +48,7 @@ export function WorkflowScreen({ requestedTemplate }) {
   const [activeBannerId, setActiveBannerId] = useState(null)
   const [pendingTemplateId, setPendingTemplateId] = useState(null)
   const [motionByBannerId, setMotionByBannerId] = useState({})
-  const [reviewStatus, setReviewStatus] = useState('ready')
-  const [figmaUrl, setFigmaUrl] = useState('https://figma.com/file/demo-lingu-studio')
-  const [approvedFingerprint, setApprovedFingerprint] = useState(null)
+  const [review, setReview] = useState(() => readReview(campaignId))
 
   useEffect(() => {
     if (!requestedTemplate?.id) return
@@ -60,8 +56,7 @@ export function WorkflowScreen({ requestedTemplate }) {
     setPendingTemplateId(requestedTemplate.id)
     setActiveBannerId(null)
     setSelectedBannerIds([])
-    setReviewStatus('ready')
-    setApprovedFingerprint(null)
+    invalidateReview()
     if (strategy && selectedVisualId) {
       setStep(4)
       setMaxStep(4)
@@ -88,8 +83,7 @@ export function WorkflowScreen({ requestedTemplate }) {
       setSelectedBannerIds([])
       setActiveBannerId(null)
       setMotionByBannerId({})
-      setReviewStatus('ready')
-      setApprovedFingerprint(null)
+      invalidateReview()
       setProcessing(null)
       advance(2)
     }, analysisPhaseDuration)
@@ -113,18 +107,31 @@ export function WorkflowScreen({ requestedTemplate }) {
   const selectedVisual = staticAssets.find((visual) => visual.id === (compatibilityBanner?.sourceStaticId ?? selectedVisualId))
   const videoEligibleAssets = staticAssets.filter((asset) => !videoAssets.some((video) => video.sourceStaticId === asset.id))
   const videoEstimate = estimateVideoBatch(videoEligibleAssets)
-  const selectedTemplate = templates.find((template) => template.id === (compatibilityBanner?.templateId ?? selectedTemplateId))
-  const resizeLayouts = useMemo(() => getResizeLayouts(selectedTemplate), [selectedTemplate])
-  const copyWarnings = useMemo(() => getContentWarnings(strategy), [strategy])
-  const creativeFingerprint = createCreativeFingerprint({
-    brief,
-    strategy,
-    selectedVisualId,
-    selectedTemplateId,
-  })
-  const reviewIsCurrent = reviewStatus === 'approved' && isApprovalCurrent(approvedFingerprint, creativeFingerprint)
-  const visibleReviewStatus = reviewIsCurrent ? 'approved' : reviewStatus === 'in-review' ? 'in-review' : 'ready'
-  const figmaLinkIsValid = isValidFigmaUrl(figmaUrl.trim())
+  const reviewStatus = review?.status ?? 'draft'
+  const reviewBanners = useMemo(() => selectedBanners.map((candidate) => ({
+    ...candidate,
+    template: templates.find((template) => template.id === candidate.templateId),
+    visual: candidate.mediaType === 'video'
+      ? videoAssets.find((asset) => asset.id === candidate.sourceAssetId)
+      : staticAssets.find((asset) => asset.id === candidate.sourceAssetId),
+    content: {
+      headline: strategy?.headline ?? '',
+      body: strategy?.body ?? '',
+      offer: strategy?.offer ?? '',
+      cta: strategy?.cta ?? '',
+    },
+    motionPreset: motionByBannerId[candidate.id],
+  })), [motionByBannerId, selectedBanners, staticAssets, strategy, videoAssets])
+  const deliveryBanners = review?.selectedBanners ?? []
+  const deliveryOutputs = useMemo(() => deliveryBanners.flatMap((banner) => getResizeLayouts(banner.template).map((format) => ({ ...format, banner }))), [deliveryBanners])
+  const generatedAssets = review?.generatedAssets ?? [...staticAssets, ...videoAssets]
+  const productionCost = getProductionCost(generatedAssets)
+  const selectedVideoCount = deliveryBanners.filter((banner) => banner.mediaType === 'video').length
+
+  useEffect(() => {
+    setReview(readReview(campaignId))
+    return subscribeToReview(campaignId, setReview)
+  }, [campaignId])
 
   useEffect(() => {
     if (!pendingTemplateId || bannerCandidates.length === 0) return
@@ -155,13 +162,30 @@ export function WorkflowScreen({ requestedTemplate }) {
 
   function advance(nextStep) {
     if (nextStep === 5 && selectedBannerIds.length === 0) return
+    if (nextStep === 6 && reviewStatus === 'draft') return
+    if (nextStep === 7 && reviewStatus !== 'approved') return
     setStep(nextStep)
     setMaxStep((current) => Math.max(current, nextStep))
   }
 
   function changeStep(nextStep) {
     if (nextStep === 5 && selectedBannerIds.length === 0) return
+    if (nextStep === 6 && reviewStatus === 'draft') return
+    if (nextStep === 7 && reviewStatus !== 'approved') return
     setStep(nextStep)
+  }
+
+  function invalidateReview() {
+    if (!review || !['in-review', 'ready-for-approval', 'approved'].includes(review.status)) return
+    writeReview(campaignId, {
+      ...review,
+      status: 'draft',
+      invalidatedAt: new Date().toISOString(),
+      reviewedAt: null,
+      approvedAt: null,
+      designerName: null,
+      marketerName: null,
+    })
   }
 
   function handleAnalyze() {
@@ -175,6 +199,7 @@ export function WorkflowScreen({ requestedTemplate }) {
   }
 
   function updateStrategy(field, value) {
+    invalidateReview()
     setStrategy((current) => ({ ...current, [field]: value }))
     setStaticAssets([])
     setVideoAssets([])
@@ -185,12 +210,11 @@ export function WorkflowScreen({ requestedTemplate }) {
     setSelectedBannerIds([])
     setActiveBannerId(null)
     setMotionByBannerId({})
-    setReviewStatus('ready')
-    setApprovedFingerprint(null)
     setMaxStep((current) => Math.min(current, 2))
   }
 
   function updateBrief(value) {
+    invalidateReview()
     setBrief(value)
     setStrategy(null)
     setPromptIdeas([])
@@ -205,18 +229,15 @@ export function WorkflowScreen({ requestedTemplate }) {
     setSelectedBannerIds([])
     setActiveBannerId(null)
     setMotionByBannerId({})
-    setReviewStatus('ready')
-    setApprovedFingerprint(null)
     setMaxStep(1)
   }
 
   function selectVisual(visualId) {
+    invalidateReview()
     setSelectedVisualId(visualId)
     setSelectedBannerIds([])
     setActiveBannerId(null)
     setMotionByBannerId({})
-    setReviewStatus('ready')
-    setApprovedFingerprint(null)
     setMaxStep((current) => Math.min(current, 4))
   }
 
@@ -251,11 +272,10 @@ export function WorkflowScreen({ requestedTemplate }) {
     setActiveBannerId(candidateId)
     const candidate = bannerCandidates.find((item) => item.id === candidateId)
     if (candidate) setSelectedTemplateId(candidate.templateId)
-    setReviewStatus('ready')
-    setApprovedFingerprint(null)
   }
 
   function updateSelectedBanners(nextBannerIds) {
+    if (nextBannerIds.join('|') !== selectedBannerIds.join('|')) invalidateReview()
     setSelectedBannerIds(nextBannerIds)
     if (nextBannerIds.length === 0) {
       setMaxStep((current) => Math.min(current, 4))
@@ -264,6 +284,7 @@ export function WorkflowScreen({ requestedTemplate }) {
   }
 
   function updateBannerMotion(bannerId, channel, preset) {
+    invalidateReview()
     setMotionByBannerId((current) => ({
       ...current,
       [bannerId]: {
@@ -284,31 +305,65 @@ export function WorkflowScreen({ requestedTemplate }) {
     }))
   }
 
-  function approveReview() {
-    setReviewStatus('approved')
-    setApprovedFingerprint(creativeFingerprint)
+  function submitReviewPackage() {
+    const submittedAt = new Date().toISOString()
+    const packageRecord = {
+      status: 'in-review',
+      figmaUrl: `https://www.figma.com/file/${campaignId}/lingu-studio-review`,
+      selectedBanners: reviewBanners,
+      selectedBannerIds: reviewBanners.map((banner) => banner.id),
+      motionByBannerId: reviewBanners.reduce((allMotion, banner) => ({
+        ...allMotion,
+        [banner.id]: banner.motionPreset ?? {},
+      }), {}),
+      generatedAssets: [...staticAssets, ...videoAssets],
+      submittedAt,
+      reviewedAt: null,
+      approvedAt: null,
+      designerName: null,
+      marketerName: null,
+      simulation: 'local',
+    }
+    writeReview(campaignId, packageRecord)
+    setMaxStep((current) => Math.max(current, 6))
   }
 
-  function downloadManifest() {
-    const payload = {
-      version: 1,
-      brief,
-      strategy,
-      selectedVisual,
-      selectedTemplate,
-      review: {
-        status: visibleReviewStatus,
-        figmaUrl,
-        approvedFingerprint,
-      },
-      outputs: resizeLayouts,
-    }
+  function confirmReview() {
+    if (reviewStatus !== 'ready-for-approval' || !review) return
+    writeReview(campaignId, {
+      ...review,
+      status: 'approved',
+      marketerName: 'Maya Chen',
+      approvedAt: new Date().toISOString(),
+    })
+    setMaxStep(7)
+    setStep(7)
+  }
+
+  function downloadPackage(filename, payload) {
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }))
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'lingu-studio-campaign.json'
+    anchor.download = filename
     anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  function downloadAssets() {
+    downloadPackage('lingu-studio-simulated-assets.json', {
+      simulation: 'local',
+      kind: 'simulated-assets',
+      assets: deliveryOutputs.map(({ banner, ...format }) => ({ bannerId: banner.id, ...format })),
+    })
+  }
+
+  function downloadManifest() {
+    downloadPackage('lingu-studio-manifest.json', {
+      simulation: 'local',
+      kind: 'manifest',
+      review,
+      outputs: deliveryOutputs.map(({ banner, ...format }) => ({ bannerId: banner.id, ...format })),
+    })
   }
 
   return (
@@ -404,85 +459,77 @@ export function WorkflowScreen({ requestedTemplate }) {
           </>
         )}
 
-        {step === 5 && selectedTemplate && selectedBannerIds.length > 0 && (
+        {step === 5 && reviewBanners.length > 0 && (
           <>
-            <StageHeader count="05 / 07" title="Prepare for review" description="The active selected banner is shown here while the review packet workflow is integrated." />
-            <div className="assembly-grid">
-              <div className="master-preview"><BannerPreview template={selectedTemplate} visual={selectedVisual} content={strategy} /></div>
-              <aside className="assembly-spec">
-                <p className="spec-title">Assembly</p>
-                <MetaBlock label="Template" value={`${String(selectedTemplate.index).padStart(2, '0')} · ${selectedTemplate.name}`} />
-                <MetaBlock label="Visual" value={selectedVisual?.name} />
-                <MetaBlock label="Master" value={selectedTemplate.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
-                <MetaBlock label="Motion" value={selectedTemplate.motion} />
-                {copyWarnings.length === 0 ? (
-                  <div className="check-list"><p><Check size={15} /> Automated check: copy is within limits</p><p>A designer will verify contrast and safe zones</p></div>
-                ) : (
-                  <div className="content-warning" role="alert"><AlertTriangle size={17} /><div><strong>Copy needs attention</strong>{copyWarnings.map((warning) => <span key={warning}>{warning}</span>)}</div></div>
-                )}
-              </aside>
-            </div>
-            <StageActions><SecondaryButton onClick={() => setStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Prepare Figma packet</PrimaryButton></StageActions>
+            <StageHeader count="05 / 07" title="Prepare for review" description="Review every selected banner before sending the immutable local package to the designer endpoint." />
+            <ReviewWorkspace banners={reviewStatus === 'draft' ? reviewBanners : deliveryBanners} status={reviewStatus} />
+            {reviewStatus === 'draft' ? (
+              <StageActions><SecondaryButton onClick={() => setStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={submitReviewPackage}>Send to Figma for review</PrimaryButton></StageActions>
+            ) : (
+              <>
+                <section className="review-submission-status" data-status={reviewStatus} aria-live="polite">
+                  <strong>{reviewStatus === 'in-review' ? 'In review' : reviewStatus === 'ready-for-approval' ? 'Ready for approval' : 'Approved'}</strong>
+                  <a className="review-figma-link" href={review?.figmaUrl} target="_blank" rel="noreferrer">Open Figma review</a>
+                  <p>You will be notified by email and Slack</p>
+                  <p className="local-simulation-label">Local simulation</p>
+                </section>
+                <StageActions><SecondaryButton onClick={() => setStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Continue to Approval</PrimaryButton></StageActions>
+              </>
+            )}
           </>
         )}
 
         {step === 6 && (
           <>
-            <StageHeader count="06 / 07" title="Designer review" description="Final rendering stays locked until a designer reviews the master in Figma." />
-            <section className="review-packet" aria-label="Review packet">
-              <header><span>Review packet · local simulation</span><code>{selectedTemplate?.id}</code></header>
-              <div className="review-packet-meta">
-                <ReviewField label="Template" value={selectedTemplate?.name} />
-                <ReviewField label="Visual" value={selectedVisual?.name} />
-                <ReviewField label="Master" value={selectedTemplate?.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
-              </div>
-              <div className="review-packet-copy">
-                <ReviewField label="Source brief" value={brief} wide />
-                <ReviewField label="Headline" value={strategy?.headline} />
-                <ReviewField label="Offer" value={strategy?.offer} />
-                <ReviewField label="Body copy" value={strategy?.body} wide />
-                <ReviewField label="CTA" value={strategy?.cta} />
-              </div>
-              <div className="review-packet-prompts">
-                <ReviewField label="Static image prompt" value={strategy?.imagePrompt} />
-                <ReviewField label="Video prompt" value={strategy?.videoPrompt} />
-              </div>
+            <StageHeader count="06 / 07" title="Approval" description="The marketer confirms the designer’s locally persisted review before delivery is unlocked." />
+            <section className="approval-panel" data-status={reviewStatus} aria-live="polite">
+              {reviewStatus === 'ready-for-approval' ? (
+                <>
+                  <span className="status-label">Ready for approval</span>
+                  <h2>Banners are ready for approval</h2>
+                  <p>Jordan Lee’s designer review is recorded. Confirming records Maya Chen as the marketer approver.</p>
+                  <PrimaryButton onClick={confirmReview}>Confirm review</PrimaryButton>
+                </>
+              ) : reviewStatus === 'approved' ? (
+                <>
+                  <span className="status-label">Approved</span>
+                  <h2>Review confirmed</h2>
+                  <p>Delivery is available for the current approved package.</p>
+                  <PrimaryButton onClick={() => advance(7)}>Open Delivery</PrimaryButton>
+                </>
+              ) : (
+                <>
+                  <span className="status-label">Waiting for designer</span>
+                  <h2>Waiting for designer review</h2>
+                  <p>The review package is in local simulation. Delivery remains locked until the designer marks it ready for approval.</p>
+                  <a className="button button--secondary" href={`/review/${campaignId}`}>Open designer review</a>
+                </>
+              )}
             </section>
-            <div className="review-panel" data-status={visibleReviewStatus} aria-live="polite">
-              <div className="review-icon"><ClipboardCheck size={24} aria-hidden="true" /></div>
-              <div>
-                <span className="status-label"><span className="status-dot" />{visibleReviewStatus === 'ready' ? 'Packet ready' : visibleReviewStatus === 'in-review' ? 'In review' : 'Approved'}</span>
-                <h2>{visibleReviewStatus === 'approved' ? 'Master approved by designer' : 'Composition and quality review'}</h2>
-                <p>{visibleReviewStatus === 'approved' ? 'The approved version becomes the source for final resizes.' : 'V1 simulation: the packet is not sent automatically. A designer reviews it in Figma and returns a link to the approved version.'}</p>
-                {visibleReviewStatus === 'in-review' && <label className="figma-field" htmlFor="figma-url"><span>Design file / version</span><input id="figma-url" value={figmaUrl} onChange={(event) => setFigmaUrl(event.target.value)} /></label>}
-              </div>
-              <div className="review-actions">
-                {visibleReviewStatus === 'ready' && <PrimaryButton onClick={() => setReviewStatus('in-review')}>Send for review</PrimaryButton>}
-                {visibleReviewStatus === 'in-review' && <PrimaryButton disabled={!figmaLinkIsValid} onClick={approveReview}>Confirm review</PrimaryButton>}
-                {visibleReviewStatus === 'approved' && <PrimaryButton onClick={() => advance(7)}>Build final package</PrimaryButton>}
-                <a href={figmaLinkIsValid ? figmaUrl.trim() : 'https://www.figma.com'} target="_blank" rel="noreferrer">Open Figma <ExternalLink size={14} /></a>
-              </div>
-            </div>
-            <div className="review-checks">
-              {['Composition', 'Contrast', 'Text overflow', 'Cropping', 'Motion'].map((item, index) => <span key={item}><i>{visibleReviewStatus === 'approved' ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</i>{item}</span>)}
-            </div>
-            <StageActions><SecondaryButton onClick={() => setStep(5)}>Back to master</SecondaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(5)}>Back to Prepare for review</SecondaryButton></StageActions>
           </>
         )}
 
-        {step === 7 && (
+        {step === 7 && reviewStatus === 'approved' && (
           <>
-            <StageHeader count="07 / 07" title="Package ready" description="Four compositions have been reflowed from the approved master. This is a browser preview of the final production job." />
-            <div className="delivery-summary"><span><Check size={17} />Designer approved</span><span>4 formats</span><span>Static + motion ready</span></div>
+            <StageHeader count="07 / 07" title="Delivery" description="Responsive production formats are generated locally from every approved selected banner." />
+            <ul className="delivery-summary" aria-label="Production summary">
+              <li><Check size={17} aria-hidden="true" />Designer reviewed: {review?.designerName ?? 'Not recorded'}</li>
+              <li>Marketer approved: {review?.marketerName ?? 'Not recorded'}</li>
+              <li>Formats: {new Set(deliveryOutputs.map((output) => output.label)).size}</li>
+              <li>Selected video count: {selectedVideoCount}</li>
+              <li>Total assets: {deliveryOutputs.length}</li>
+              <li>Total simulated production cost: {formatCurrency(productionCost)}</li>
+            </ul>
             <div className="resize-grid">
-              {resizeLayouts.map((format) => (
-                <article className="resize-output" key={format.size}>
-                  <div className="resize-preview-wrap"><BannerPreview template={selectedTemplate} visual={selectedVisual} content={strategy} ratio={format.ratio} resizeLayout={format.layout} compact /></div>
-                  <div><span>{format.label}</span><strong>{format.size}</strong><small>{format.layout}</small></div>
+              {deliveryOutputs.map(({ banner, ...format }) => (
+                <article className="resize-output" key={`${banner.id}-${format.size}`}>
+                  <div className="resize-preview-wrap"><BannerPreview template={banner.template} visual={banner.visual} content={banner.content} ratio={format.ratio} resizeLayout={format.layout} compact /></div>
+                  <div><span>{banner.templateName} · {format.label}</span><strong>{format.size}</strong><small>{format.layout}</small></div>
                 </article>
               ))}
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(6)}>Review</SecondaryButton><PrimaryButton onClick={downloadManifest}><Download size={15} />Download manifest</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(6)}>Review</SecondaryButton><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton><PrimaryButton onClick={downloadManifest}><Download size={15} />Download manifest</PrimaryButton></StageActions>
           </>
         )}
       </section>
@@ -506,10 +553,6 @@ function SecondaryButton({ children, ...props }) {
   return <button className="button button--secondary" type="button" {...props}>{children}</button>
 }
 
-function MetaBlock({ label, value }) {
-  return <div className="meta-block"><span>{label}</span><strong>{value}</strong></div>
-}
-
 function DescriptionRow({ label, value }) {
   return <div className="strategy-summary__row"><dt>{label}</dt><dd>{value}</dd></div>
 }
@@ -523,6 +566,13 @@ function PromptBlock({ label, value }) {
   return <div className="prompt-block"><span>{label}</span><p>{value}</p></div>
 }
 
-function ReviewField({ label, value, wide = false }) {
-  return <div className="review-field" data-wide={wide}><strong>{label}</strong><p>{value}</p></div>
+function getProductionCost(assets) {
+  const uniqueAssets = [...new Map(assets.map((asset) => [asset.id, asset])).values()]
+  const staticCount = uniqueAssets.filter((asset) => asset.mediaType === 'static').length
+  const videoCount = uniqueAssets.filter((asset) => asset.mediaType === 'video').length
+  return Number((staticCount * 0.12 + videoCount * 1.8).toFixed(2))
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
 }

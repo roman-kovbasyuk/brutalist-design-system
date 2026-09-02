@@ -12,7 +12,6 @@ const defaultCampaignId = campaignHistory[0].id
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname)
   const [requestedTemplate, setRequestedTemplate] = useState(null)
-  const [reviewStates, setReviewStates] = useState({})
   const route = getRoute(pathname)
   const activeCampaignId = route.campaignId ?? defaultCampaignId
 
@@ -39,17 +38,13 @@ export default function App() {
     navigate(`/campaign/${activeCampaignId}`)
   }
 
-  function markBannersReady(campaignId) {
-    setReviewStates((current) => ({ ...current, [campaignId]: 'ready-for-approval' }))
-  }
-
   return (
     <AppShell activeView={route.view} campaignId={activeCampaignId} onNavigate={navigate}>
       <div hidden={route.view !== 'dashboard'}><DashboardScreen onOpenCampaign={(campaignId) => navigate(`/campaign/${campaignId}`)} /></div>
-      <div hidden={route.view !== 'campaign'}><WorkflowScreen requestedTemplate={requestedTemplate} /></div>
+      <div hidden={route.view !== 'campaign'}><WorkflowScreen campaignId={activeCampaignId} requestedTemplate={requestedTemplate} /></div>
       <div hidden={route.view !== 'templates'}><TemplatesScreen onChoose={chooseTemplate} /></div>
       <div hidden={route.view !== 'system'}><DesignSystemScreen /></div>
-      {route.view === 'designer' && <DesignerReviewScreen campaign={getCampaign(route.campaignId)} reviewStatus={reviewStates[route.campaignId]} onMarkReady={() => markBannersReady(route.campaignId)} />}
+      {route.view === 'designer' && <DesignerReviewScreen campaign={getCampaign(route.campaignId)} campaignId={route.campaignId} />}
     </AppShell>
   )
 }
@@ -58,7 +53,7 @@ function getRoute(pathname) {
   const campaignMatch = pathname.match(/^\/campaign\/([^/]+)$/)
   if (campaignMatch) return { view: 'campaign', campaignId: campaignMatch[1] }
 
-  const designerMatch = pathname.match(/^\/designer\/([^/]+)$/)
+  const designerMatch = pathname.match(/^\/(?:designer|review)\/([^/]+)$/)
   if (designerMatch) return { view: 'designer', campaignId: designerMatch[1] }
 
   if (pathname === '/templates') return { view: 'templates' }

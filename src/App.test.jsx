@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import App from './App.jsx'
+import { readReview, writeReview } from './domain/reviewStore.js'
 
 describe('Lingu Studio app', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     window.history.replaceState({}, '', '/')
   })
 
@@ -194,28 +196,25 @@ describe('Lingu Studio app', () => {
     expect(await screen.findByRole('heading', { name: 'Design system' })).toBeVisible()
   })
 
-  test('shows the campaign workspace and simulated designer review for direct URLs', () => {
+  test('shows the campaign workspace and designer review alias for direct URLs', () => {
     window.history.replaceState({}, '', '/campaign/campaign-first-week')
     const { rerender } = render(<App />)
 
     expect(screen.getByLabelText('Campaign idea')).toBeVisible()
 
-    window.history.replaceState({}, '', '/designer/campaign-first-week')
+    window.history.replaceState({}, '', '/review/campaign-first-week')
     window.dispatchEvent(new PopStateEvent('popstate'))
     rerender(<App />)
 
     expect(screen.getByRole('heading', { name: 'Designer review' })).toBeVisible()
   })
 
-  test('marks designer banners ready through the local simulated review route', async () => {
+  test('keeps the designer endpoint honest when no submitted package exists', () => {
     window.history.replaceState({}, '', '/designer/campaign-first-week')
-    const user = userEvent.setup()
     render(<App />)
 
-    await user.click(screen.getByRole('button', { name: 'Mark banners ready' }))
-
-    expect(screen.getByText('Banners are ready for approval')).toBeVisible()
-    expect(screen.getByText(/Figma review is simulated locally/)).toBeVisible()
+    expect(screen.getByText('No banner package has been submitted for review yet.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Mark banners ready for approval' })).toBeDisabled()
   })
 
   test('exposes dashboard, campaign, templates, and design system as primary destinations', () => {
@@ -227,7 +226,7 @@ describe('Lingu Studio app', () => {
     expect(within(navigation).getByRole('button', { name: 'Design system' })).toBeVisible()
   })
 
-  test('completes the controlled flow and blocks final formats until approval', async () => {
+  test('waits for the designer store update, then records marketer approval before Delivery', async () => {
     const user = userEvent.setup()
     render(<App />)
 
@@ -254,23 +253,134 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
     await user.click(continueToReview)
 
-    expect(screen.getAllByText('Speak before you move').some((element) => !element.closest('[hidden]'))).toBe(true)
-    await user.click(screen.getByRole('button', { name: 'Prepare Figma packet' }))
-    const reviewPacket = screen.getByRole('region', { name: 'Review packet' })
-    expect(within(reviewPacket).getByText('split-left')).toBeVisible()
-    expect(within(reviewPacket).getByText(/Launch a Norwegian language intensive/)).toBeVisible()
-    expect(within(reviewPacket).getByText(/editorial campaign image/)).toBeVisible()
-    expect(within(reviewPacket).getByText(/vertical motion loop/)).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Send for review' }))
+    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+    await user.click(screen.getByRole('button', { name: 'Continue to Approval' }))
 
-    expect(screen.getAllByText('1200×628').every((element) => element.closest('[hidden]'))).toBe(true)
+    expect(screen.getByRole('heading', { name: 'Waiting for designer review' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '7. Delivery: Assets and manifest' })).toBeDisabled()
+    expect(screen.getByRole('link', { name: 'Open designer review' })).toHaveAttribute('href', '/review/campaign-oslo-intensive')
+
+    act(() => {
+      writeReview('campaign-oslo-intensive', {
+        ...readReview('campaign-oslo-intensive'),
+        status: 'ready-for-approval',
+        designerName: 'Jordan Lee',
+        reviewedAt: '2026-09-02T09:15:00.000Z',
+      })
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Banners are ready for approval' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Confirm review' }))
-    await user.click(screen.getByRole('button', { name: 'Build final package' }))
+
+    expect(screen.getByRole('heading', { name: 'Delivery' })).toBeVisible()
+    const productionSummary = screen.getByRole('list', { name: 'Production summary' })
+    expect(within(productionSummary).getByText('Designer reviewed: Jordan Lee')).toBeVisible()
+    expect(within(productionSummary).getByText('Marketer approved: Maya Chen')).toBeVisible()
+    expect(within(productionSummary).getByText('Formats: 4')).toBeVisible()
+    expect(within(productionSummary).getByText('Selected video count: 0')).toBeVisible()
+    expect(within(productionSummary).getByText('Total assets: 4')).toBeVisible()
+    expect(within(productionSummary).getByText('Total simulated production cost: $0.12')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Download assets' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Download manifest' })).toBeVisible()
+
+    const createObjectURL = vi.fn(() => 'blob:lingu-download')
+    const revokeObjectURL = vi.fn()
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    await user.click(screen.getByRole('button', { name: 'Download assets' }))
+    await user.click(screen.getByRole('button', { name: 'Download manifest' }))
+    expect(createObjectURL).toHaveBeenCalledTimes(2)
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2)
+    expect(anchorClick).toHaveBeenCalledTimes(2)
+    anchorClick.mockRestore()
+    vi.unstubAllGlobals()
 
     expect(screen.getAllByText('1080×1080').some((element) => !element.closest('[hidden]'))).toBe(true)
     expect(screen.getAllByText('1080×1350').some((element) => !element.closest('[hidden]'))).toBe(true)
     expect(screen.getAllByText('1080×1920').some((element) => !element.closest('[hidden]'))).toBe(true)
     expect(screen.getAllByText('1200×628').some((element) => !element.closest('[hidden]'))).toBe(true)
+  })
+
+  test('shows every selected banner in the Stage 5 review package and keeps the submitted state visible', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    await user.click(screen.getByRole('button', { name: 'Generate video from this image for $1.80' }))
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: 'Video' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+
+    expect(screen.getAllByTestId('review-banner-thumbnail')).toHaveLength(2)
+    const reviewTable = screen.getByRole('table', { name: 'Selected banners for review' })
+    expect(within(reviewTable).getAllByRole('row')).toHaveLength(3)
+    expect(within(reviewTable).getByRole('columnheader', { name: 'Banner' })).toBeVisible()
+    expect(within(reviewTable).getByRole('columnheader', { name: 'Dimensions' })).toBeVisible()
+    expect(within(reviewTable).getByRole('columnheader', { name: 'Platform' })).toBeVisible()
+    expect(within(reviewTable).getByRole('columnheader', { name: 'Media type' })).toBeVisible()
+    expect(within(reviewTable).getByRole('columnheader', { name: 'Motion' })).toBeVisible()
+    expect(screen.getAllByText('Video').find((element) => element.classList.contains('review-video-badge'))).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+
+    const reviewWorkspace = screen.getByRole('region', { name: 'Review package' })
+    expect(reviewWorkspace).toHaveAttribute('data-status', 'in-review')
+    expect(screen.getByRole('link', { name: 'Open Figma review' })).toHaveClass('review-figma-link')
+    expect(screen.getByText('You will be notified by email and Slack')).toBeVisible()
+    expect(screen.getByText('Local simulation')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue to Approval' })).toBeVisible()
+  })
+
+  test('lets only the designer endpoint move a submitted package to ready for approval', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+
+    window.history.pushState({}, '', '/designer/campaign-oslo-intensive')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+
+    expect(await screen.findByRole('heading', { name: 'Designer review' })).toBeVisible()
+    expect(screen.getAllByTestId('review-banner-thumbnail').filter((element) => !element.closest('[hidden]'))).toHaveLength(1)
+    expect(screen.getByLabelText('Reviewer name')).toHaveValue('Jordan Lee')
+    await user.click(screen.getByRole('button', { name: 'Mark banners ready for approval' }))
+
+    expect(screen.getAllByText('Ready for approval').find((element) => element.classList.contains('campaign-status') && !element.closest('[hidden]'))).toBeVisible()
+    expect(readReview('campaign-oslo-intensive')).toMatchObject({
+      status: 'ready-for-approval',
+      designerName: 'Jordan Lee',
+    })
+  })
+
+  test('invalidates a live review for copy changes but not for an unselected generation', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+
+    await user.click(screen.getByRole('button', { name: 'Back to banner preview' }))
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[1])
+    expect(readReview('campaign-oslo-intensive')).toMatchObject({ status: 'in-review' })
+
+    await user.click(screen.getByRole('button', { name: '2. Copy: Audience, offer, and copy' }))
+    await user.type(screen.getByLabelText('Headline'), ' updated')
+
+    expect(readReview('campaign-oslo-intensive')).toMatchObject({ status: 'draft' })
   })
 
   test('shows all twenty templates in the library view', async () => {
@@ -318,7 +428,7 @@ describe('Lingu Studio app', () => {
     expect(within(screen.getByRole('region', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
   })
 
-  test('uses a selected banner rather than an unselected preview for Stage 5 compatibility', async () => {
+  test('uses a selected banner rather than an unselected preview for Stage 5 review rows', async () => {
     const user = userEvent.setup()
     render(<App />)
 
@@ -329,7 +439,9 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('button', { name: /Open Reverse split, 1080×1350 preview/ }))
     await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
 
-    expect(screen.getByText('01 · Split frame')).toBeVisible()
+    const reviewTable = screen.getByRole('table', { name: 'Selected banners for review' })
+    expect(within(reviewTable).getByRole('rowheader', { name: 'Split frame' })).toBeVisible()
+    expect(within(reviewTable).queryByRole('rowheader', { name: 'Reverse split' })).not.toBeInTheDocument()
   })
 
   test('closes the Stage 5 rail path after the last banner selection is cleared', async () => {
