@@ -154,7 +154,9 @@ describe('Lingu Studio app', () => {
     await user.click(within(firstPrompt).getByRole('button', { name: /Generate static visual/ }))
     await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
 
+    const staticList = screen.getByRole('list', { name: 'Static visuals' })
     const staticAsset = screen.getByTestId('static-asset')
+    expect(within(staticList).getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getAllByTestId('static-asset')).toHaveLength(1)
     expect(within(staticAsset).getByText('$1.80 per video')).toBeVisible()
     await user.click(within(staticAsset).getByRole('button', { name: 'Generate video from this image for $1.80' }))
@@ -170,6 +172,24 @@ describe('Lingu Studio app', () => {
     await user.click(within(firstPrompt).getByRole('button', { name: /Generate static visual/ }))
     await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
     expect(screen.getAllByTestId('static-asset')).toHaveLength(1)
+  })
+
+  test('copies the full originating prompt from a static visual', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    await user.click(screen.getByRole('button', { name: 'Copy prompt for Arrival portrait' }))
+
+    expect(writeText).toHaveBeenCalledWith('editorial campaign image, tactile natural light, clear subject separation, generous copy space, premium art direction, no text, no logos; shot 1: A new Oslo resident rehearses a first-day Norwegian greeting; eye-level medium portrait · soft morning light; preserve deliberate negative space for the campaign copy')
+    expect(screen.getByRole('button', { name: 'Prompt copied for Arrival portrait' })).toBeVisible()
   })
 
   test('supports a keyboard-only flow to generate a video from a static visual', async () => {

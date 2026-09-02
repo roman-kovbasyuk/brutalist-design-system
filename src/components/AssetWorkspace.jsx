@@ -1,5 +1,5 @@
-import { Play } from 'lucide-react'
-import { useRef } from 'react'
+import { Check, Copy, Play } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { VisualArtwork } from './VisualArtwork.jsx'
 import { CostDialog } from './CostDialog.jsx'
 
@@ -31,6 +31,12 @@ export function AssetWorkspace({
   onConfirmVideoBatch,
 }) {
   const tabRefs = useRef({})
+  const [copiedPromptId, setCopiedPromptId] = useState(null)
+
+  async function copyPrompt(asset) {
+    await navigator.clipboard.writeText(asset.prompt)
+    setCopiedPromptId(asset.id)
+  }
 
   function moveTab(event) {
     const index = tabs.findIndex(([id]) => id === activeTab)
@@ -108,23 +114,37 @@ export function AssetWorkspace({
           <div className="asset-panel__intro"><p>Static visuals are local deterministic outputs linked to their originating prompt.</p><span>{staticAssets.length} generated</span></div>
           {staticAssets.length === 0 ? <EmptyState title="No static visuals yet" body="Generate a static visual from any prompt direction to build this gallery." /> : (
             <>
-              <div className="asset-gallery" aria-label="Static visuals gallery">
+              <ul className="static-asset-list" aria-label="Static visuals">
                 {staticAssets.map((asset) => {
                   const hasVideo = videoAssets.some((video) => video.sourceStaticId === asset.id)
+                  const promptCopied = copiedPromptId === asset.id
                   return (
-                    <article className="asset-card" data-testid="static-asset" data-selected={selectedStaticId === asset.id} key={asset.id}>
-                      <button type="button" className="asset-card__artwork" aria-pressed={selectedStaticId === asset.id} onClick={() => onSelectStatic(asset.id)}>
-                        <VisualArtwork visual={asset} />
-                        <span className="asset-card__selection">{selectedStaticId === asset.id ? 'Selected for banner preview' : 'Select for banner preview'}</span>
-                      </button>
-                      <div className="asset-card__details"><span>From prompt · {asset.title}</span><strong>{asset.name}</strong></div>
-                      <button type="button" className="asset-card__video-action button button--primary" aria-label={hasVideo ? 'Video generated' : `Generate video from this image for ${formatCurrency(videoEstimate.unitCost)}`} onClick={() => onGenerateVideo(asset)} disabled={hasVideo}>
-                        {hasVideo ? 'Video generated' : <><span>Generate video from this image</span><span>{formatCurrency(videoEstimate.unitCost)} per video</span></>}
-                      </button>
-                    </article>
+                    <li className="static-asset-row" data-testid="static-asset" data-selected={selectedStaticId === asset.id} key={asset.id}>
+                      <div className="static-asset-row__media">
+                        <button type="button" className="asset-card__artwork" aria-pressed={selectedStaticId === asset.id} onClick={() => onSelectStatic(asset.id)}>
+                          <VisualArtwork visual={asset} />
+                          <span className="asset-card__selection">{selectedStaticId === asset.id ? 'Selected' : 'Select'}</span>
+                        </button>
+                        <button type="button" className="static-asset-row__video-action button button--primary" aria-label={hasVideo ? 'Video generated' : `Generate video from this image for ${formatCurrency(videoEstimate.unitCost)}`} onClick={() => onGenerateVideo(asset)} disabled={hasVideo}>
+                          {hasVideo ? <><Check size={14} aria-hidden="true" /> Video generated</> : <><Play size={14} fill="currentColor" aria-hidden="true" /><span>Generate video</span><span>{formatCurrency(videoEstimate.unitCost)} per video</span></>}
+                        </button>
+                      </div>
+                      <div className="static-asset-row__details">
+                        <div><strong>{asset.title}</strong><span>{asset.name}</span></div>
+                        <button
+                          type="button"
+                          className="copy-prompt-action"
+                          aria-label={promptCopied ? `Prompt copied for ${asset.title}` : `Copy prompt for ${asset.title}`}
+                          onClick={() => copyPrompt(asset)}
+                        >
+                          {promptCopied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                          {promptCopied ? 'Prompt copied' : 'Copy prompt'}
+                        </button>
+                      </div>
+                    </li>
                   )
                 })}
-              </div>
+              </ul>
               <button type="button" className="button button--secondary asset-bulk-action" onClick={onRequestVideoBatch} disabled={videoEstimate.count === 0}>Generate videos for all images</button>
             </>
           )}
