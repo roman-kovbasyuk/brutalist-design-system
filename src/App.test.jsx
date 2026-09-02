@@ -578,6 +578,7 @@ describe('Lingu Studio app', () => {
     expect(within(productionSummary).getByText('Selected video count: 0')).toBeVisible()
     expect(within(productionSummary).getByText('Total assets: 4')).toBeVisible()
     expect(within(productionSummary).getByText('Total simulated production cost: $0.12')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download assets' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Download manifest' })).not.toBeInTheDocument()
 

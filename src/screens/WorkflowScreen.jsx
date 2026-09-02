@@ -647,7 +647,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 </article>
               ))}
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(6)}>Review</SecondaryButton><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
+            <StageActions><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
           </>
         )}
       </section>
