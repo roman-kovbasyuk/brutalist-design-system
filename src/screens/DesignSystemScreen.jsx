@@ -19,16 +19,16 @@ export function DesignSystemScreen() {
       <header className="page-header page-header--split">
         <div>
           <p className="page-context">Reference 01</p>
-          <h1>Дизайн-система</h1>
+          <h1>Design system</h1>
         </div>
         <p className="page-description">
-          Интерфейс остаётся нейтральным. Цвет, изображение и движение принадлежат креативу,
-          а не инструменту вокруг него.
+          The interface stays neutral. Color, imagery, and motion belong to the creative,
+          not the tool around it.
         </p>
       </header>
 
       <section className="system-section">
-        <div className="section-label"><span>01</span><h2>Цвет и поверхность</h2></div>
+        <div className="section-label"><span>01</span><h2>Color and surfaces</h2></div>
         <div className="color-strip">
           {colors.map(([name, value]) => (
             <div className="color-token" key={name}>
@@ -41,22 +41,22 @@ export function DesignSystemScreen() {
       </section>
 
       <section className="system-section type-section">
-        <div className="section-label"><span>02</span><h2>Типографика</h2></div>
+        <div className="section-label"><span>02</span><h2>Typography</h2></div>
         <div className="type-samples">
-          <div><span>Display / 72</span><p className="type-display">Одна идея.<br />Двадцать систем.</p></div>
-          <div><span>Body / 16</span><p className="type-body">Текст должен пережить ресайз, сохранить иерархию и остаться читаемым в каждом формате.</p></div>
+          <div><span>Display / 72</span><p className="type-display">One idea.<br />Twenty systems.</p></div>
+          <div><span>Body / 16</span><p className="type-body">Copy must survive every resize, preserve its hierarchy, and remain readable in each format.</p></div>
         </div>
       </section>
 
       <section className="system-section">
-        <div className="section-label"><span>03</span><h2>Контракт контента</h2></div>
-        <div className="contract-table" role="table" aria-label="Контракт баннера">
+        <div className="section-label"><span>03</span><h2>Content contract</h2></div>
+        <div className="contract-table" role="table" aria-label="Banner content contract">
           {[
-            ['headline', 'до 54 символов', 'обязательное'],
-            ['body', 'до 120 символов', 'обязательное'],
-            ['offer', 'до 28 символов', 'опциональное'],
-            ['cta', 'до 24 символов', 'обязательное'],
-            ['visual', 'image / video', 'обязательное'],
+            ['headline', 'up to 54 characters', 'required'],
+            ['body', 'up to 120 characters', 'required'],
+            ['offer', 'up to 28 characters', 'optional'],
+            ['cta', 'up to 24 characters', 'required'],
+            ['visual', 'image / video', 'required'],
           ].map((row) => (
             <div role="row" key={row[0]}>{row.map((cell) => <span role="cell" key={cell}>{cell}</span>)}</div>
           ))}
@@ -64,7 +64,7 @@ export function DesignSystemScreen() {
       </section>
 
       <section className="system-section">
-        <div className="section-label"><span>04</span><h2>Форматы</h2></div>
+        <div className="section-label"><span>04</span><h2>Formats</h2></div>
         <div className="format-system-grid">
           {formats.map(([label, size, ratio]) => (
             <div className="format-system-item" key={size}>
@@ -76,11 +76,11 @@ export function DesignSystemScreen() {
       </section>
 
       <section className="system-section">
-        <div className="section-label"><span>05</span><h2>Движение</h2></div>
+        <div className="section-label"><span>05</span><h2>Motion</h2></div>
         <div className="motion-rules">
-          <p><strong>Вход</strong><span>Один главный жест за сцену</span></p>
-          <p><strong>Ритм</strong><span>Текст следует сообщению, не декору</span></p>
-          <p><strong>Переход</strong><span>Композиция перестраивается, а не исчезает</span></p>
+          <p><strong>Entrance</strong><span>One primary gesture per scene</span></p>
+          <p><strong>Rhythm</strong><span>Motion follows the message, not decoration</span></p>
+          <p><strong>Transition</strong><span>The composition reflows instead of disappearing</span></p>
         </div>
       </section>
     </section>

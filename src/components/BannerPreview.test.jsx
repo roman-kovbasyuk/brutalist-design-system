@@ -22,6 +22,6 @@ describe('BannerPreview', () => {
     const storyTemplate = templates.find((template) => template.masterRatio === 'story')
     render(<TemplateCard template={storyTemplate} />)
 
-    expect(screen.getByRole('article', { name: /Превью шаблона/ })).toHaveStyle({ aspectRatio: '9 / 16' })
+    expect(screen.getByRole('article', { name: /Template preview/ })).toHaveStyle({ aspectRatio: '9 / 16' })
   })
 })

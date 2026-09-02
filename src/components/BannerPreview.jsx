@@ -1,10 +1,10 @@
 import { VisualArtwork } from './VisualArtwork.jsx'
 
 const fallbackContent = {
-  headline: 'Заговорите до переезда',
-  body: 'Практический норвежский для реальных разговоров.',
-  offer: '−15% на интенсив',
-  cta: 'Начать обучение',
+  headline: 'Speak before you move',
+  body: 'Practical Norwegian for real conversations.',
+  offer: '15% off the intensive',
+  cta: 'Start learning',
 }
 
 export function BannerPreview({ template, visual, content = fallbackContent, ratio, resizeLayout, compact = false }) {
@@ -14,7 +14,7 @@ export function BannerPreview({ template, visual, content = fallbackContent, rat
     <article
       className={`banner banner--${currentTemplate.layout} banner--${currentTemplate.alignment} ${resizeLayout ? `banner--format-${resizeLayout}` : ''} ${compact ? 'banner--compact' : ''}`}
       style={{ aspectRatio: effectiveRatio }}
-      aria-label={`Превью шаблона ${currentTemplate.name ?? ''}`}
+      aria-label={`Template preview ${currentTemplate.name ?? ''}`}
     >
       <div className="banner-media"><VisualArtwork visual={visual} compact /></div>
       <div className="banner-copy">

@@ -13,26 +13,26 @@ import { templates } from '../data/templates.js'
 
 describe('campaign domain', () => {
   test('rejects an empty brief so generation cannot silently invent a campaign', () => {
-    expect(() => analyzeBrief('   ')).toThrow('Добавьте идею кампании')
+    expect(() => analyzeBrief('   ')).toThrow('Add a campaign idea')
   })
 
   test('turns a free-form brief into usable campaign copy and media prompts', () => {
     const strategy = analyzeBrief(
-      'Запускаем интенсив норвежского языка. Скидка 15% до воскресенья для тех, кто переезжает в Осло.',
+      'Launch a Norwegian language intensive. Offer 15% off until Sunday for people moving to Oslo.',
     )
 
     expect(strategy).toMatchObject({
-      audience: 'Люди, которые планируют переезд и хотят быстрее заговорить',
-      offer: 'Скидка 15% на интенсив',
-      headline: 'Заговорите до переезда',
-      cta: 'Начать обучение',
+      audience: 'People planning to move who want to speak sooner',
+      offer: '15% off the intensive',
+      headline: 'Speak before you move',
+      cta: 'Start learning',
     })
     expect(strategy.imagePrompt).toContain('editorial campaign image')
     expect(strategy.videoPrompt).toContain('vertical motion loop')
   })
 
   test('generates exactly five client-selectable visual directions', () => {
-    const visuals = generateVisuals(analyzeBrief('Курс языка для переезда со скидкой 15%'))
+    const visuals = generateVisuals(analyzeBrief('A language course for moving abroad with 15% off'))
 
     expect(visuals).toHaveLength(5)
     expect(new Set(visuals.map((visual) => visual.id)).size).toBe(5)
@@ -63,10 +63,10 @@ describe('campaign domain', () => {
   })
 
   test('reports copy that exceeds the template content contract', () => {
-    expect(getContentWarnings({ headline: 'Очень длинный заголовок '.repeat(4), body: 'Коротко', cta: 'Начать', offer: '' })).toEqual([
-      'Заголовок длиннее 54 символов',
+    expect(getContentWarnings({ headline: 'A headline that is far too long for this banner layout '.repeat(2), body: 'Short', cta: 'Start', offer: '' })).toEqual([
+      'Headline exceeds 54 characters',
     ])
-    expect(getContentWarnings({ headline: 'Короткий заголовок', body: 'Коротко', cta: 'Начать', offer: '' })).toEqual([])
+    expect(getContentWarnings({ headline: 'Short headline', body: 'Short', cta: 'Start', offer: '' })).toEqual([])
   })
 
   test('binds approval to the exact creative that the designer reviewed', () => {

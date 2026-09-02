@@ -2,27 +2,27 @@ import { visualSeeds } from '../data/visuals.js'
 
 export function analyzeBrief(brief) {
   const normalized = brief?.trim()
-  if (!normalized) throw new Error('Добавьте идею кампании')
+  if (!normalized) throw new Error('Add a campaign idea')
 
-  const languageCampaign = /язык|норвеж|переезд|осло/i.test(normalized)
+  const languageCampaign = /language|norwegian|move|moving|oslo|язык|норвеж|переезд|осло/i.test(normalized)
   const percent = normalized.match(/\d+%/)?.[0] ?? '15%'
 
   const copy = languageCampaign
     ? {
-        audience: 'Люди, которые планируют переезд и хотят быстрее заговорить',
-        goal: 'Конверсия в запись на интенсив',
-        offer: `Скидка ${percent} на интенсив`,
-        headline: 'Заговорите до переезда',
-        body: 'Практический норвежский для реальных разговоров — от первой недели обучения.',
-        cta: 'Начать обучение',
+        audience: 'People planning to move who want to speak sooner',
+        goal: 'Convert viewers into intensive course sign-ups',
+        offer: `${percent} off the intensive`,
+        headline: 'Speak before you move',
+        body: 'Practical Norwegian for real conversations—from your first week.',
+        cta: 'Start learning',
       }
     : {
-        audience: 'Люди, которым нужен понятный и быстрый способ попробовать продукт',
-        goal: 'Получить целевые заявки из рекламной кампании',
-        offer: 'Специальное предложение для новых клиентов',
-        headline: 'Идея, которую хочется попробовать',
-        body: 'Понятная польза продукта, собранная в один короткий рекламный сюжет.',
-        cta: 'Узнать больше',
+        audience: 'People looking for a simple, fast way to try the product',
+        goal: 'Generate qualified campaign leads',
+        offer: 'Special offer for new customers',
+        headline: 'An idea worth trying',
+        body: 'Clear product value, shaped into one concise campaign story.',
+        cta: 'Learn more',
       }
 
   return {
@@ -63,14 +63,14 @@ export function getResizeLayouts(template) {
 
 export function getContentWarnings(content) {
   const limits = [
-    ['headline', 54, 'Заголовок'],
-    ['body', 120, 'Основной текст'],
-    ['offer', 28, 'Оффер'],
+    ['headline', 54, 'Headline'],
+    ['body', 120, 'Body copy'],
+    ['offer', 28, 'Offer'],
     ['cta', 24, 'CTA'],
   ]
   return limits
     .filter(([field, limit]) => (content?.[field]?.trim().length ?? 0) > limit)
-    .map(([, limit, label]) => `${label} длиннее ${limit} символов`)
+    .map(([, limit, label]) => `${label} exceeds ${limit} characters`)
 }
 
 export function createCreativeFingerprint({ brief, strategy, selectedVisualId, selectedTemplateId }) {

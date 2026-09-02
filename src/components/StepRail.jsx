@@ -1,19 +1,19 @@
 import { Check } from 'lucide-react'
 
 export const steps = [
-  ['Бриф', 'Идея кампании'],
-  ['Копирайт', 'Сообщение и промпты'],
-  ['Визуалы', 'Пять направлений'],
-  ['Шаблон', 'Композиция'],
-  ['Сборка', 'Черновой мастер'],
-  ['Ревью', 'Проверка в Figma'],
-  ['Результат', 'Четыре формата'],
+  ['Brief', 'Campaign idea'],
+  ['Copy', 'Message and prompts'],
+  ['Visuals', 'Five directions'],
+  ['Template', 'Composition'],
+  ['Assembly', 'Draft master'],
+  ['Review', 'Figma review'],
+  ['Delivery', 'Four formats'],
 ]
 
 export function StepRail({ currentStep, maxStep, onStepChange }) {
   return (
-    <nav className="step-rail" aria-label="Этапы кампании">
-      <p className="step-rail-title">Кампания</p>
+    <nav className="step-rail" aria-label="Campaign stages">
+      <p className="step-rail-title">Campaign</p>
       <ol>
         {steps.map(([label, detail], index) => {
           const number = index + 1

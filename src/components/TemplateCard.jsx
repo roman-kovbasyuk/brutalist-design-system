@@ -7,7 +7,7 @@ export function TemplateCard({ template, selected = false, onChoose, mode = 'lib
       <button
         type="button"
         className="template-card-button"
-        aria-label={`Выбрать шаблон ${template.name}`}
+        aria-label={`Select template ${template.name}`}
         aria-pressed={selected}
         onClick={() => onChoose?.(template.id)}
       >

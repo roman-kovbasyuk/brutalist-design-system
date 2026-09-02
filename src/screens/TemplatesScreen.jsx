@@ -10,16 +10,16 @@ export function TemplatesScreen({ onChoose }) {
     <section className="reference-screen">
       <header className="page-header page-header--split">
         <div>
-          <p className="page-context">Библиотека</p>
-          <h1>20 композиций.<br />Один контракт.</h1>
+          <p className="page-context">Library</p>
+          <h1>20 compositions.<br />One contract.</h1>
         </div>
         <p className="page-description">
-          Два мастер-соотношения, разные балансы текста и изображения. После ревью каждый шаблон
-          перестраивается под четыре рекламных формата.
+          Two master ratios with different balances of copy and imagery. After review, every template
+          reflows into four advertising formats.
         </p>
       </header>
 
-      <div className="filter-row" role="group" aria-label="Фильтр шаблонов">
+      <div className="filter-row" role="group" aria-label="Template filters">
         {templateFamilies.map((family) => (
           <button key={family.id} type="button" data-active={filter === family.id} onClick={() => setFilter(family.id)}>
             {family.label}

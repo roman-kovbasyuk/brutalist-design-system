@@ -15,7 +15,7 @@ import {
 } from '../domain/campaign.js'
 import { templates } from '../data/templates.js'
 
-const initialBrief = 'Запускаем интенсив норвежского языка для людей, которые собираются переехать в Осло. Скидка 15% до воскресенья. Нужно показать, что человек сможет говорить в бытовых ситуациях уже во время курса.'
+const initialBrief = 'Launch a Norwegian language intensive for people planning to move to Oslo. Offer 15% off until Sunday. Show that learners can handle everyday conversations while still taking the course.'
 
 export function WorkflowScreen({ requestedTemplate }) {
   const [step, setStep] = useState(1)
@@ -141,110 +141,110 @@ export function WorkflowScreen({ requestedTemplate }) {
       <section className="workflow-stage" key={step}>
         {step === 1 && (
           <>
-            <StageHeader count="01 / 07" title="Расскажите идею кампании" description="Свободный бриф — единственное обязательное поле. Копирайт и промпты система подготовит сама." />
+            <StageHeader count="01 / 07" title="Tell us your campaign idea" description="A free-form brief is the only required input. We’ll prepare the copy and prompts." />
             <div className="stage-grid stage-grid--brief">
               <div className="field-group field-group--large">
-                <label htmlFor="campaign-brief">Идея кампании</label>
+                <label htmlFor="campaign-brief">Campaign idea</label>
                 <textarea id="campaign-brief" value={brief} onChange={(event) => updateBrief(event.target.value)} />
-                <div className="field-meta"><span>{brief.length} символов</span><span>Можно писать в свободной форме</span></div>
+                <div className="field-meta"><span>{brief.length} characters</span><span>Write naturally</span></div>
                 {error && <p className="inline-error" role="alert">{error}</p>}
               </div>
               <aside className="brief-aside">
-                <p>Система найдёт</p>
-                <ul><li>аудиторию и цель</li><li>оффер и CTA</li><li>структуру сообщения</li><li>промпты для image/video</li></ul>
-                <span>Demo-mode использует локальный генератор. Данные никуда не отправляются.</span>
+                <p>The system will identify</p>
+                <ul><li>audience and objective</li><li>offer and CTA</li><li>message structure</li><li>image and video prompts</li></ul>
+                <span>Demo mode uses a local generator. Your data never leaves the browser.</span>
               </aside>
             </div>
-            <StageActions><PrimaryButton onClick={handleAnalyze}>Разобрать бриф</PrimaryButton></StageActions>
+            <StageActions><PrimaryButton onClick={handleAnalyze}>Analyze brief</PrimaryButton></StageActions>
           </>
         )}
 
         {step === 2 && strategy && (
           <>
-            <StageHeader count="02 / 07" title="Сообщение и промпты" description="Это рабочая интерпретация брифа. Текст можно поправить до генерации визуалов." />
+            <StageHeader count="02 / 07" title="Message and prompts" description="Review this interpretation of the brief. You can edit the copy before generating visuals." />
             <div className="strategy-summary">
-              <MetaBlock label="Аудитория" value={strategy.audience} />
-              <MetaBlock label="Цель" value={strategy.goal} />
-              <MetaBlock label="Оффер" value={strategy.offer} />
+              <MetaBlock label="Audience" value={strategy.audience} />
+              <MetaBlock label="Objective" value={strategy.goal} />
+              <MetaBlock label="Offer" value={strategy.offer} />
             </div>
             <div className="copy-editor">
-              <TextField label="Заголовок" value={strategy.headline} onChange={(value) => updateStrategy('headline', value)} />
-              <TextField label="Основной текст" value={strategy.body} onChange={(value) => updateStrategy('body', value)} multiline />
+              <TextField label="Headline" value={strategy.headline} onChange={(value) => updateStrategy('headline', value)} />
+              <TextField label="Body copy" value={strategy.body} onChange={(value) => updateStrategy('body', value)} multiline />
               <TextField label="CTA" value={strategy.cta} onChange={(value) => updateStrategy('cta', value)} />
             </div>
             <div className="prompt-grid">
               <PromptBlock label="Static image prompt" value={strategy.imagePrompt} />
               <PromptBlock label="Video prompt" value={strategy.videoPrompt} />
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(1)}>Назад</SecondaryButton><PrimaryButton onClick={() => advance(3)}>Создать визуалы</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(1)}>Back</SecondaryButton><PrimaryButton onClick={() => advance(3)}>Generate visuals</PrimaryButton></StageActions>
           </>
         )}
 
         {step === 3 && (
           <>
-            <StageHeader count="03 / 07" title="Выберите визуальное направление" description="Пять вариантов основаны на одном сообщении, но отличаются характером изображения и движением." />
+            <StageHeader count="03 / 07" title="Choose a visual direction" description="Five options use the same message but explore different imagery and motion." />
             <div className="visual-grid">
               {visuals.map((visual, index) => (
                 <article className="visual-option" data-selected={selectedVisualId === visual.id} key={visual.id}>
-                  <button type="button" aria-label={`Выбрать визуал ${visual.name}`} aria-pressed={selectedVisualId === visual.id} onClick={() => selectVisual(visual.id)}>
+                  <button type="button" aria-label={`Select visual ${visual.name}`} aria-pressed={selectedVisualId === visual.id} onClick={() => selectVisual(visual.id)}>
                     <VisualArtwork visual={visual} />
                     <span className="visual-option-meta"><span>{String(index + 1).padStart(2, '0')} · {visual.direction}</span><strong>{visual.name}</strong></span>
                   </button>
-                  <details><summary>Показать промпт</summary><p>{visual.prompt}</p></details>
+                  <details><summary>Show prompt</summary><p>{visual.prompt}</p></details>
                 </article>
               ))}
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(2)}>Назад</SecondaryButton><PrimaryButton disabled={!selectedVisualId} onClick={() => advance(4)}>Перейти к шаблонам</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(2)}>Back</SecondaryButton><PrimaryButton disabled={!selectedVisualId} onClick={() => advance(4)}>Choose a template</PrimaryButton></StageActions>
           </>
         )}
 
         {step === 4 && (
           <>
-            <StageHeader count="04 / 07" title="Выберите композицию" description="Шаблон определяет иерархию и баланс. Текст и выбранный визуал останутся теми же." />
+            <StageHeader count="04 / 07" title="Choose a composition" description="The template sets hierarchy and balance while keeping your copy and selected visual." />
             <div className="template-picker">
               {templates.map((template) => <TemplateCard key={template.id} template={template} selected={selectedTemplateId === template.id} onChoose={selectTemplate} mode="picker" />)}
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(3)}>Назад</SecondaryButton><PrimaryButton disabled={!selectedTemplateId} onClick={() => advance(5)}>Собрать черновик</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(3)}>Back</SecondaryButton><PrimaryButton disabled={!selectedTemplateId} onClick={() => advance(5)}>Build draft</PrimaryButton></StageActions>
           </>
         )}
 
         {step === 5 && selectedTemplate && (
           <>
-            <StageHeader count="05 / 07" title="Черновой мастер" description="Текст, визуал и композиция собраны. Сейчас это preview, а не финальный креатив." />
+            <StageHeader count="05 / 07" title="Draft master" description="Copy, visual, and composition are assembled. This is a preview, not the final creative." />
             <div className="assembly-grid">
               <div className="master-preview"><BannerPreview template={selectedTemplate} visual={selectedVisual} content={strategy} /></div>
               <aside className="assembly-spec">
-                <p className="spec-title">Сборка</p>
-                <MetaBlock label="Шаблон" value={`${String(selectedTemplate.index).padStart(2, '0')} · ${selectedTemplate.name}`} />
-                <MetaBlock label="Визуал" value={selectedVisual?.name} />
-                <MetaBlock label="Мастер" value={selectedTemplate.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
-                <MetaBlock label="Анимация" value={selectedTemplate.motion} />
+                <p className="spec-title">Assembly</p>
+                <MetaBlock label="Template" value={`${String(selectedTemplate.index).padStart(2, '0')} · ${selectedTemplate.name}`} />
+                <MetaBlock label="Visual" value={selectedVisual?.name} />
+                <MetaBlock label="Master" value={selectedTemplate.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
+                <MetaBlock label="Motion" value={selectedTemplate.motion} />
                 {copyWarnings.length === 0 ? (
-                  <div className="check-list"><p><Check size={15} /> Автопроверка: текст в пределах лимитов</p><p>Контраст и safe zones проверит дизайнер</p></div>
+                  <div className="check-list"><p><Check size={15} /> Automated check: copy is within limits</p><p>A designer will verify contrast and safe zones</p></div>
                 ) : (
-                  <div className="content-warning" role="alert"><AlertTriangle size={17} /><div><strong>Нужно проверить текст</strong>{copyWarnings.map((warning) => <span key={warning}>{warning}</span>)}</div></div>
+                  <div className="content-warning" role="alert"><AlertTriangle size={17} /><div><strong>Copy needs attention</strong>{copyWarnings.map((warning) => <span key={warning}>{warning}</span>)}</div></div>
                 )}
               </aside>
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(4)}>Сменить шаблон</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Подготовить Figma-пакет</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(4)}>Change template</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Prepare Figma packet</PrimaryButton></StageActions>
           </>
         )}
 
         {step === 6 && (
           <>
-            <StageHeader count="06 / 07" title="Дизайнерское ревью" description="Финальный рендер заблокирован, пока дизайнер не проверит мастер в Figma." />
+            <StageHeader count="06 / 07" title="Designer review" description="Final rendering stays locked until a designer reviews the master in Figma." />
             <section className="review-packet" aria-label="Review packet">
               <header><span>Review packet · local simulation</span><code>{selectedTemplate?.id}</code></header>
               <div className="review-packet-meta">
-                <ReviewField label="Шаблон" value={selectedTemplate?.name} />
-                <ReviewField label="Визуал" value={selectedVisual?.name} />
-                <ReviewField label="Мастер" value={selectedTemplate?.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
+                <ReviewField label="Template" value={selectedTemplate?.name} />
+                <ReviewField label="Visual" value={selectedVisual?.name} />
+                <ReviewField label="Master" value={selectedTemplate?.masterRatio === 'story' ? '1080×1920' : '1080×1350'} />
               </div>
               <div className="review-packet-copy">
-                <ReviewField label="Исходный бриф" value={brief} wide />
-                <ReviewField label="Заголовок" value={strategy?.headline} />
-                <ReviewField label="Оффер" value={strategy?.offer} />
-                <ReviewField label="Основной текст" value={strategy?.body} wide />
+                <ReviewField label="Source brief" value={brief} wide />
+                <ReviewField label="Headline" value={strategy?.headline} />
+                <ReviewField label="Offer" value={strategy?.offer} />
+                <ReviewField label="Body copy" value={strategy?.body} wide />
                 <ReviewField label="CTA" value={strategy?.cta} />
               </div>
               <div className="review-packet-prompts">
@@ -255,29 +255,29 @@ export function WorkflowScreen({ requestedTemplate }) {
             <div className="review-panel" data-status={visibleReviewStatus} aria-live="polite">
               <div className="review-icon"><ClipboardCheck size={24} aria-hidden="true" /></div>
               <div>
-                <span className="status-label"><span className="status-dot" />{visibleReviewStatus === 'ready' ? 'Пакет готов' : visibleReviewStatus === 'in-review' ? 'На проверке' : 'Проверено'}</span>
-                <h2>{visibleReviewStatus === 'approved' ? 'Макет утверждён дизайнером' : 'Проверка композиции и качества'}</h2>
-                <p>{visibleReviewStatus === 'approved' ? 'Утверждённая версия становится источником для финальных ресайзов.' : 'Симуляция V1: пакет не отправляется автоматически. Дизайнер проверяет его в Figma и возвращает ссылку на утверждённую версию.'}</p>
-                {visibleReviewStatus === 'in-review' && <label className="figma-field" htmlFor="figma-url"><span>Ссылка на макет / версия</span><input id="figma-url" value={figmaUrl} onChange={(event) => setFigmaUrl(event.target.value)} /></label>}
+                <span className="status-label"><span className="status-dot" />{visibleReviewStatus === 'ready' ? 'Packet ready' : visibleReviewStatus === 'in-review' ? 'In review' : 'Approved'}</span>
+                <h2>{visibleReviewStatus === 'approved' ? 'Master approved by designer' : 'Composition and quality review'}</h2>
+                <p>{visibleReviewStatus === 'approved' ? 'The approved version becomes the source for final resizes.' : 'V1 simulation: the packet is not sent automatically. A designer reviews it in Figma and returns a link to the approved version.'}</p>
+                {visibleReviewStatus === 'in-review' && <label className="figma-field" htmlFor="figma-url"><span>Design file / version</span><input id="figma-url" value={figmaUrl} onChange={(event) => setFigmaUrl(event.target.value)} /></label>}
               </div>
               <div className="review-actions">
-                {visibleReviewStatus === 'ready' && <PrimaryButton onClick={() => setReviewStatus('in-review')}>Отправить на ревью</PrimaryButton>}
-                {visibleReviewStatus === 'in-review' && <PrimaryButton disabled={!figmaLinkIsValid} onClick={approveReview}>Подтвердить ревью</PrimaryButton>}
-                {visibleReviewStatus === 'approved' && <PrimaryButton onClick={() => advance(7)}>Собрать финальный пакет</PrimaryButton>}
-                <a href={figmaLinkIsValid ? figmaUrl.trim() : 'https://www.figma.com'} target="_blank" rel="noreferrer">Открыть Figma <ExternalLink size={14} /></a>
+                {visibleReviewStatus === 'ready' && <PrimaryButton onClick={() => setReviewStatus('in-review')}>Send for review</PrimaryButton>}
+                {visibleReviewStatus === 'in-review' && <PrimaryButton disabled={!figmaLinkIsValid} onClick={approveReview}>Confirm review</PrimaryButton>}
+                {visibleReviewStatus === 'approved' && <PrimaryButton onClick={() => advance(7)}>Build final package</PrimaryButton>}
+                <a href={figmaLinkIsValid ? figmaUrl.trim() : 'https://www.figma.com'} target="_blank" rel="noreferrer">Open Figma <ExternalLink size={14} /></a>
               </div>
             </div>
             <div className="review-checks">
-              {['Композиция', 'Контраст', 'Переполнение', 'Кадрирование', 'Анимация'].map((item, index) => <span key={item}><i>{visibleReviewStatus === 'approved' ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</i>{item}</span>)}
+              {['Composition', 'Contrast', 'Text overflow', 'Cropping', 'Motion'].map((item, index) => <span key={item}><i>{visibleReviewStatus === 'approved' ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</i>{item}</span>)}
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(5)}>Назад к мастеру</SecondaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(5)}>Back to master</SecondaryButton></StageActions>
           </>
         )}
 
         {step === 7 && (
           <>
-            <StageHeader count="07 / 07" title="Пакет готов" description="Четыре композиции перестроены из утверждённого мастера. Это browser preview финального production job." />
-            <div className="delivery-summary"><span><Check size={17} />Designer approved</span><span>4 формата</span><span>Static + motion ready</span></div>
+            <StageHeader count="07 / 07" title="Package ready" description="Four compositions have been reflowed from the approved master. This is a browser preview of the final production job." />
+            <div className="delivery-summary"><span><Check size={17} />Designer approved</span><span>4 formats</span><span>Static + motion ready</span></div>
             <div className="resize-grid">
               {resizeLayouts.map((format) => (
                 <article className="resize-output" key={format.size}>
@@ -286,7 +286,7 @@ export function WorkflowScreen({ requestedTemplate }) {
                 </article>
               ))}
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(6)}>Ревью</SecondaryButton><PrimaryButton onClick={downloadManifest}><Download size={15} />Скачать manifest</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(6)}>Review</SecondaryButton><PrimaryButton onClick={downloadManifest}><Download size={15} />Download manifest</PrimaryButton></StageActions>
           </>
         )}
       </section>
