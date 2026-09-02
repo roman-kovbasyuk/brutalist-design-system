@@ -777,13 +777,6 @@
 
 .asset-panel__intro p { margin: 0; }
 
-.prompt-card-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.prompt-card,
 .asset-card,
 .template-card,
 .banner-candidate,
@@ -796,7 +789,6 @@
 }
 
 @media (hover: hover) {
-  .prompt-card:hover,
   .asset-card:hover,
   .template-card:hover,
   .banner-candidate:hover,
@@ -806,27 +798,34 @@
   }
 }
 
-.prompt-card {
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
+.prompt-list { padding: 0; margin: 0; overflow: hidden; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--surface); list-style: none; }
+.prompt-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.72fr) minmax(320px, 1.65fr) minmax(190px, 0.72fr);
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+  padding: 18px;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
+.prompt-row + .prompt-row { border-top: 1px solid var(--rule); }
+.prompt-row__identity { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 10px; min-width: 0; }
+.prompt-row__number { padding-top: 3px; color: var(--muted); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.prompt-row__identity h2 { margin: 0; font-size: 16px; line-height: 1.25; }
+.prompt-row__identity small { display: block; margin-top: 5px; color: var(--secondary); font-size: 11px; line-height: 1.4; }
+.prompt-row__content { min-width: 0; }
+.prompt-row__direction { margin: 0; color: var(--secondary); font-size: var(--text-body); line-height: 1.55; }
+.prompt-row__content details { margin-top: 8px; color: var(--secondary); font-size: var(--text-meta); }
+.prompt-row__content summary { width: max-content; cursor: pointer; text-decoration: underline; text-decoration-color: var(--strong-rule); text-underline-offset: 3px; }
+.prompt-row__content details p { max-width: 70ch; margin: 8px 0 0; overflow-wrap: anywhere; line-height: 1.45; }
+.prompt-row__action { display: grid; justify-items: stretch; gap: 10px; min-width: 0; }
+.prompt-row__cost { margin: 0; color: var(--ink); font-size: var(--text-meta); font-weight: 700; text-align: right; }
+.prompt-row__action .button { width: 100%; padding-inline: 10px; font-size: var(--text-meta); }
 
-.prompt-card__number {
-  margin: 0 0 9px;
-  color: var(--secondary);
-  font-size: var(--text-meta);
-  font-weight: 650;
-  letter-spacing: 0.035em;
-  text-transform: uppercase;
+@media (hover: hover) {
+  .prompt-row:hover { background: #fafbfe; }
+  .prompt-row__content summary:hover { color: var(--ink); text-decoration-color: var(--accent); }
 }
-
-.prompt-card h2 { margin: 0; font-size: 17px; line-height: 1.22; }
-.prompt-card__direction { min-height: 78px; margin: 14px 0 10px; color: var(--secondary); font-size: var(--text-body); line-height: 1.5; }
-.prompt-card__cost { margin: 0; color: var(--ink); font-size: var(--text-meta); font-weight: 700; }
-.prompt-card details { margin: 12px 0; color: var(--secondary); font-size: var(--text-meta); }
-.prompt-card details p { overflow-wrap: anywhere; line-height: 1.45; }
-.prompt-card .button { width: 100%; margin-top: auto; padding: 0 9px; font-size: var(--text-meta); }
 
 .ai-highlight,
 mark {
@@ -1555,8 +1554,10 @@ mark {
   .app-shell { grid-template-columns: 196px minmax(0, 1fr); }
   .workflow-layout { grid-template-columns: 164px minmax(0, 1fr); }
   .step-button small { display: none; }
+  .prompt-row { grid-template-columns: minmax(180px, 0.72fr) minmax(320px, 1.4fr); }
+  .prompt-row__action { display: flex; align-items: center; justify-content: flex-end; grid-column: 1 / -1; }
+  .prompt-row__action .button { width: auto; min-width: 220px; }
   .visual-grid { grid-template-columns: repeat(3, 1fr); }
-  .prompt-card-grid { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
   .asset-gallery { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
   .template-picker,
   .template-library { grid-template-columns: repeat(3, 1fr); }
@@ -1633,10 +1634,13 @@ mark {
   .field-group textarea { min-height: 236px; padding: 16px; font-size: 16px; }
   .copy-workbench__message { display: block; }
   .copy-fields { border-top: 1px solid var(--rule); border-left: 0; }
+  .prompt-row { grid-template-columns: 1fr; gap: 12px; }
+  .prompt-row__action { align-items: stretch; grid-column: auto; }
+  .prompt-row__cost { text-align: left; }
+  .prompt-row__action .button { width: 100%; min-width: 0; }
   .shot-prompt__heading { grid-template-columns: 28px minmax(0, 1fr); }
   .shot-prompt__heading small { grid-column: 2; text-align: left; }
   .visual-grid { grid-template-columns: repeat(2, 1fr); }
-  .prompt-card-grid,
   .asset-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .visual-art { min-height: 300px; }
   .template-picker,
@@ -1667,7 +1671,6 @@ mark {
   .dashboard-metric-strip { grid-template-columns: 1fr; }
   .dashboard-metric-strip > div + div { border-top: 1px solid var(--rule); border-left: 0; }
   .visual-grid,
-  .prompt-card-grid,
   .asset-gallery,
   .template-picker,
   .template-library,
@@ -1723,7 +1726,6 @@ mark {
   .button--secondary:hover:not(:disabled),
   .table-action:hover,
   .visual-option > button:hover,
-  .prompt-card:hover,
   .asset-card:hover,
   .template-card:hover,
   .banner-candidate:hover,

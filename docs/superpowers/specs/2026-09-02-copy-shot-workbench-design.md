@@ -33,3 +33,7 @@ Domain tests verify five prompts and their hero/action fields. UI tests verify t
 ## Video cost dialog repair
 
 The bulk video warning remains a centered modal, but its content must use the full available width. The warning icon and copy sit in a dedicated header row; the estimate table and actions span the dialog below it. At narrow widths the actions stack without clipping. A dedicated content class prevents broad direct-child selectors from accidentally turning the entire body into the header grid.
+
+## AI-assets prompt list
+
+The Prompts tab presents the five directions as one vertical comparison list rather than a card grid. Each row keeps the shot title and index, highlighted hero/action sentence, estimated cost, expandable technical prompt, and generation action. Stable columns make scanning easier: identity leads, prompt content receives the most width, and generation controls align at the end. Existing prompt data and generation behavior remain unchanged.

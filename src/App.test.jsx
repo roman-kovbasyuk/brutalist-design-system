@@ -126,11 +126,12 @@ describe('Lingu Studio app', () => {
     expect(within(tabs).getByRole('tab', { name: 'Static visuals' })).toBeVisible()
     expect(within(tabs).getByRole('tab', { name: 'Videos' })).toBeVisible()
 
-    const promptCards = screen.getAllByTestId('prompt-card')
-    expect(promptCards).toHaveLength(5)
-    promptCards.forEach((card) => {
-      expect(within(card).getAllByRole('mark')).toHaveLength(2)
-      expect(within(card).getByText('$0.12 estimated cost')).toBeVisible()
+    const promptList = screen.getByRole('list', { name: 'Prompt directions' })
+    const promptRows = within(promptList).getAllByRole('listitem')
+    expect(promptRows).toHaveLength(5)
+    promptRows.forEach((row) => {
+      expect(within(row).getAllByRole('mark')).toHaveLength(2)
+      expect(within(row).getByText('$0.12 estimated cost')).toBeVisible()
     })
 
     const promptTab = within(tabs).getByRole('tab', { name: 'Prompts' })

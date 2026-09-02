@@ -68,22 +68,32 @@ export function AssetWorkspace({
       {activeTab === 'prompts' && (
         <section id="asset-panel-prompts" role="tabpanel" aria-labelledby="asset-tab-prompts" className="asset-panel">
           <div className="asset-panel__intro"><p>Five local prompt directions are ready to turn into static visuals.</p><span>Simulated generation</span></div>
-          <div className="prompt-card-grid">
-            {promptIdeas.map((prompt) => {
+          <ol className="prompt-list" aria-label="Prompt directions">
+            {promptIdeas.map((prompt, index) => {
               const created = staticAssets.some((asset) => asset.sourcePromptId === prompt.id)
               return (
-                <article className="prompt-card" data-testid="prompt-card" key={prompt.id}>
-                  <div><p className="prompt-card__number">Direction {prompt.id.replace('prompt-', '').replaceAll('-', ' ')}</p><h2>{prompt.title}</h2></div>
-                  <p className="prompt-card__direction"><mark>{prompt.hero}</mark> <mark>{prompt.action}</mark>, shaped for the campaign message and clear copy space.</p>
-                  <p className="prompt-card__cost">{formatCurrency(prompt.estimatedStaticCost)} estimated cost</p>
-                  <details><summary>Full generated prompt</summary><p>{prompt.prompt}</p></details>
-                  <button type="button" className="button button--secondary" onClick={() => onGenerateStatic(prompt)} disabled={created}>
-                    {created ? 'Generate static visual (already generated)' : `Generate static visual for ${prompt.title}`}
-                  </button>
-                </article>
+                <li className="prompt-row" data-testid="prompt-card" key={prompt.id}>
+                  <div className="prompt-row__identity">
+                    <span className="prompt-row__number">{String(index + 1).padStart(2, '0')}</span>
+                    <div><h2>{prompt.title}</h2><small>{prompt.shot}</small></div>
+                  </div>
+                  <div className="prompt-row__content">
+                    <p className="prompt-row__direction">
+                      <mark aria-label={`Hero: ${prompt.hero}`}>{prompt.hero}</mark>{' '}
+                      <mark aria-label={`Action: ${prompt.action}`}>{prompt.action}</mark>, shaped for the campaign message and clear copy space.
+                    </p>
+                    <details><summary>Full generated prompt</summary><p>{prompt.prompt}</p></details>
+                  </div>
+                  <div className="prompt-row__action">
+                    <p className="prompt-row__cost">{formatCurrency(prompt.estimatedStaticCost)} estimated cost</p>
+                    <button type="button" className="button button--secondary" onClick={() => onGenerateStatic(prompt)} disabled={created}>
+                      {created ? 'Generate static visual (already generated)' : `Generate static visual for ${prompt.title}`}
+                    </button>
+                  </div>
+                </li>
               )
             })}
-          </div>
+          </ol>
         </section>
       )}
 

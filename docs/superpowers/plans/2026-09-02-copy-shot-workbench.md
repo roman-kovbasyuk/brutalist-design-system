@@ -81,3 +81,19 @@
 - [ ] Give the content wrapper a stable class and replace the broad `.cost-dialog > div` selector.
 - [ ] Structure the warning and title as one header row while keeping description, estimate, and actions full width.
 - [ ] Verify the dialog test, full suite, production build, and final UI detector.
+
+### Task 5: AI-assets prompt list
+
+**Files:**
+- Modify: `src/components/AssetWorkspace.jsx`
+- Modify: `src/styles/app.css`
+- Test: `src/App.test.jsx`
+
+**Interfaces:**
+- Consumes: the existing `promptIdeas`, `staticAssets`, and `onGenerateStatic` contract.
+- Produces: an ordered list named `Prompt directions`, containing five list items with aligned content and generation controls.
+
+- [ ] Add a failing semantic assertion for the named list and its five list items.
+- [ ] Replace the prompt card grid with an ordered list while preserving test IDs and button labels.
+- [ ] Restyle prompt cards as full-width rows with an identity, prompt, and action column.
+- [ ] Run the focused test, full suite, desktop browser check, production build, and final UI detector.
