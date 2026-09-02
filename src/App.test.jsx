@@ -1,8 +1,12 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import App from './App.jsx'
 import { readReview, writeReview } from './domain/reviewStore.js'
+
+const appStyles = readFileSync(join(process.cwd(), 'src/styles/app.css'), 'utf8')
 
 describe('Lingu Studio app', () => {
   beforeEach(() => {
@@ -123,6 +127,7 @@ describe('Lingu Studio app', () => {
 
     expect(screen.getByRole('heading', { name: 'AI assets' })).toBeVisible()
     const tabs = screen.getByRole('tablist', { name: 'AI asset types' })
+    expect(appStyles).toMatch(/\.asset-tabs\s*\{[^}]*overflow-x:\s*visible;/)
     expect(within(tabs).getByRole('tab', { name: 'Prompts' })).toHaveAttribute('aria-selected', 'true')
     expect(within(tabs).getByRole('tab', { name: 'Static visuals' })).toBeVisible()
     expect(within(tabs).getByRole('tab', { name: 'Videos' })).toBeVisible()
