@@ -97,3 +97,21 @@
 - [ ] Replace the prompt card grid with an ordered list while preserving test IDs and button labels.
 - [ ] Restyle prompt cards as full-width rows with an identity, prompt, and action column.
 - [ ] Run the focused test, full suite, desktop browser check, production build, and final UI detector.
+
+### Task 6: Prompt management actions
+
+**Files:**
+- Modify: `src/components/AssetWorkspace.jsx`
+- Modify: `src/screens/WorkflowScreen.jsx`
+- Modify: `src/styles/app.css`
+- Test: `src/App.test.jsx`
+
+**Interfaces:**
+- Consumes: prompt objects with `id`, `title`, and `prompt`, plus workflow-owned `promptIdeas` state.
+- Produces: `onUpdatePrompt(id, changes)` and `onDeletePrompt(id)` callbacks, local text-file download, inline edit state, and inline delete confirmation.
+
+- [ ] Add failing workflow tests for editing prompt name/text, deleting one prompt, and exporting the current prompt text.
+- [ ] Add workflow callbacks that immutably update or remove the requested prompt while preserving generated assets.
+- [ ] Add compact row actions and accessible inline edit/delete states to `AssetWorkspace`.
+- [ ] Add restrained action, editor, and confirmation styles without introducing a modal.
+- [ ] Run the focused tests, full suite, production build, diff check, and Impeccable detector.

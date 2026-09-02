@@ -37,3 +37,7 @@ The bulk video warning remains a centered modal, but its content must use the fu
 ## AI-assets prompt list
 
 The Prompts tab presents the five directions as one vertical comparison list rather than a card grid. Each row keeps the shot title and index, highlighted hero/action sentence, estimated cost, expandable technical prompt, and generation action. Stable columns make scanning easier: identity leads, prompt content receives the most width, and generation controls align at the end. Existing prompt data and generation behavior remain unchanged.
+
+## Prompt management actions
+
+Every prompt row provides compact Download, Edit, and Delete actions alongside static-visual generation. Download exports the current prompt name and full prompt text as a local text file. Edit expands the row in place with labelled fields for those two values and explicit Save and Cancel controls. Delete uses an inline confirmation before removing the prompt. Editing or deleting a prompt does not remove static or video assets that were already generated from it.
