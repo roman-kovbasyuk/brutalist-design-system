@@ -20,7 +20,7 @@ const comparisonCandidates = [
 function BannerWorkspaceHarness({ withVideo = true, candidateSet = candidates }) {
   const [filters, setFilters] = useState({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
   const [selectedBannerIds, setSelectedBannerIds] = useState([])
-  const [activeBannerId, setActiveBannerId] = useState('banner-static-vertical')
+  const [activeBannerId, setActiveBannerId] = useState(null)
   const [motionByBannerId, setMotionByBannerId] = useState({})
 
   function updateMotion(bannerId, channel, preset) {
@@ -148,8 +148,11 @@ describe('BannerWorkspace', () => {
     const user = userEvent.setup()
     render(<BannerWorkspaceHarness />)
 
-    await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
-    const detail = screen.getByRole('region', { name: 'Banner detail preview' })
+    expect(screen.queryByRole('dialog', { name: 'Banner detail preview' })).not.toBeInTheDocument()
+    const opener = screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ })
+    await user.click(opener)
+    const detail = screen.getByRole('dialog', { name: 'Banner detail preview' })
+    expect(within(detail).getByRole('button', { name: 'Close banner preview' })).toHaveFocus()
     ;[
       ['Template', 'Split frame'],
       ['Dimensions', '1080×1350'],
@@ -167,6 +170,10 @@ describe('BannerWorkspace', () => {
     const initialVersion = within(detail).getByRole('article').getAttribute('data-motion-version')
     fireEvent.click(within(detail).getByRole('button', { name: 'Replay motion' }))
     expect(within(detail).getByRole('article')).toHaveAttribute('data-motion-version', String(Number(initialVersion) + 1))
+
+    await user.click(within(detail).getByRole('button', { name: 'Close banner preview' }))
+    expect(screen.queryByRole('dialog', { name: 'Banner detail preview' })).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
   })
 
   test('keeps text, image, and CTA motion independent for every banner', async () => {
@@ -174,11 +181,11 @@ describe('BannerWorkspace', () => {
     render(<BannerWorkspaceHarness withVideo={false} candidateSet={comparisonCandidates} />)
 
     await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
-    let detail = screen.getByRole('region', { name: 'Banner detail preview' })
+    let detail = screen.getByRole('dialog', { name: 'Banner detail preview' })
     await user.selectOptions(within(detail).getByLabelText('Text motion'), 'type-reveal')
 
     await user.click(screen.getByRole('button', { name: /Open Reverse split, 1080×1350 preview/ }))
-    detail = screen.getByRole('region', { name: 'Banner detail preview' })
+    detail = screen.getByRole('dialog', { name: 'Banner detail preview' })
     await user.selectOptions(within(detail).getByLabelText('Image motion'), 'pan-up')
     await user.selectOptions(within(detail).getByLabelText('CTA motion'), 'pulse')
     expect(within(detail).getByRole('article').querySelector('.motion-copy')).toHaveAttribute('data-motion-preset', 'fade-up')
@@ -186,7 +193,7 @@ describe('BannerWorkspace', () => {
     expect(within(detail).getByRole('article').querySelector('.motion-cta')).toHaveAttribute('data-motion-preset', 'pulse')
 
     await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
-    detail = screen.getByRole('region', { name: 'Banner detail preview' })
+    detail = screen.getByRole('dialog', { name: 'Banner detail preview' })
     expect(within(detail).getByRole('article').querySelector('.motion-copy')).toHaveAttribute('data-motion-preset', 'type-reveal')
     expect(within(detail).getByRole('article').querySelector('.motion-media')).toHaveAttribute('data-motion-preset', 'soft-zoom')
     expect(within(detail).getByRole('article').querySelector('.motion-cta')).toHaveAttribute('data-motion-preset', 'pop-in')

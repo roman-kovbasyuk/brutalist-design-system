@@ -1,4 +1,4 @@
-import { Check, ChevronDown, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square } from 'lucide-react'
+import { Check, ChevronDown, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BannerPreview } from './BannerPreview.jsx'
 
@@ -61,7 +61,7 @@ export function BannerWorkspace({
 }) {
   const visibleCandidates = useMemo(() => filterBannerCandidates(candidates, filters), [candidates, filters])
   const hasLinkedVideo = candidates.some((candidate) => candidate.mediaType === 'video')
-  const activeCandidate = visibleCandidates.find((candidate) => candidate.id === activeBannerId) ?? visibleCandidates[0] ?? null
+  const activeCandidate = visibleCandidates.find((candidate) => candidate.id === activeBannerId) ?? null
   const templateById = useMemo(() => new Map(templates.map((template) => [template.id, template])), [templates])
   const staticById = useMemo(() => new Map(staticAssets.map((asset) => [asset.id, asset])), [staticAssets])
   const videoById = useMemo(() => new Map(videoAssets.map((asset) => [asset.id, asset])), [videoAssets])
@@ -73,10 +73,12 @@ export function BannerWorkspace({
   }, [filters.media, hasLinkedVideo, onFiltersChange])
 
   function setFilter(name, value) {
+    onActiveBannerChange(null)
     onFiltersChange({ ...filters, [name]: value })
   }
 
   function setMedia(media) {
+    onActiveBannerChange(null)
     onFiltersChange({
       ...filters,
       media,
@@ -128,49 +130,95 @@ export function BannerWorkspace({
       </div>
 
       <div className="banner-workspace__content">
-        <div>
-          <p className="banner-gallery-count">{visibleCandidates.length} banner compositions</p>
-          {visibleCandidates.length === 0 ? (
-            <div className="banner-filter-empty" role="status">No banner compositions match these filters.</div>
-          ) : (
-            <div className="banner-gallery" aria-label="Banner composition gallery">
-              {visibleCandidates.map((candidate) => {
-                const isSelected = selectedBannerIds.includes(candidate.id)
-                return (
-                  <article className="banner-candidate" data-testid="banner-candidate" data-banner-id={candidate.id} data-selected={isSelected} key={candidate.id}>
-                    <button type="button" className="banner-candidate__preview" aria-label={`Open ${candidate.templateName}, ${candidate.dimensions} preview`} onClick={() => onActiveBannerChange(candidate.id)}>
-                      <BannerPreview template={getTemplate(candidate)} visual={getVisual(candidate)} content={content} ratio={candidate.format === 'Horizontal' ? '1200 / 628' : candidate.format === 'Square' ? '1 / 1' : candidate.dimensions === '1080×1920' ? '9 / 16' : '4 / 5'} compact />
-                    </button>
-                    <div className="banner-candidate__meta"><strong>{candidate.templateName}</strong><span>{candidate.dimensions} · {candidate.platform}</span></div>
-                    <button type="button" className="banner-candidate__select" aria-pressed={isSelected} onClick={() => toggleSelection(candidate)}>{isSelected && <Check size={15} aria-hidden="true" />} {isSelected ? 'Selected for Figma assembly' : 'Select for Figma assembly'}</button>
-                  </article>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {activeCandidate && activeTemplate && (
-          <aside className="banner-detail" role="region" aria-label="Banner detail preview">
-            <BannerPreview template={activeTemplate} visual={activeVisual} content={content} ratio={activeCandidate.format === 'Horizontal' ? '1200 / 628' : activeCandidate.format === 'Square' ? '1 / 1' : activeCandidate.dimensions === '1080×1920' ? '9 / 16' : '4 / 5'} motionPreset={activeMotion} motionVersion={activeMotion.replayVersion} />
-            <dl className="banner-detail__metadata">
-              <DetailItem label="Template" value={activeCandidate.templateName} />
-              <DetailItem label="Dimensions" value={activeCandidate.dimensions} />
-              <DetailItem label="Format" value={activeCandidate.format} />
-              <DetailItem label="Platform" value={activeCandidate.platform} />
-              <DetailItem label="Media type" value={activeCandidate.mediaType === 'video' ? 'Video' : 'Static'} />
-              <DetailItem label="Source visual" value={activeVisual?.name ?? 'Generated source visual'} />
-            </dl>
-            <div className="banner-motion-controls">
-              <MotionSelect label="Text motion" channel="text" value={activeMotion.text} onChange={(value) => onMotionChange(activeCandidate.id, 'text', value)} />
-              <MotionSelect label="Image motion" channel="image" value={activeMotion.image} onChange={(value) => onMotionChange(activeCandidate.id, 'image', value)} />
-              <MotionSelect label="CTA motion" channel="cta" value={activeMotion.cta} onChange={(value) => onMotionChange(activeCandidate.id, 'cta', value)} />
-              <button type="button" className="button button--secondary banner-motion-replay" onClick={() => onReplayMotion(activeCandidate.id)}>Replay motion</button>
-            </div>
-          </aside>
+        <p className="banner-gallery-count">{visibleCandidates.length} banner compositions</p>
+        {visibleCandidates.length === 0 ? (
+          <div className="banner-filter-empty" role="status">No banner compositions match these filters.</div>
+        ) : (
+          <div className="banner-gallery" aria-label="Banner composition gallery">
+            {visibleCandidates.map((candidate) => {
+              const isSelected = selectedBannerIds.includes(candidate.id)
+              return (
+                <article className="banner-candidate" data-testid="banner-candidate" data-banner-id={candidate.id} data-selected={isSelected} key={candidate.id}>
+                  <button type="button" className="banner-candidate__preview" aria-label={`Open ${candidate.templateName}, ${candidate.dimensions} preview`} onClick={() => onActiveBannerChange(candidate.id)}>
+                    <BannerPreview template={getTemplate(candidate)} visual={getVisual(candidate)} content={content} ratio={candidate.format === 'Horizontal' ? '1200 / 628' : candidate.format === 'Square' ? '1 / 1' : candidate.dimensions === '1080×1920' ? '9 / 16' : '4 / 5'} compact />
+                  </button>
+                  <div className="banner-candidate__meta"><strong>{candidate.templateName}</strong><span>{candidate.dimensions} · {candidate.platform}</span></div>
+                  <button type="button" className="banner-candidate__select" aria-pressed={isSelected} onClick={() => toggleSelection(candidate)}>{isSelected && <Check size={15} aria-hidden="true" />} {isSelected ? 'Selected for Figma assembly' : 'Select for Figma assembly'}</button>
+                </article>
+              )
+            })}
+          </div>
         )}
       </div>
+
+      {activeCandidate && activeTemplate && (
+        <BannerDetailDialog
+          candidate={activeCandidate}
+          template={activeTemplate}
+          visual={activeVisual}
+          content={content}
+          motion={activeMotion}
+          onClose={() => onActiveBannerChange(null)}
+          onMotionChange={onMotionChange}
+          onReplayMotion={onReplayMotion}
+        />
+      )}
     </section>
+  )
+}
+
+function BannerDetailDialog({ candidate, template, visual, content, motion, onClose, onMotionChange, onReplayMotion }) {
+  const dialogRef = useRef(null)
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    dialog.showModal()
+
+    return () => {
+      if (dialog.open) dialog.close()
+    }
+  }, [])
+
+  function handleCancel(event) {
+    event.preventDefault()
+    onClose()
+  }
+
+  const ratio = candidate.format === 'Horizontal' ? '1200 / 628'
+    : candidate.format === 'Square' ? '1 / 1'
+      : candidate.dimensions === '1080×1920' ? '9 / 16' : '4 / 5'
+
+  return (
+    <dialog ref={dialogRef} className="banner-detail-dialog" aria-label="Banner detail preview" onCancel={handleCancel}>
+      <header className="banner-detail-dialog__header">
+        <div>
+          <span>Banner detail</span>
+          <h2>Preview &amp; motion</h2>
+        </div>
+        <button type="button" className="banner-detail-dialog__close" aria-label="Close banner preview" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+      </header>
+      <div className="banner-detail">
+        <div className="banner-detail__preview">
+          <BannerPreview template={template} visual={visual} content={content} ratio={ratio} motionPreset={motion} motionVersion={motion.replayVersion} />
+        </div>
+        <div className="banner-detail__controls">
+          <dl className="banner-detail__metadata">
+            <DetailItem label="Template" value={candidate.templateName} />
+            <DetailItem label="Dimensions" value={candidate.dimensions} />
+            <DetailItem label="Format" value={candidate.format} />
+            <DetailItem label="Platform" value={candidate.platform} />
+            <DetailItem label="Media type" value={candidate.mediaType === 'video' ? 'Video' : 'Static'} />
+            <DetailItem label="Source visual" value={visual?.name ?? 'Generated source visual'} />
+          </dl>
+          <div className="banner-motion-controls">
+            <MotionSelect label="Text motion" channel="text" value={motion.text} onChange={(value) => onMotionChange(candidate.id, 'text', value)} />
+            <MotionSelect label="Image motion" channel="image" value={motion.image} onChange={(value) => onMotionChange(candidate.id, 'image', value)} />
+            <MotionSelect label="CTA motion" channel="cta" value={motion.cta} onChange={(value) => onMotionChange(candidate.id, 'cta', value)} />
+            <button type="button" className="button button--secondary banner-motion-replay" onClick={() => onReplayMotion(candidate.id)}>Replay motion</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
   )
 }
 

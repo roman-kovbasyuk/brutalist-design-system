@@ -184,16 +184,8 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
       setActiveBannerId(null)
       return
     }
-    setActiveBannerId((current) => {
-      if (bannerCandidates.some((candidate) => candidate.id === current)) return current
-      return bannerCandidates.find((candidate) => (
-        candidate.templateId === selectedTemplateId &&
-        candidate.format === bannerFilters.format &&
-        candidate.platform === bannerFilters.platform &&
-        candidate.mediaType === bannerFilters.media
-      ))?.id ?? bannerCandidates.find((candidate) => candidate.templateId === selectedTemplateId)?.id ?? bannerCandidates[0].id
-    })
-  }, [bannerCandidates, bannerFilters, selectedTemplateId])
+    setActiveBannerId((current) => bannerCandidates.some((candidate) => candidate.id === current) ? current : null)
+  }, [bannerCandidates])
 
   function advance(nextStep) {
     if (nextStep === 5 && !hasReviewPackage) return

@@ -733,7 +733,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('button', { name: 'Select template Reverse split' }))
 
     expect(screen.getByRole('heading', { name: 'Banner preview' })).toBeVisible()
-    expect(within(screen.getByRole('region', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
+    expect(within(screen.getByRole('dialog', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Continue to prepare for review' })).toBeDisabled()
   })
 
@@ -760,7 +760,7 @@ describe('Lingu Studio app', () => {
     expect(screen.getByRole('button', { name: 'Format: Vertical' })).toBeVisible()
     expect(screen.getByLabelText('Platform')).toHaveValue('Video Reels')
     expect(screen.getByRole('button', { name: 'Video' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(screen.getByRole('region', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
+    expect(within(screen.getByRole('dialog', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
   })
 
   test('uses a selected banner rather than an unselected preview for Stage 5 review rows', async () => {
