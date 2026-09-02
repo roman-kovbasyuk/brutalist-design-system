@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Check, Download, Sparkles } from 'lucide-react'
+import { ArrowRight, Check, Download } from 'lucide-react'
 import { BannerPreview } from '../components/BannerPreview.jsx'
 import { BannerWorkspace } from '../components/BannerWorkspace.jsx'
 import { ReviewWorkspace } from '../components/ReviewWorkspace.jsx'
@@ -593,7 +593,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
 }
 
 function StageHeader({ count, title, description }) {
-  return <header className="stage-header"><span>{count}</span><div><h1>{title}</h1><p>{description}</p></div><div className="stage-mode"><Sparkles size={14} />local generation</div></header>
+  return <header className="stage-header"><span>{count}</span><div><h1>{title}</h1><p>{description}</p></div></header>
 }
 
 function StageActions({ children }) {

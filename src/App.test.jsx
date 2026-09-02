@@ -48,6 +48,7 @@ describe('Lingu Studio app', () => {
 
     expect(window.location.pathname).toBe('/campaign/campaign-oslo-intensive')
     expect(screen.getByLabelText('Campaign idea')).toBeVisible()
+    expect(screen.queryByText('local generation', { exact: true })).not.toBeInTheDocument()
   })
 
   test('shows determinate local brief processing before opening Copy', async () => {
