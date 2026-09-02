@@ -41,3 +41,7 @@ The Prompts tab presents the five directions as one vertical comparison list rat
 ## Prompt management actions
 
 Every prompt row provides compact Download, Edit, and Delete actions alongside static-visual generation. Download exports the current prompt name and full prompt text as a local text file. Edit expands the row in place with labelled fields for those two values and explicit Save and Cancel controls. Delete uses an inline confirmation before removing the prompt. Editing or deleting a prompt does not remove static or video assets that were already generated from it.
+
+## Generated asset management
+
+Static-image rows and video cards share compact Download, Rename, and Delete controls. Rename changes only the displayed name of the selected asset. Delete requires inline confirmation. Deleting a static image also deletes every video derived from it and clears downstream banner selections; deleting a video preserves its source image. Download exports the complete local asset payload as JSON until a real media provider supplies downloadable image and video files.

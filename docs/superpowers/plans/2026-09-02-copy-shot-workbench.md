@@ -115,3 +115,21 @@
 - [ ] Add compact row actions and accessible inline edit/delete states to `AssetWorkspace`.
 - [ ] Add restrained action, editor, and confirmation styles without introducing a modal.
 - [ ] Run the focused tests, full suite, production build, diff check, and Impeccable detector.
+
+### Task 7: Generated asset management
+
+**Files:**
+- Modify: `src/components/AssetWorkspace.jsx`
+- Modify: `src/screens/WorkflowScreen.jsx`
+- Modify: `src/styles/app.css`
+- Test: `src/App.test.jsx`
+
+**Interfaces:**
+- Consumes: static and video asset objects with stable IDs, names, media types, and source relationships.
+- Produces: shared Download, Rename, and Delete controls; immutable asset updates; cascading static-image deletion; and local JSON export.
+
+- [ ] Add failing workflow tests for static and video rename/delete behavior plus asset download payloads.
+- [ ] Add workflow callbacks for renaming, deleting, and downloading assets while preserving source integrity.
+- [ ] Build a shared inline asset-management control for both static rows and video cards.
+- [ ] Add compact toolbar, rename form, and delete-confirmation styles.
+- [ ] Run the focused tests, full suite, production build, diff check, and Impeccable detector.
