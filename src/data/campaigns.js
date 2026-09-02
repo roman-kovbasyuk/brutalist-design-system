@@ -69,7 +69,6 @@ const campaignTotals = campaignHistory.reduce(
 
 export const productionTotals = {
   ...campaignTotals,
-  staticToVideoRatio: `${(campaignTotals.totalStaticVisuals / campaignTotals.totalVideos).toFixed(1)}:1`,
 }
 
 export const dashboardMetrics = {
