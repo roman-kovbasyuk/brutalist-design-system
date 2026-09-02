@@ -2,6 +2,21 @@ import { Video } from 'lucide-react'
 import { BannerPreview } from './BannerPreview.jsx'
 
 const defaultMotion = { text: 'fade-up', image: 'soft-zoom', cta: 'pop-in' }
+const motionLabels = {
+  'fade-up': 'Fade up',
+  'soft-zoom': 'Soft zoom',
+  'pop-in': 'Pop in',
+}
+
+function MotionSummary({ bannerName, motion }) {
+  return (
+    <ul className="review-motion-summary" aria-label={`Motion presets for ${bannerName}`}>
+      <li><span>Text</span><strong>{motionLabels[motion.text] ?? motion.text}</strong></li>
+      <li><span>Image</span><strong>{motionLabels[motion.image] ?? motion.image}</strong></li>
+      <li><span>CTA</span><strong>{motionLabels[motion.cta] ?? motion.cta}</strong></li>
+    </ul>
+  )
+}
 
 export function ReviewWorkspace({ banners = [], status = 'draft' }) {
   return (
@@ -34,7 +49,7 @@ export function ReviewWorkspace({ banners = [], status = 'draft' }) {
           <tbody>
             {banners.map((banner) => {
               const motion = { ...defaultMotion, ...banner.motionPreset }
-              return <tr key={banner.id}><th scope="row">{banner.templateName}</th><td>{banner.dimensions}</td><td>{banner.platform}</td><td>{banner.mediaType === 'video' ? 'Video' : 'Static'}</td><td>Text: {motion.text} · Image: {motion.image} · CTA: {motion.cta}</td></tr>
+              return <tr key={banner.id}><th scope="row">{banner.templateName}</th><td>{banner.dimensions}</td><td>{banner.platform}</td><td>{banner.mediaType === 'video' ? 'Video' : 'Static'}</td><td><MotionSummary bannerName={banner.templateName} motion={motion} /></td></tr>
             })}
           </tbody>
         </table>
