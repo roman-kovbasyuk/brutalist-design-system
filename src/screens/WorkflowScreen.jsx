@@ -129,9 +129,35 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   const selectedVideoCount = deliveryBanners.filter((banner) => banner.mediaType === 'video').length
 
   useEffect(() => {
+    setStep(1)
+    setMaxStep(1)
+    setBrief(initialBrief)
+    setError('')
+    setStrategy(null)
+    setPromptIdeas([])
+    setProcessing(null)
+    setStaticAssets([])
+    setVideoAssets([])
+    setAssetTab('prompts')
+    setShowVideoCostDialog(false)
+    setSelectedVisualId(null)
+    setSelectedTemplateId(requestedTemplate?.id ?? null)
+    setBannerFilters({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
+    setSelectedBannerIds([])
+    setActiveBannerId(null)
+    setPendingTemplateId(null)
+    setMotionByBannerId({})
     setReview(readReview(campaignId))
     return subscribeToReview(campaignId, setReview)
-  }, [campaignId])
+  }, [campaignId]) // A new URL campaign must never inherit the prior campaign's local workflow state.
+
+  useEffect(() => {
+    if (step !== 7 || reviewStatus === 'approved') return
+
+    const nextPermittedStep = reviewStatus === 'draft' && reviewBanners.length > 0 ? 5 : 6
+    setStep(nextPermittedStep)
+    setMaxStep((current) => Math.min(current, nextPermittedStep))
+  }, [reviewBanners.length, reviewStatus, step])
 
   useEffect(() => {
     if (!pendingTemplateId || bannerCandidates.length === 0) return
@@ -353,7 +379,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     downloadPackage('lingu-studio-simulated-assets.json', {
       simulation: 'local',
       kind: 'simulated-assets',
-      assets: deliveryOutputs.map(({ banner, ...format }) => ({ bannerId: banner.id, ...format })),
+      assets: deliveryOutputs.map(serializeDeliveryOutput),
     })
   }
 
@@ -362,8 +388,19 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
       simulation: 'local',
       kind: 'manifest',
       review,
-      outputs: deliveryOutputs.map(({ banner, ...format }) => ({ bannerId: banner.id, ...format })),
+      outputs: deliveryOutputs.map(serializeDeliveryOutput),
     })
+  }
+
+  function serializeDeliveryOutput({ banner, ...format }) {
+    return {
+      bannerId: banner.id,
+      templateId: banner.templateId,
+      sourceAssetId: banner.sourceAssetId,
+      mediaType: banner.mediaType,
+      motionPreset: banner.motionPreset ?? {},
+      ...format,
+    }
   }
 
   return (
@@ -487,7 +524,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 <>
                   <span className="status-label">Ready for approval</span>
                   <h2>Banners are ready for approval</h2>
-                  <p>Jordan Lee’s designer review is recorded. Confirming records Maya Chen as the marketer approver.</p>
+                  <p>{review?.designerName || 'Jordan Lee'}’s designer review is recorded. Confirming records Maya Chen as the marketer approver.</p>
                   <PrimaryButton onClick={confirmReview}>Confirm review</PrimaryButton>
                 </>
               ) : reviewStatus === 'approved' ? (
@@ -524,7 +561,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
             <div className="resize-grid">
               {deliveryOutputs.map(({ banner, ...format }) => (
                 <article className="resize-output" key={`${banner.id}-${format.size}`}>
-                  <div className="resize-preview-wrap"><BannerPreview template={banner.template} visual={banner.visual} content={banner.content} ratio={format.ratio} resizeLayout={format.layout} compact /></div>
+                  <div className="resize-preview-wrap"><BannerPreview template={banner.template} visual={banner.visual} content={banner.content} ratio={format.ratio} resizeLayout={format.layout} compact motionPreset={banner.motionPreset} motionVersion={banner.motionPreset?.replayVersion ?? 0} /></div>
                   <div><span>{banner.templateName} · {format.label}</span><strong>{format.size}</strong><small>{format.layout}</small></div>
                 </article>
               ))}

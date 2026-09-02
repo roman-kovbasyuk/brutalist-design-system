@@ -251,6 +251,7 @@ describe('Lingu Studio app', () => {
     const continueToReview = screen.getByRole('button', { name: 'Continue to prepare for review' })
     expect(continueToReview).toBeDisabled()
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.selectOptions(screen.getByLabelText('Text motion'), 'type-reveal')
     await user.click(continueToReview)
 
     await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
@@ -264,17 +265,18 @@ describe('Lingu Studio app', () => {
       writeReview('campaign-oslo-intensive', {
         ...readReview('campaign-oslo-intensive'),
         status: 'ready-for-approval',
-        designerName: 'Jordan Lee',
+        designerName: 'Avery Brooks',
         reviewedAt: '2026-09-02T09:15:00.000Z',
       })
     })
 
     expect(await screen.findByRole('heading', { name: 'Banners are ready for approval' })).toBeVisible()
+    expect(screen.getByText('Avery Brooks’s designer review is recorded. Confirming records Maya Chen as the marketer approver.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Confirm review' }))
 
     expect(screen.getByRole('heading', { name: 'Delivery' })).toBeVisible()
     const productionSummary = screen.getByRole('list', { name: 'Production summary' })
-    expect(within(productionSummary).getByText('Designer reviewed: Jordan Lee')).toBeVisible()
+    expect(within(productionSummary).getByText('Designer reviewed: Avery Brooks')).toBeVisible()
     expect(within(productionSummary).getByText('Marketer approved: Maya Chen')).toBeVisible()
     expect(within(productionSummary).getByText('Formats: 4')).toBeVisible()
     expect(within(productionSummary).getByText('Selected video count: 0')).toBeVisible()
@@ -286,12 +288,21 @@ describe('Lingu Studio app', () => {
     const createObjectURL = vi.fn(() => 'blob:lingu-download')
     const revokeObjectURL = vi.fn()
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const BlobMock = vi.fn(function BlobMock(parts, options) {
+      this.parts = parts
+      this.options = options
+    })
     vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    vi.stubGlobal('Blob', BlobMock)
     await user.click(screen.getByRole('button', { name: 'Download assets' }))
     await user.click(screen.getByRole('button', { name: 'Download manifest' }))
     expect(createObjectURL).toHaveBeenCalledTimes(2)
     expect(revokeObjectURL).toHaveBeenCalledTimes(2)
     expect(anchorClick).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(BlobMock.mock.calls[0][0][0]).assets[0]).toMatchObject({
+      mediaType: 'static',
+      motionPreset: { text: 'type-reveal' },
+    })
     anchorClick.mockRestore()
     vi.unstubAllGlobals()
 
@@ -299,6 +310,33 @@ describe('Lingu Studio app', () => {
     expect(screen.getAllByText('1080×1350').some((element) => !element.closest('[hidden]'))).toBe(true)
     expect(screen.getAllByText('1080×1920').some((element) => !element.closest('[hidden]'))).toBe(true)
     expect(screen.getAllByText('1200×628').some((element) => !element.closest('[hidden]'))).toBe(true)
+    const deliveryPreviews = screen.getAllByRole('article', { name: 'Template preview Split frame' }).filter((element) => element.closest('.resize-grid'))
+    expect(deliveryPreviews).toHaveLength(4)
+    deliveryPreviews.forEach((preview) => {
+      expect(preview.querySelector('.motion-copy')).toHaveAttribute('data-motion-preset', 'type-reveal')
+    })
+
+    act(() => {
+      writeReview('campaign-oslo-intensive', {
+        ...readReview('campaign-oslo-intensive'),
+        status: 'draft',
+      })
+    })
+    expect(await screen.findByRole('heading', { name: 'Prepare for review' })).toBeVisible()
+  })
+
+  test('resets campaign-scoped workflow state when the campaign id changes', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    expect(screen.getByRole('heading', { name: 'AI assets' })).toBeVisible()
+
+    window.history.pushState({}, '', '/campaign/campaign-first-week')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+
+    expect(await screen.findByRole('heading', { name: 'Tell us your campaign idea' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'AI assets' })).not.toBeInTheDocument()
   })
 
   test('shows every selected banner in the Stage 5 review package and keeps the submitted state visible', async () => {

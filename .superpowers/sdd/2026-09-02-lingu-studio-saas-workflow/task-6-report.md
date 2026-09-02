@@ -21,3 +21,17 @@
 - Checked the working diff with `git diff --check`.
 - Confirmed no legacy numbered review content remains in rendered source.
 - Verified no external Figma, notification, rendering, image, or video service is invoked.
+
+## Fix round 1 — review follow-up
+
+- Hardened review persistence for unavailable browser storage and malformed persisted nested package fields. Workflow consumers now receive normalized banner IDs, selected-banner records, generated assets, and motion maps.
+- Reset campaign-scoped workflow state on campaign URL changes, and return an invalidated Delivery view to the latest permitted review or approval stage.
+- Preserved approved motion settings in all four Delivery resizes and included media, source asset, template, and motion metadata in simulated asset/manifest payloads.
+- Updated approval copy to name the persisted designer, with the Jordan Lee default as a fallback.
+
+### Fix-round evidence
+
+- RED: `npm test -- --run src/domain/reviewStore.test.js` initially failed for an inaccessible `localStorage` getter and unnormalized malformed fields; `npm test -- --run src/App.test.jsx` initially failed because the approval copy was hard-coded and a campaign switch retained the previous AI-assets stage.
+- GREEN: `npm test -- --run src/domain/reviewStore.test.js src/App.test.jsx` passed with 32 tests after the fixes. The focused download assertion required a test-double adjustment because this test environment's Blob does not expose `.text()`; the final test asserts the simulated JSON passed to the Blob constructor.
+- Full suite: `npm test -- --run` passed with 58 tests.
+- Build: `npm run build` completed successfully.
