@@ -20,6 +20,7 @@ describe('Lingu Studio app', () => {
     expect(appStyles).toMatch(/\.workflow-stage > \*\s*{[^}]*max-width:\s*var\(--content-max\);/)
     expect(appStyles).toMatch(/\.review-workspace\s*{[^}]*width:\s*100%;/)
     expect(appStyles).toMatch(/\.format-select__trigger > span\s*{[^}]*font-size:\s*14px;/)
+    expect(appStyles).toMatch(/\.step-button\s*{[^}]*align-items:\s*center;/)
   })
 
   test('shows the dashboard by default with the production metric strip', () => {

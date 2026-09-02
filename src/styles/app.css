@@ -401,7 +401,7 @@
 .step-button {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);
-  align-items: baseline;
+  align-items: center;
   width: 100%;
   min-height: 52px;
   gap: 8px;
