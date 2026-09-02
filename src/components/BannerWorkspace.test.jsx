@@ -86,8 +86,9 @@ describe('BannerWorkspace', () => {
 
   test('filters exact candidate format, platform, and media combinations', async () => {
     const user = userEvent.setup()
-    render(<BannerWorkspaceHarness />)
+    const { container } = render(<BannerWorkspaceHarness />)
 
+    expect(container.querySelector('.banner-filter--platform > span')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('banner-candidate')).toHaveLength(1)
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
     expect(screen.getAllByRole('option', { name: 'All' })).toHaveLength(1)
