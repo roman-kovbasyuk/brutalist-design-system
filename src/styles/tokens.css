@@ -32,6 +32,7 @@
   --shadow-float: 0 14px 28px rgba(31, 46, 72, 0.1);
   --shadow-dialog: 0 24px 64px rgba(24, 35, 52, 0.22);
   --focus-ring: 0 0 0 3px rgba(53, 89, 214, 0.23);
+  --content-max: 1400px;
 
   --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --text-meta: 12px;

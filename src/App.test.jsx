@@ -7,11 +7,18 @@ import App from './App.jsx'
 import { readReview, writeReview } from './domain/reviewStore.js'
 
 const appStyles = readFileSync(join(process.cwd(), 'src/styles/app.css'), 'utf8')
+const tokenStyles = readFileSync(join(process.cwd(), 'src/styles/tokens.css'), 'utf8')
 
 describe('Lingu Studio app', () => {
   beforeEach(() => {
     window.localStorage.clear()
     window.history.replaceState({}, '', '/')
+  })
+
+  test('uses the shared 1400px content ceiling for primary product surfaces', () => {
+    expect(tokenStyles).toMatch(/--content-max:\s*1400px;/)
+    expect(appStyles).toMatch(/\.workflow-stage > \*\s*{[^}]*max-width:\s*var\(--content-max\);/)
+    expect(appStyles).toMatch(/\.review-workspace\s*{[^}]*width:\s*100%;/)
   })
 
   test('shows the dashboard by default with the production metric strip', () => {

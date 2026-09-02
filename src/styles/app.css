@@ -124,7 +124,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  max-width: 1180px;
+  max-width: var(--content-max);
   gap: 24px;
   margin: 0 auto;
   padding-bottom: 24px;
@@ -164,7 +164,7 @@
 .dashboard-metric-strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  max-width: 1180px;
+  max-width: var(--content-max);
   margin: 26px auto 42px;
   overflow: hidden;
   border: 1px solid var(--rule);
@@ -184,7 +184,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.campaign-history-section { max-width: 1180px; margin: 0 auto; }
+.campaign-history-section { max-width: var(--content-max); margin: 0 auto; }
 
 .dashboard-section-header {
   display: flex;
@@ -392,6 +392,12 @@
   min-height: 100vh;
   padding: 30px clamp(28px, 4vw, 64px) 22px;
   animation: stage-enter 220ms var(--ease-standard) both;
+}
+
+.workflow-stage > * {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
 }
 
 @keyframes stage-enter {
@@ -1666,12 +1672,20 @@ mark {
 .review-workspace,
 .review-submission-status,
 .approval-panel {
-  width: min(840px, 100%);
   margin: 28px auto;
   padding: 22px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   background: var(--surface);
+}
+
+.designer-review-card,
+.review-submission-status,
+.approval-panel { width: min(840px, 100%); }
+
+.review-workspace {
+  width: 100%;
+  max-width: var(--content-max);
 }
 
 .designer-review-card { max-width: 680px; margin-top: 38px; }
@@ -1788,7 +1802,7 @@ mark {
 
 /* Reference screens */
 .reference-screen {
-  max-width: 1440px;
+  max-width: var(--content-max);
   margin: 0 auto;
   padding: 36px clamp(28px, 5vw, 76px) 72px;
 }
