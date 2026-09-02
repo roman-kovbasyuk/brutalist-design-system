@@ -130,6 +130,7 @@ describe('Lingu Studio app', () => {
     const promptList = screen.getByRole('list', { name: 'Prompt directions' })
     const promptRows = within(promptList).getAllByRole('listitem')
     expect(promptRows).toHaveLength(5)
+    expect(within(promptRows[0]).queryByText('01', { exact: true })).not.toBeInTheDocument()
     promptRows.forEach((row) => {
       expect(within(row).getAllByRole('mark')).toHaveLength(2)
       expect(within(row).queryByText('$0.12 estimated cost')).not.toBeInTheDocument()

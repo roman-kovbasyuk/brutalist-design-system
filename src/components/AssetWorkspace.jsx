@@ -97,14 +97,13 @@ export function AssetWorkspace({
         <section id="asset-panel-prompts" role="tabpanel" aria-labelledby="asset-tab-prompts" className="asset-panel">
           <div className="asset-panel__intro"><p>Five local prompt directions are ready to turn into static visuals.</p></div>
           <ol className="prompt-list" aria-label="Prompt directions">
-            {promptIdeas.map((prompt, index) => {
+            {promptIdeas.map((prompt) => {
               const created = staticAssets.some((asset) => asset.sourcePromptId === prompt.id)
               const editing = editingPromptId === prompt.id
               const confirmingDelete = deletingPromptId === prompt.id
               return (
                 <li className={`prompt-row ${editing ? 'prompt-row--editing' : ''}`} data-testid="prompt-card" key={prompt.id}>
                   <div className="prompt-row__identity">
-                    <span className="prompt-row__number">{String(index + 1).padStart(2, '0')}</span>
                     <div><h2>{editing ? 'Edit prompt' : prompt.title}</h2><small>{editing ? 'Update the name and full generation text' : prompt.shot}</small></div>
                   </div>
                   {editing ? (
