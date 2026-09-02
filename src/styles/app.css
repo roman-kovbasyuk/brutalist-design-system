@@ -805,7 +805,6 @@
 .prompt-row__content summary { width: max-content; cursor: pointer; text-decoration: underline; text-decoration-color: var(--strong-rule); text-underline-offset: 3px; }
 .prompt-row__content details p { max-width: 70ch; margin: 8px 0 0; overflow-wrap: anywhere; line-height: 1.45; }
 .prompt-row__action { display: grid; justify-items: end; gap: 10px; min-width: 0; }
-.prompt-row__cost { margin: 0; color: var(--ink); font-size: var(--text-meta); font-weight: 700; text-align: right; }
 .prompt-row__action .button { width: auto; min-width: 132px; padding-inline: 12px; font-size: var(--text-meta); }
 
 .prompt-row__management { display: flex; gap: 3px; }
@@ -1811,7 +1810,6 @@ mark {
   .copy-fields { border-top: 1px solid var(--rule); border-left: 0; }
   .prompt-row { grid-template-columns: 1fr; gap: 12px; }
   .prompt-row__action { align-items: stretch; grid-column: auto; }
-  .prompt-row__cost { text-align: left; }
   .prompt-row__action .button { width: 100%; min-width: 0; }
   .prompt-row__management { justify-content: flex-start; }
   .prompt-row__delete-confirm { justify-content: flex-start; flex-wrap: wrap; }

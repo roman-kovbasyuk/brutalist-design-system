@@ -132,7 +132,7 @@ describe('Lingu Studio app', () => {
     expect(promptRows).toHaveLength(5)
     promptRows.forEach((row) => {
       expect(within(row).getAllByRole('mark')).toHaveLength(2)
-      expect(within(row).getByText('$0.12 estimated cost')).toBeVisible()
+      expect(within(row).queryByText('$0.12 estimated cost')).not.toBeInTheDocument()
     })
 
     const promptTab = within(tabs).getByRole('tab', { name: 'Prompts' })

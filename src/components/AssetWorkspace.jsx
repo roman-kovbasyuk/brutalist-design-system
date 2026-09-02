@@ -131,7 +131,6 @@ export function AssetWorkspace({
                           <button type="button" aria-label={`Edit prompt ${prompt.title}`} title="Edit" onClick={() => beginPromptEdit(prompt)}><Pencil size={15} aria-hidden="true" /></button>
                           <button type="button" className="prompt-row__delete" aria-label={`Delete prompt ${prompt.title}`} title="Delete" onClick={() => setDeletingPromptId(prompt.id)}><Trash2 size={15} aria-hidden="true" /></button>
                         </div>
-                        <p className="prompt-row__cost">{formatCurrency(prompt.estimatedStaticCost)} estimated cost</p>
                         {confirmingDelete ? (
                           <div className="prompt-row__delete-confirm" role="group" aria-label={`Confirm deletion of ${prompt.title}`}>
                             <span>Delete this prompt?</span>
