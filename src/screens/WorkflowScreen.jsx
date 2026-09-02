@@ -28,10 +28,22 @@ const analysisStates = [
   'Preparing image and video prompts',
 ]
 const analysisPhaseDuration = 250
+const defaultMotionPreset = { text: 'fade-up', image: 'soft-zoom', cta: 'pop-in', replayVersion: 0 }
+
+function getResumableStep(review) {
+  if (!review?.selectedBanners?.length) return 1
+  if (review.status === 'approved') return 7
+  if (review.status === 'in-review' || review.status === 'ready-for-approval') return 6
+  return 1
+}
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
 
 export function WorkflowScreen({ requestedTemplate, campaignId }) {
-  const [step, setStep] = useState(1)
-  const [maxStep, setMaxStep] = useState(1)
+  const [step, setStep] = useState(() => getResumableStep(readReview(campaignId)))
+  const [maxStep, setMaxStep] = useState(() => getResumableStep(readReview(campaignId)))
   const [brief, setBrief] = useState(initialBrief)
   const [error, setError] = useState('')
   const [strategy, setStrategy] = useState(null)
@@ -72,20 +84,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
         return
       }
 
-      const nextStrategy = processing.strategy
-      setStrategy(nextStrategy)
-      setPromptIdeas(generatePromptIdeas(nextStrategy))
-      setStaticAssets([])
-      setVideoAssets([])
-      setAssetTab('prompts')
-      setShowVideoCostDialog(false)
-      setSelectedVisualId(null)
-      setSelectedBannerIds([])
-      setActiveBannerId(null)
-      setMotionByBannerId({})
-      invalidateReview()
-      setProcessing(null)
-      advance(2)
+      completeAnalysis(processing.strategy)
     }, analysisPhaseDuration)
 
     return () => window.clearTimeout(timerId)
@@ -120,17 +119,22 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
       offer: strategy?.offer ?? '',
       cta: strategy?.cta ?? '',
     },
-    motionPreset: motionByBannerId[candidate.id],
+    motionPreset: { ...defaultMotionPreset, ...motionByBannerId[candidate.id] },
   })), [motionByBannerId, selectedBanners, staticAssets, strategy, videoAssets])
   const deliveryBanners = review?.selectedBanners ?? []
+  const hasPersistedReviewPackage = reviewStatus !== 'draft' && deliveryBanners.length > 0
+  const hasReviewPackage = selectedBannerIds.length > 0 || hasPersistedReviewPackage
+  const visibleReviewBanners = reviewStatus === 'draft' ? reviewBanners : deliveryBanners
   const deliveryOutputs = useMemo(() => deliveryBanners.flatMap((banner) => getResizeLayouts(banner.template).map((format) => ({ ...format, banner }))), [deliveryBanners])
   const generatedAssets = review?.generatedAssets ?? [...staticAssets, ...videoAssets]
   const productionCost = getProductionCost(generatedAssets)
   const selectedVideoCount = deliveryBanners.filter((banner) => banner.mediaType === 'video').length
 
   useEffect(() => {
-    setStep(1)
-    setMaxStep(1)
+    const persistedReview = readReview(campaignId)
+    const resumedStep = getResumableStep(persistedReview)
+    setStep(resumedStep)
+    setMaxStep(resumedStep)
     setBrief(initialBrief)
     setError('')
     setStrategy(null)
@@ -147,14 +151,14 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setActiveBannerId(null)
     setPendingTemplateId(null)
     setMotionByBannerId({})
-    setReview(readReview(campaignId))
+    setReview(persistedReview)
     return subscribeToReview(campaignId, setReview)
   }, [campaignId]) // A new URL campaign must never inherit the prior campaign's local workflow state.
 
   useEffect(() => {
-    if (step !== 7 || reviewStatus === 'approved') return
+    if (reviewStatus !== 'draft' || step < 6) return
 
-    const nextPermittedStep = reviewStatus === 'draft' && reviewBanners.length > 0 ? 5 : 6
+    const nextPermittedStep = reviewBanners.length > 0 ? 5 : 4
     setStep(nextPermittedStep)
     setMaxStep((current) => Math.min(current, nextPermittedStep))
   }, [reviewBanners.length, reviewStatus, step])
@@ -187,17 +191,17 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   }, [bannerCandidates, bannerFilters, selectedTemplateId])
 
   function advance(nextStep) {
-    if (nextStep === 5 && selectedBannerIds.length === 0) return
-    if (nextStep === 6 && reviewStatus === 'draft') return
-    if (nextStep === 7 && reviewStatus !== 'approved') return
+    if (nextStep === 5 && !hasReviewPackage) return
+    if (nextStep === 6 && !hasPersistedReviewPackage) return
+    if (nextStep === 7 && (reviewStatus !== 'approved' || deliveryBanners.length === 0)) return
     setStep(nextStep)
     setMaxStep((current) => Math.max(current, nextStep))
   }
 
   function changeStep(nextStep) {
-    if (nextStep === 5 && selectedBannerIds.length === 0) return
-    if (nextStep === 6 && reviewStatus === 'draft') return
-    if (nextStep === 7 && reviewStatus !== 'approved') return
+    if (nextStep === 5 && !hasReviewPackage) return
+    if (nextStep === 6 && !hasPersistedReviewPackage) return
+    if (nextStep === 7 && (reviewStatus !== 'approved' || deliveryBanners.length === 0)) return
     setStep(nextStep)
   }
 
@@ -218,10 +222,31 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     try {
       const nextStrategy = analyzeBrief(brief)
       setError('')
+      if (prefersReducedMotion()) {
+        completeAnalysis(nextStrategy)
+        return
+      }
       setProcessing({ strategy: nextStrategy, activeIndex: 0 })
     } catch (nextError) {
       setError(nextError.message)
     }
+  }
+
+  function completeAnalysis(nextStrategy) {
+    setStrategy(nextStrategy)
+    setPromptIdeas(generatePromptIdeas(nextStrategy))
+    setStaticAssets([])
+    setVideoAssets([])
+    setAssetTab('prompts')
+    setShowVideoCostDialog(false)
+    setSelectedVisualId(null)
+    setSelectedBannerIds([])
+    setActiveBannerId(null)
+    setMotionByBannerId({})
+    invalidateReview()
+    setProcessing(null)
+    setStep(2)
+    setMaxStep((current) => Math.max(current, 2))
   }
 
   function updateStrategy(field, value) {
@@ -496,10 +521,10 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
           </>
         )}
 
-        {step === 5 && reviewBanners.length > 0 && (
+        {step === 5 && visibleReviewBanners.length > 0 && (
           <>
             <StageHeader count="05 / 07" title="Prepare for review" description="Review every selected banner before sending the immutable local package to the designer endpoint." />
-            <ReviewWorkspace banners={reviewStatus === 'draft' ? reviewBanners : deliveryBanners} status={reviewStatus} />
+            <ReviewWorkspace banners={visibleReviewBanners} status={reviewStatus} />
             {reviewStatus === 'draft' ? (
               <StageActions><SecondaryButton onClick={() => setStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={submitReviewPackage}>Send to Figma for review</PrimaryButton></StageActions>
             ) : (

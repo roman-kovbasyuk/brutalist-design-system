@@ -113,7 +113,9 @@ describe('BannerWorkspace', () => {
 
     await user.selectOptions(screen.getByLabelText('Format'), 'Vertical')
     await user.selectOptions(screen.getByLabelText('Platform'), 'SMM Static')
-    expect(screen.getByRole('button', { name: 'Select for Figma assembly' })).toHaveAttribute('aria-pressed', 'true')
+    const selectedAction = screen.getByRole('button', { name: 'Selected for Figma assembly' })
+    expect(selectedAction).toHaveAttribute('aria-pressed', 'true')
+    expect(selectedAction.querySelector('svg')).toBeInTheDocument()
   })
 
   test('opens exact banner details and replays independent motion channels', async () => {

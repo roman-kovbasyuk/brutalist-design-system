@@ -1630,6 +1630,12 @@ mark {
   .banner-detail { position: static; max-width: 460px; }
   .banner-gallery { grid-template-columns: repeat(3, minmax(132px, 1fr)); }
   .reference-screen { padding: 28px 18px 56px; }
+  .asset-card__source,
+  .review-figma-link,
+  .filter-row button { min-height: 44px; }
+  .asset-card__source { padding: 9px 0; }
+  .review-figma-link { padding: 9px 12px; }
+  .filter-row button { padding: 0 12px; }
   .page-header--split,
   .system-section { grid-template-columns: 1fr; gap: 26px; }
   .page-header h1 { font-size: 32px; }
@@ -1687,4 +1693,15 @@ mark {
 
   .ai-highlight,
   mark { background: var(--highlight); }
+
+  button:not(:disabled):active,
+  .button--primary:hover:not(:disabled),
+  .button--secondary:hover:not(:disabled),
+  .table-action:hover,
+  .visual-option > button:hover,
+  .prompt-card:hover,
+  .asset-card:hover,
+  .template-card:hover,
+  .banner-candidate:hover,
+  .review-thumbnail:hover { transform: none; }
 }

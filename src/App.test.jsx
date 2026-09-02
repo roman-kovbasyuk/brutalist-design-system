@@ -78,6 +78,22 @@ describe('Lingu Studio app', () => {
     }
   })
 
+  test('completes brief processing immediately when reduced motion is requested', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }))
+
+    try {
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Campaign' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Analyze brief' }))
+
+      expect(screen.getByDisplayValue('Speak before you move')).toBeVisible()
+      expect(screen.queryByRole('progressbar', { name: 'Brief analysis progress' })).not.toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   test('shows five prompt directions with semantic tabs and marked subjects and actions', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -207,6 +223,47 @@ describe('Lingu Studio app', () => {
     rerender(<App />)
 
     expect(screen.getByRole('heading', { name: 'Designer review' })).toBeVisible()
+  })
+
+  test('keeps a direct non-default campaign context across reference navigation and template return', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState({}, '', '/campaign/campaign-first-week')
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Templates' }))
+    await user.click(screen.getByRole('button', { name: 'Select template Reverse split' }))
+
+    expect(window.location.pathname).toBe('/campaign/campaign-first-week')
+
+    await user.click(screen.getByRole('button', { name: 'Dashboard' }))
+    await user.click(screen.getByRole('button', { name: 'Design system' }))
+    await user.click(screen.getByRole('button', { name: 'Campaign' }))
+
+    expect(window.location.pathname).toBe('/campaign/campaign-first-week')
+  })
+
+  test.each([
+    ['in-review', 'Waiting for designer review'],
+    ['ready-for-approval', 'Banners are ready for approval'],
+    ['approved', 'Delivery'],
+  ])('hydrates a persisted %s package to its latest permitted stage', (status, heading) => {
+    writeReview('campaign-first-week', createPersistedReview(status))
+    window.history.replaceState({}, '', '/campaign/campaign-first-week')
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: heading })).toBeVisible()
+  })
+
+  test('renders a persisted in-review package from Stage 5 without local banner state', async () => {
+    const user = userEvent.setup()
+    writeReview('campaign-first-week', createPersistedReview('in-review'))
+    window.history.replaceState({}, '', '/campaign/campaign-first-week')
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: '5. Prepare for review: Review package' }))
+
+    expect(screen.getByRole('region', { name: 'Review package' })).toHaveAttribute('data-status', 'in-review')
+    expect(screen.getByTestId('review-banner-thumbnail')).toBeVisible()
   })
 
   test('keeps the designer endpoint honest when no submitted package exists', () => {
@@ -371,6 +428,12 @@ describe('Lingu Studio app', () => {
 
     await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
 
+    const submittedReview = readReview('campaign-oslo-intensive')
+    submittedReview.selectedBanners.forEach((banner) => {
+      expect(banner.motionPreset).toMatchObject({ text: 'fade-up', image: 'soft-zoom', cta: 'pop-in' })
+      expect(submittedReview.motionByBannerId[banner.id]).toMatchObject({ text: 'fade-up', image: 'soft-zoom', cta: 'pop-in' })
+    })
+
     const reviewWorkspace = screen.getByRole('region', { name: 'Review package' })
     expect(reviewWorkspace).toHaveAttribute('data-status', 'in-review')
     expect(screen.getByRole('link', { name: 'Open Figma review' })).toHaveClass('review-figma-link')
@@ -498,7 +561,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
     await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
     await user.click(screen.getByRole('button', { name: 'Back to banner preview' }))
-    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: 'Selected for Figma assembly' }))
 
     expect(screen.getByRole('button', { name: '5. Prepare for review: Review package' })).toBeDisabled()
   })
@@ -557,5 +620,35 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('button', { name: 'Analyze brief' }))
     expect(await screen.findByDisplayValue('Speak before you move', {}, { timeout: 2000 })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Generate visuals' }))
+  }
+
+  function createPersistedReview(status) {
+    return {
+      status,
+      figmaUrl: 'https://www.figma.com/file/campaign-first-week/lingu-studio-review',
+      selectedBanners: [{
+        id: 'banner-persisted',
+        templateId: 'split-left',
+        templateName: 'Split frame',
+        format: 'Vertical',
+        dimensions: '1080×1350',
+        platform: 'SMM Static',
+        mediaType: 'static',
+        sourceAssetId: 'static-persisted',
+        sourceStaticId: 'static-persisted',
+        template: { id: 'split-left', name: 'Split frame', layout: 'split-left', alignment: 'left', family: 'split', masterRatio: 'portrait', index: 1 },
+        visual: { id: 'static-persisted', name: 'Persisted visual', direction: 'Natural light', motif: 'portrait', palette: ['#e8d8c6', '#6d81a7', '#1d2940'] },
+        content: { headline: 'Persisted banner', body: 'Ready to resume', offer: '15% off', cta: 'Start learning' },
+        motionPreset: { text: 'fade-up', image: 'soft-zoom', cta: 'pop-in', replayVersion: 0 },
+      }],
+      selectedBannerIds: ['banner-persisted'],
+      motionByBannerId: { 'banner-persisted': { text: 'fade-up', image: 'soft-zoom', cta: 'pop-in', replayVersion: 0 } },
+      generatedAssets: [],
+      submittedAt: '2026-09-02T09:00:00.000Z',
+      reviewedAt: status === 'in-review' ? null : '2026-09-02T09:10:00.000Z',
+      approvedAt: status === 'approved' ? '2026-09-02T09:20:00.000Z' : null,
+      designerName: status === 'in-review' ? null : 'Jordan Lee',
+      marketerName: status === 'approved' ? 'Maya Chen' : null,
+    }
   }
 })

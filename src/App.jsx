@@ -11,9 +11,10 @@ const defaultCampaignId = campaignHistory[0].id
 
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname)
+  const [campaignContextId, setCampaignContextId] = useState(() => getRoute(window.location.pathname).campaignId ?? defaultCampaignId)
   const [requestedTemplate, setRequestedTemplate] = useState(null)
   const route = getRoute(pathname)
-  const activeCampaignId = route.campaignId ?? defaultCampaignId
+  const activeCampaignId = route.campaignId ?? campaignContextId
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' })
@@ -21,7 +22,10 @@ export default function App() {
 
   useEffect(() => {
     function syncPathname() {
-      setPathname(window.location.pathname)
+      const nextPathname = window.location.pathname
+      const nextRoute = getRoute(nextPathname)
+      if (nextRoute.campaignId) setCampaignContextId(nextRoute.campaignId)
+      setPathname(nextPathname)
     }
 
     window.addEventListener('popstate', syncPathname)
@@ -29,6 +33,8 @@ export default function App() {
   }, [])
 
   function navigate(nextPathname) {
+    const nextRoute = getRoute(nextPathname)
+    if (nextRoute.campaignId) setCampaignContextId(nextRoute.campaignId)
     window.history.pushState({}, '', nextPathname)
     setPathname(nextPathname)
   }

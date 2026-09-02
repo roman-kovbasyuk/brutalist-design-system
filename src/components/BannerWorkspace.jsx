@@ -1,4 +1,4 @@
-import { LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square } from 'lucide-react'
+import { Check, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { BannerPreview } from './BannerPreview.jsx'
 
@@ -142,7 +142,7 @@ export function BannerWorkspace({
                       <BannerPreview template={getTemplate(candidate)} visual={getVisual(candidate)} content={content} ratio={candidate.format === 'Horizontal' ? '1200 / 628' : candidate.format === 'Square' ? '1 / 1' : candidate.dimensions === '1080×1920' ? '9 / 16' : '4 / 5'} compact />
                     </button>
                     <div className="banner-candidate__meta"><strong>{candidate.templateName}</strong><span>{candidate.dimensions} · {candidate.platform}</span></div>
-                    <button type="button" className="banner-candidate__select" aria-pressed={isSelected} onClick={() => toggleSelection(candidate)}>Select for Figma assembly</button>
+                    <button type="button" className="banner-candidate__select" aria-pressed={isSelected} onClick={() => toggleSelection(candidate)}>{isSelected && <Check size={15} aria-hidden="true" />} {isSelected ? 'Selected for Figma assembly' : 'Select for Figma assembly'}</button>
                   </article>
                 )
               })}
