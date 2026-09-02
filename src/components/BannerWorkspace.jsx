@@ -114,7 +114,7 @@ export function BannerWorkspace({
           <span>Format</span>
           <FormatSelect value={filters.format} onChange={(value) => setFilter('format', value)} />
         </div>
-        <label className="banner-filter">
+        <label className="banner-filter banner-filter--platform">
           <span>Platform</span>
           <select aria-label="Platform" value={filters.platform} onChange={(event) => setFilter('platform', event.target.value)}>{platformOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         </label>

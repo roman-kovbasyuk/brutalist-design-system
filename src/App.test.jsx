@@ -741,6 +741,8 @@ describe('Lingu Studio app', () => {
     const user = userEvent.setup()
     render(<App />)
 
+    expect(appStyles).toMatch(/\.banner-filter--platform select\s*\{[^}]*width:\s*198px;/)
+
     await openAssetsWorkspace(user)
     const staticAction = screen.getAllByRole('button', { name: /Generate static visual/ })[0]
     await user.click(staticAction)

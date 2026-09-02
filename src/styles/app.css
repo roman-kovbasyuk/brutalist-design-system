@@ -1457,6 +1457,7 @@ mark {
 
 .banner-filter select,
 .banner-motion-select select { min-width: 132px; }
+.banner-filter--platform select { width: 198px; }
 
 .format-select { position: relative; color: var(--ink); }
 
