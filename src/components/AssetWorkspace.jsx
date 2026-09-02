@@ -67,7 +67,7 @@ export function AssetWorkspace({
 
       {activeTab === 'prompts' && (
         <section id="asset-panel-prompts" role="tabpanel" aria-labelledby="asset-tab-prompts" className="asset-panel">
-          <div className="asset-panel__intro"><p>Five local prompt directions are ready to turn into static visuals.</p><span>Simulated generation</span></div>
+          <div className="asset-panel__intro"><p>Five local prompt directions are ready to turn into static visuals.</p></div>
           <ol className="prompt-list" aria-label="Prompt directions">
             {promptIdeas.map((prompt, index) => {
               const created = staticAssets.some((asset) => asset.sourcePromptId === prompt.id)
