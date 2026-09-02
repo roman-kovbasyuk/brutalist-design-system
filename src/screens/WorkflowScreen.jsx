@@ -304,6 +304,31 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setSelectedVisualId((current) => current ?? asset.id)
   }
 
+  function updatePrompt(promptId, changes) {
+    invalidateReview()
+    setPromptIdeas((current) => current.map((prompt) => prompt.id === promptId ? { ...prompt, ...changes } : prompt))
+  }
+
+  function deletePrompt(promptId) {
+    invalidateReview()
+    setPromptIdeas((current) => current.filter((prompt) => prompt.id !== promptId))
+  }
+
+  function downloadPrompt(prompt) {
+    const safeName = prompt.title
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'prompt'
+    const contents = `${prompt.title}\n\n${prompt.prompt}\n`
+    const url = URL.createObjectURL(new Blob([contents], { type: 'text/plain;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${safeName}-prompt.txt`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   function generateVideoAsset(staticAsset) {
     const asset = createVideoAsset(staticAsset)
     setVideoAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
@@ -479,6 +504,9 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               videoEstimate={videoEstimate}
               showCostDialog={showVideoCostDialog}
               onTabChange={setAssetTab}
+              onUpdatePrompt={updatePrompt}
+              onDeletePrompt={deletePrompt}
+              onDownloadPrompt={downloadPrompt}
               onGenerateStatic={generateStaticAsset}
               onGenerateVideo={generateVideoAsset}
               onSelectStatic={selectVisual}

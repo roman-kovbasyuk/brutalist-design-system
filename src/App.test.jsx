@@ -146,6 +146,69 @@ describe('Lingu Studio app', () => {
     expect(within(tabs).getByRole('tab', { name: 'Prompts' })).toHaveFocus()
   })
 
+  test('edits a prompt name and full prompt text inline', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    const promptRow = screen.getAllByTestId('prompt-card')[0]
+    await user.click(within(promptRow).getByRole('button', { name: 'Edit prompt Arrival portrait' }))
+    const nameField = within(promptRow).getByRole('textbox', { name: 'Prompt name' })
+    const promptField = within(promptRow).getByRole('textbox', { name: 'Prompt text' })
+    await user.clear(nameField)
+    await user.type(nameField, 'Oslo first greeting')
+    await user.clear(promptField)
+    await user.type(promptField, 'A new Oslo resident practises a confident first greeting beside a tram.')
+    await user.click(within(promptRow).getByRole('button', { name: 'Save prompt' }))
+
+    expect(within(promptRow).getByRole('heading', { name: 'Oslo first greeting' })).toBeVisible()
+    await user.click(within(promptRow).getByText('Full generated prompt'))
+    expect(within(promptRow).getByText('A new Oslo resident practises a confident first greeting beside a tram.')).toBeVisible()
+  })
+
+  test('deletes a prompt after inline confirmation', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    const promptRow = screen.getAllByTestId('prompt-card')[0]
+    await user.click(within(promptRow).getByRole('button', { name: 'Delete prompt Arrival portrait' }))
+    expect(within(promptRow).getByText('Delete this prompt?')).toBeVisible()
+    await user.click(within(promptRow).getByRole('button', { name: 'Confirm delete Arrival portrait' }))
+
+    expect(screen.getAllByTestId('prompt-card')).toHaveLength(4)
+    expect(screen.queryByRole('heading', { name: 'Arrival portrait' })).not.toBeInTheDocument()
+  })
+
+  test('downloads the current prompt name and text as a text file', async () => {
+    const user = userEvent.setup()
+    const createObjectURL = vi.fn(() => 'blob:prompt-download')
+    const revokeObjectURL = vi.fn()
+    let downloadedFilename = ''
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
+      downloadedFilename = this.download
+    })
+    const BlobMock = vi.fn(function BlobMock(parts, options) {
+      this.parts = parts
+      this.options = options
+    })
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    vi.stubGlobal('Blob', BlobMock)
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getByRole('button', { name: 'Download prompt Arrival portrait' }))
+
+    expect(BlobMock).toHaveBeenCalledWith([
+      'Arrival portrait\n\neditorial campaign image, tactile natural light, clear subject separation, generous copy space, premium art direction, no text, no logos; shot 1: A new Oslo resident rehearses a first-day Norwegian greeting; eye-level medium portrait · soft morning light; preserve deliberate negative space for the campaign copy\n',
+    ], { type: 'text/plain;charset=utf-8' })
+    expect(downloadedFilename).toBe('arrival-portrait-prompt.txt')
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:prompt-download')
+    anchorClick.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
   test('generates a static visual and then a video from that image without leaving duplicate outputs', async () => {
     const user = userEvent.setup()
     render(<App />)

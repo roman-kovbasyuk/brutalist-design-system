@@ -1,4 +1,4 @@
-import { Check, Copy, Pause, Play } from 'lucide-react'
+import { Check, Copy, Download, Pause, Pencil, Play, Trash2, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { VisualArtwork } from './VisualArtwork.jsx'
 import { CostDialog } from './CostDialog.jsx'
@@ -22,6 +22,9 @@ export function AssetWorkspace({
   videoEstimate,
   showCostDialog,
   onTabChange,
+  onUpdatePrompt,
+  onDeletePrompt,
+  onDownloadPrompt,
   onGenerateStatic,
   onGenerateVideo,
   onSelectStatic,
@@ -33,10 +36,28 @@ export function AssetWorkspace({
   const tabRefs = useRef({})
   const [copiedPromptId, setCopiedPromptId] = useState(null)
   const [playingVideoId, setPlayingVideoId] = useState(null)
+  const [editingPromptId, setEditingPromptId] = useState(null)
+  const [deletingPromptId, setDeletingPromptId] = useState(null)
+  const [promptDraft, setPromptDraft] = useState({ title: '', prompt: '' })
 
   async function copyPrompt(asset) {
     await navigator.clipboard.writeText(asset.prompt)
     setCopiedPromptId(asset.id)
+  }
+
+  function beginPromptEdit(prompt) {
+    setEditingPromptId(prompt.id)
+    setDeletingPromptId(null)
+    setPromptDraft({ title: prompt.title, prompt: prompt.prompt })
+  }
+
+  function savePrompt(event, promptId) {
+    event.preventDefault()
+    const title = promptDraft.title.trim()
+    const prompt = promptDraft.prompt.trim()
+    if (!title || !prompt) return
+    onUpdatePrompt(promptId, { title, prompt })
+    setEditingPromptId(null)
   }
 
   function moveTab(event) {
@@ -78,31 +99,59 @@ export function AssetWorkspace({
           <ol className="prompt-list" aria-label="Prompt directions">
             {promptIdeas.map((prompt, index) => {
               const created = staticAssets.some((asset) => asset.sourcePromptId === prompt.id)
+              const editing = editingPromptId === prompt.id
+              const confirmingDelete = deletingPromptId === prompt.id
               return (
-                <li className="prompt-row" data-testid="prompt-card" key={prompt.id}>
+                <li className={`prompt-row ${editing ? 'prompt-row--editing' : ''}`} data-testid="prompt-card" key={prompt.id}>
                   <div className="prompt-row__identity">
                     <span className="prompt-row__number">{String(index + 1).padStart(2, '0')}</span>
-                    <div><h2>{prompt.title}</h2><small>{prompt.shot}</small></div>
+                    <div><h2>{editing ? 'Edit prompt' : prompt.title}</h2><small>{editing ? 'Update the name and full generation text' : prompt.shot}</small></div>
                   </div>
-                  <div className="prompt-row__content">
-                    <p className="prompt-row__direction">
-                      <mark aria-label={`Hero: ${prompt.hero}`}>{prompt.hero}</mark>{' '}
-                      <mark aria-label={`Action: ${prompt.action}`}>{prompt.action}</mark>, shaped for the campaign message and clear copy space.
-                    </p>
-                    <details><summary>Full generated prompt</summary><p>{prompt.prompt}</p></details>
-                  </div>
-                  <div className="prompt-row__action">
-                    <p className="prompt-row__cost">{formatCurrency(prompt.estimatedStaticCost)} estimated cost</p>
-                    <button
-                      type="button"
-                      className="button button--secondary"
-                      aria-label={created ? `Generate static visual for ${prompt.title} (already generated)` : `Generate static visual for ${prompt.title}`}
-                      onClick={() => onGenerateStatic(prompt)}
-                      disabled={created}
-                    >
-                      {created ? 'Generated' : 'Generate visual'}
-                    </button>
-                  </div>
+                  {editing ? (
+                    <form className="prompt-row__editor" onSubmit={(event) => savePrompt(event, prompt.id)}>
+                      <label><span>Prompt name</span><input value={promptDraft.title} onChange={(event) => setPromptDraft((current) => ({ ...current, title: event.target.value }))} required /></label>
+                      <label><span>Prompt text</span><textarea value={promptDraft.prompt} onChange={(event) => setPromptDraft((current) => ({ ...current, prompt: event.target.value }))} required /></label>
+                      <div className="prompt-row__editor-actions">
+                        <button type="button" className="button button--secondary" onClick={() => setEditingPromptId(null)}><X size={14} aria-hidden="true" />Cancel</button>
+                        <button type="submit" className="button button--primary"><Check size={14} aria-hidden="true" />Save prompt</button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="prompt-row__content">
+                        <p className="prompt-row__direction">
+                          <mark aria-label={`Hero: ${prompt.hero}`}>{prompt.hero}</mark>{' '}
+                          <mark aria-label={`Action: ${prompt.action}`}>{prompt.action}</mark>, shaped for the campaign message and clear copy space.
+                        </p>
+                        <details><summary>Full generated prompt</summary><p>{prompt.prompt}</p></details>
+                      </div>
+                      <div className="prompt-row__action">
+                        <div className="prompt-row__management" aria-label={`Actions for ${prompt.title}`}>
+                          <button type="button" aria-label={`Download prompt ${prompt.title}`} title="Download" onClick={() => onDownloadPrompt(prompt)}><Download size={15} aria-hidden="true" /></button>
+                          <button type="button" aria-label={`Edit prompt ${prompt.title}`} title="Edit" onClick={() => beginPromptEdit(prompt)}><Pencil size={15} aria-hidden="true" /></button>
+                          <button type="button" className="prompt-row__delete" aria-label={`Delete prompt ${prompt.title}`} title="Delete" onClick={() => setDeletingPromptId(prompt.id)}><Trash2 size={15} aria-hidden="true" /></button>
+                        </div>
+                        <p className="prompt-row__cost">{formatCurrency(prompt.estimatedStaticCost)} estimated cost</p>
+                        {confirmingDelete ? (
+                          <div className="prompt-row__delete-confirm" role="group" aria-label={`Confirm deletion of ${prompt.title}`}>
+                            <span>Delete this prompt?</span>
+                            <button type="button" onClick={() => setDeletingPromptId(null)}>Cancel</button>
+                            <button type="button" aria-label={`Confirm delete ${prompt.title}`} onClick={() => { onDeletePrompt(prompt.id); setDeletingPromptId(null) }}>Delete</button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button button--secondary"
+                            aria-label={created ? `Generate static visual for ${prompt.title} (already generated)` : `Generate static visual for ${prompt.title}`}
+                            onClick={() => onGenerateStatic(prompt)}
+                            disabled={created}
+                          >
+                            {created ? 'Generated' : 'Generate visual'}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </li>
               )
             })}

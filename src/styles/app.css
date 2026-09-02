@@ -808,6 +808,73 @@
 .prompt-row__cost { margin: 0; color: var(--ink); font-size: var(--text-meta); font-weight: 700; text-align: right; }
 .prompt-row__action .button { width: auto; min-width: 132px; padding-inline: 12px; font-size: var(--text-meta); }
 
+.prompt-row__management { display: flex; gap: 3px; }
+.prompt-row__management button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--secondary);
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+.prompt-row__management button:hover { background: var(--surface-subtle); color: var(--ink); transform: translateY(-1px); }
+.prompt-row__management .prompt-row__delete:hover { background: #fff1f0; color: #aa2e25; }
+
+.prompt-row__delete-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 36px;
+  color: var(--secondary);
+  font-size: var(--text-meta);
+}
+.prompt-row__delete-confirm span { margin-right: 3px; color: var(--ink); font-weight: 650; }
+.prompt-row__delete-confirm button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--surface-subtle);
+  color: var(--secondary);
+  font: inherit;
+  font-weight: 650;
+}
+.prompt-row__delete-confirm button:last-child { background: #fff1f0; color: #aa2e25; }
+
+.prompt-row--editing { align-items: start; background: #fafbfe; }
+.prompt-row__editor {
+  display: grid;
+  grid-column: 2 / -1;
+  grid-template-columns: minmax(180px, 0.55fr) minmax(320px, 1.45fr);
+  gap: 14px;
+  min-width: 0;
+}
+.prompt-row__editor label { display: grid; gap: 6px; min-width: 0; color: var(--secondary); font-size: var(--text-meta); font-weight: 650; }
+.prompt-row__editor input,
+.prompt-row__editor textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--strong-rule);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: 1.45;
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+}
+.prompt-row__editor textarea { min-height: 88px; resize: vertical; }
+.prompt-row__editor input:focus,
+.prompt-row__editor textarea:focus { border-color: var(--accent); outline: 0; box-shadow: var(--focus-ring); }
+.prompt-row__editor-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; }
+.prompt-row__editor-actions .button { width: auto; min-height: 38px; padding: 7px 11px; font-size: var(--text-meta); }
+
 @media (hover: hover) {
   .prompt-row:hover { background: #fafbfe; }
   .prompt-row__content summary:hover { color: var(--ink); text-decoration-color: var(--accent); }
@@ -1746,6 +1813,10 @@ mark {
   .prompt-row__action { align-items: stretch; grid-column: auto; }
   .prompt-row__cost { text-align: left; }
   .prompt-row__action .button { width: 100%; min-width: 0; }
+  .prompt-row__management { justify-content: flex-start; }
+  .prompt-row__delete-confirm { justify-content: flex-start; flex-wrap: wrap; }
+  .prompt-row__editor { grid-column: auto; grid-template-columns: 1fr; }
+  .prompt-row__editor-actions { grid-column: auto; }
   .shot-prompt__heading { grid-template-columns: 28px minmax(0, 1fr); }
   .shot-prompt__heading small { grid-column: 2; text-align: left; }
   .visual-grid { grid-template-columns: repeat(2, 1fr); }
