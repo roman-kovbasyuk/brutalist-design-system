@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, ClipboardCheck, Download, ExternalLink, Sparkles } from 'lucide-react'
 import { BannerPreview } from '../components/BannerPreview.jsx'
+import { AssetWorkspace } from '../components/AssetWorkspace.jsx'
 import { ProcessingScreen } from '../components/ProcessingScreen.jsx'
 import { StepRail } from '../components/StepRail.jsx'
 import { TemplateCard } from '../components/TemplateCard.jsx'
-import { VisualArtwork } from '../components/VisualArtwork.jsx'
 import {
   analyzeBrief,
   createCreativeFingerprint,
+  createStaticAsset,
+  createVideoAsset,
+  estimateVideoBatch,
   generatePromptIdeas,
-  generateVisuals,
   getContentWarnings,
   getResizeLayouts,
   isApprovalCurrent,
@@ -36,7 +38,10 @@ export function WorkflowScreen({ requestedTemplate }) {
   const [strategy, setStrategy] = useState(null)
   const [promptIdeas, setPromptIdeas] = useState([])
   const [processing, setProcessing] = useState(null)
-  const [visuals, setVisuals] = useState([])
+  const [staticAssets, setStaticAssets] = useState([])
+  const [videoAssets, setVideoAssets] = useState([])
+  const [assetTab, setAssetTab] = useState('prompts')
+  const [showVideoCostDialog, setShowVideoCostDialog] = useState(false)
   const [selectedVisualId, setSelectedVisualId] = useState(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState(requestedTemplate?.id ?? null)
   const [reviewStatus, setReviewStatus] = useState('ready')
@@ -66,7 +71,10 @@ export function WorkflowScreen({ requestedTemplate }) {
       const nextStrategy = processing.strategy
       setStrategy(nextStrategy)
       setPromptIdeas(generatePromptIdeas(nextStrategy))
-      setVisuals(generateVisuals(nextStrategy))
+      setStaticAssets([])
+      setVideoAssets([])
+      setAssetTab('prompts')
+      setShowVideoCostDialog(false)
       setSelectedVisualId(null)
       setReviewStatus('ready')
       setApprovedFingerprint(null)
@@ -77,7 +85,9 @@ export function WorkflowScreen({ requestedTemplate }) {
     return () => window.clearTimeout(timerId)
   }, [processing]) // The timer is replaced and cleared for every deterministic phase.
 
-  const selectedVisual = visuals.find((visual) => visual.id === selectedVisualId)
+  const selectedVisual = staticAssets.find((visual) => visual.id === selectedVisualId)
+  const videoEligibleAssets = staticAssets.filter((asset) => !videoAssets.some((video) => video.sourceStaticId === asset.id))
+  const videoEstimate = estimateVideoBatch(videoEligibleAssets)
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId)
   const resizeLayouts = useMemo(() => getResizeLayouts(selectedTemplate), [selectedTemplate])
   const copyWarnings = useMemo(() => getContentWarnings(strategy), [strategy])
@@ -108,6 +118,10 @@ export function WorkflowScreen({ requestedTemplate }) {
 
   function updateStrategy(field, value) {
     setStrategy((current) => ({ ...current, [field]: value }))
+    setStaticAssets([])
+    setVideoAssets([])
+    setAssetTab('prompts')
+    setShowVideoCostDialog(false)
     setSelectedVisualId(null)
     setReviewStatus('ready')
     setApprovedFingerprint(null)
@@ -119,7 +133,10 @@ export function WorkflowScreen({ requestedTemplate }) {
     setStrategy(null)
     setPromptIdeas([])
     setProcessing(null)
-    setVisuals([])
+    setStaticAssets([])
+    setVideoAssets([])
+    setAssetTab('prompts')
+    setShowVideoCostDialog(false)
     setSelectedVisualId(null)
     setSelectedTemplateId(null)
     setReviewStatus('ready')
@@ -132,6 +149,28 @@ export function WorkflowScreen({ requestedTemplate }) {
     setReviewStatus('ready')
     setApprovedFingerprint(null)
     setMaxStep((current) => Math.min(current, 4))
+  }
+
+  function generateStaticAsset(prompt) {
+    const asset = createStaticAsset(prompt)
+    setStaticAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
+    setSelectedVisualId((current) => current ?? asset.id)
+  }
+
+  function generateVideoAsset(staticAsset) {
+    const asset = createVideoAsset(staticAsset)
+    setVideoAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
+  }
+
+  function confirmVideoBatch() {
+    setVideoAssets((current) => {
+      const existing = new Set(current.map((asset) => asset.id))
+      const missing = staticAssets
+        .filter((staticAsset) => !existing.has(createVideoAsset(staticAsset).id))
+        .map(createVideoAsset)
+      return [...current, ...missing]
+    })
+    setShowVideoCostDialog(false)
   }
 
   function selectTemplate(templateId) {
@@ -216,19 +255,24 @@ export function WorkflowScreen({ requestedTemplate }) {
 
         {step === 3 && (
           <>
-            <StageHeader count="03 / 07" title="Choose a visual direction" description="Five options use the same message but explore different imagery and motion." />
-            <div className="visual-grid">
-              {visuals.map((visual, index) => (
-                <article className="visual-option" data-selected={selectedVisualId === visual.id} key={visual.id}>
-                  <button type="button" aria-label={`Select visual ${visual.name}`} aria-pressed={selectedVisualId === visual.id} onClick={() => selectVisual(visual.id)}>
-                    <VisualArtwork visual={visual} />
-                    <span className="visual-option-meta"><span>{String(index + 1).padStart(2, '0')} · {visual.direction}</span><strong>{visual.name}</strong></span>
-                  </button>
-                  <details><summary>Show prompt</summary><p>{visual.prompt}</p></details>
-                </article>
-              ))}
-            </div>
-            <StageActions><SecondaryButton onClick={() => setStep(2)}>Back</SecondaryButton><PrimaryButton disabled={!selectedVisualId} onClick={() => advance(4)}>Choose a template</PrimaryButton></StageActions>
+            <StageHeader count="03 / 07" title="AI assets" description="Turn prompt directions into static visuals and locally simulated motion assets." />
+            <AssetWorkspace
+              activeTab={assetTab}
+              promptIdeas={promptIdeas}
+              staticAssets={staticAssets}
+              videoAssets={videoAssets}
+              selectedStaticId={selectedVisualId}
+              videoEstimate={videoEstimate}
+              showCostDialog={showVideoCostDialog}
+              onTabChange={setAssetTab}
+              onGenerateStatic={generateStaticAsset}
+              onGenerateVideo={generateVideoAsset}
+              onSelectStatic={selectVisual}
+              onRequestVideoBatch={() => setShowVideoCostDialog(true)}
+              onCancelVideoBatch={() => setShowVideoCostDialog(false)}
+              onConfirmVideoBatch={confirmVideoBatch}
+            />
+            <StageActions><SecondaryButton onClick={() => setStep(2)}>Back to Copy</SecondaryButton><PrimaryButton disabled={staticAssets.length === 0} onClick={() => advance(4)}>Continue to banner preview</PrimaryButton></StageActions>
           </>
         )}
 

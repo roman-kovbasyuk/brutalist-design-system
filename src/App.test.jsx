@@ -76,6 +76,68 @@ describe('Lingu Studio app', () => {
     }
   })
 
+  test('shows five prompt directions with semantic tabs and marked subjects and actions', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+
+    expect(screen.getByRole('heading', { name: 'AI assets' })).toBeVisible()
+    const tabs = screen.getByRole('tablist', { name: 'AI asset types' })
+    expect(within(tabs).getByRole('tab', { name: 'Prompts' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(tabs).getByRole('tab', { name: 'Static visuals' })).toBeVisible()
+    expect(within(tabs).getByRole('tab', { name: 'Videos' })).toBeVisible()
+
+    const promptCards = screen.getAllByTestId('prompt-card')
+    expect(promptCards).toHaveLength(5)
+    promptCards.forEach((card) => {
+      expect(within(card).getAllByRole('mark')).toHaveLength(2)
+      expect(within(card).getByText('$0.12 estimated cost')).toBeVisible()
+    })
+  })
+
+  test('generates a static visual and then a video from that image without leaving duplicate outputs', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    const firstPrompt = screen.getAllByTestId('prompt-card')[0]
+    await user.click(within(firstPrompt).getByRole('button', { name: /Generate static visual/ }))
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+
+    expect(screen.getAllByTestId('static-asset')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: /Generate video from this image/ }))
+    await user.click(screen.getByRole('tab', { name: 'Videos' }))
+    expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
+
+    await user.click(screen.getByRole('tab', { name: 'Prompts' }))
+    await user.click(within(firstPrompt).getByRole('button', { name: /Generate static visual/ }))
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    expect(screen.getAllByTestId('static-asset')).toHaveLength(1)
+  })
+
+  test('confirms the exact bulk video cost and only generates videos that are missing', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    const [firstPrompt, secondPrompt] = screen.getAllByTestId('prompt-card')
+    await user.click(within(firstPrompt).getByRole('button', { name: /Generate static visual/ }))
+    await user.click(within(secondPrompt).getByRole('button', { name: /Generate static visual/ }))
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    await user.click(screen.getAllByRole('button', { name: /Generate video from this image/ })[0])
+
+    await user.click(screen.getByRole('button', { name: 'Generate videos for all images' }))
+    const dialog = screen.getByRole('dialog', { name: 'Confirm video generation cost' })
+    expect(within(dialog).getByText('1 eligible image')).toBeVisible()
+    expect(within(dialog).getByText('$1.80 per video')).toBeVisible()
+    expect(within(dialog).getByText('$1.80 total estimated cost')).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: 'Generate 1 video for $1.80' }))
+
+    await user.click(screen.getByRole('tab', { name: 'Videos' }))
+    expect(screen.getAllByTestId('video-asset')).toHaveLength(2)
+  })
+
   test('routes supported pathnames and responds to browser navigation', async () => {
     window.history.replaceState({}, '', '/templates')
     render(<App />)
@@ -138,9 +200,8 @@ describe('Lingu Studio app', () => {
     expect(await screen.findByDisplayValue('Speak before you move', {}, { timeout: 2000 })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Generate visuals' }))
 
-    expect(screen.getAllByRole('button', { name: /Select visual/ })).toHaveLength(5)
-    await user.click(screen.getAllByRole('button', { name: /Select visual/ })[0])
-    await user.click(screen.getByRole('button', { name: 'Choose a template' }))
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
 
     expect(screen.getAllByTestId('template-option')).toHaveLength(20)
     await user.click(screen.getAllByRole('button', { name: /Select template/ })[0])
@@ -206,4 +267,11 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('button', { name: 'Templates' }))
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' })
   })
+
+  async function openAssetsWorkspace(user) {
+    await user.click(screen.getByRole('button', { name: 'Campaign' }))
+    await user.click(screen.getByRole('button', { name: 'Analyze brief' }))
+    expect(await screen.findByDisplayValue('Speak before you move', {}, { timeout: 2000 })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Generate visuals' }))
+  }
 })
