@@ -264,6 +264,88 @@ describe('Lingu Studio app', () => {
     expect(screen.getByRole('button', { name: 'Prompt copied for Arrival portrait' })).toBeVisible()
   })
 
+  test('renames a static image and cascades its deletion to the derived video', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    await user.click(screen.getByRole('button', { name: 'Rename image Arrival portrait' }))
+    const imageName = screen.getByRole('textbox', { name: 'Image name' })
+    await user.clear(imageName)
+    await user.type(imageName, 'Morning arrival')
+    await user.click(screen.getByRole('button', { name: 'Save image name' }))
+    expect(screen.getByText('Morning arrival')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Generate video from this image for $1.80' }))
+    await user.click(screen.getByRole('button', { name: 'Delete image Arrival portrait' }))
+    expect(screen.getByText('Delete this image and its video?')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Confirm delete image Arrival portrait' }))
+    expect(screen.queryByTestId('static-asset')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Videos' }))
+    expect(screen.queryByTestId('video-asset')).not.toBeInTheDocument()
+  })
+
+  test('renames and deletes a video without removing its source image', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    await user.click(screen.getByRole('button', { name: 'Generate video from this image for $1.80' }))
+    await user.click(screen.getByRole('tab', { name: 'Videos' }))
+    await user.click(screen.getByRole('button', { name: 'Rename video Arrival portrait' }))
+    const videoName = screen.getByRole('textbox', { name: 'Video name' })
+    await user.clear(videoName)
+    await user.type(videoName, 'Greeting motion')
+    await user.click(screen.getByRole('button', { name: 'Save video name' }))
+    expect(screen.getByText('Greeting motion')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Delete video Arrival portrait' }))
+    expect(screen.getByText('Delete this video?')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Confirm delete video Arrival portrait' }))
+    expect(screen.queryByTestId('video-asset')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    expect(screen.getByTestId('static-asset')).toBeVisible()
+  })
+
+  test('downloads static and video asset payloads', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('tab', { name: 'Static visuals' }))
+    await user.click(screen.getByRole('button', { name: 'Generate video from this image for $1.80' }))
+
+    const createObjectURL = vi.fn(() => 'blob:asset-download')
+    const revokeObjectURL = vi.fn()
+    const downloadedFilenames = []
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
+      downloadedFilenames.push(this.download)
+    })
+    const BlobMock = vi.fn(function BlobMock(parts, options) {
+      this.parts = parts
+      this.options = options
+    })
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    vi.stubGlobal('Blob', BlobMock)
+
+    await user.click(screen.getByRole('button', { name: 'Download image Arrival portrait' }))
+    await user.click(screen.getByRole('tab', { name: 'Videos' }))
+    await user.click(screen.getByRole('button', { name: 'Download video Arrival portrait' }))
+
+    expect(JSON.parse(BlobMock.mock.calls[0][0][0])).toMatchObject({ mediaType: 'static', title: 'Arrival portrait' })
+    expect(JSON.parse(BlobMock.mock.calls[1][0][0])).toMatchObject({ mediaType: 'video', title: 'Arrival portrait' })
+    expect(downloadedFilenames).toEqual(['nordic-portrait-image.json', 'nordic-portrait-video.json'])
+    expect(createObjectURL).toHaveBeenCalledTimes(2)
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2)
+    anchorClick.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
   test('supports a keyboard-only flow to generate a video from a static visual', async () => {
     const user = userEvent.setup()
     render(<App />)

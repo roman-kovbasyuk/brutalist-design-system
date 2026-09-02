@@ -25,6 +25,11 @@ export function AssetWorkspace({
   onUpdatePrompt,
   onDeletePrompt,
   onDownloadPrompt,
+  onDownloadAsset,
+  onRenameStatic,
+  onDeleteStatic,
+  onRenameVideo,
+  onDeleteVideo,
   onGenerateStatic,
   onGenerateVideo,
   onSelectStatic,
@@ -179,15 +184,25 @@ export function AssetWorkspace({
                       </div>
                       <div className="static-asset-row__details">
                         <div><strong>{asset.title}</strong><span>{asset.name}</span></div>
-                        <button
-                          type="button"
-                          className="copy-prompt-action"
-                          aria-label={promptCopied ? `Prompt copied for ${asset.title}` : `Copy prompt for ${asset.title}`}
-                          onClick={() => copyPrompt(asset)}
-                        >
-                          {promptCopied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
-                          {promptCopied ? 'Prompt copied' : 'Copy prompt'}
-                        </button>
+                        <div className="static-asset-row__controls">
+                          <button
+                            type="button"
+                            className="copy-prompt-action"
+                            aria-label={promptCopied ? `Prompt copied for ${asset.title}` : `Copy prompt for ${asset.title}`}
+                            onClick={() => copyPrompt(asset)}
+                          >
+                            {promptCopied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                            {promptCopied ? 'Prompt copied' : 'Copy prompt'}
+                          </button>
+                          <AssetManagement
+                            asset={asset}
+                            kind="image"
+                            hasDerivedVideo={hasVideo}
+                            onDownload={onDownloadAsset}
+                            onRename={onRenameStatic}
+                            onDelete={onDeleteStatic}
+                          />
+                        </div>
                       </div>
                     </li>
                   )
@@ -217,7 +232,10 @@ export function AssetWorkspace({
                       {playingVideoId === asset.id ? <Pause size={19} fill="currentColor" aria-hidden="true" /> : <Play size={20} fill="currentColor" aria-hidden="true" />}
                     </button>
                   </div>
-                  <div className="asset-card__details"><button type="button" className="asset-card__source" aria-label={`View source image ${asset.title}`} onClick={() => onViewSource(asset.sourceStaticId)}>Source image</button><strong>{asset.name}</strong></div>
+                  <div className="asset-card__details">
+                    <button type="button" className="asset-card__source" aria-label={`View source image ${asset.title}`} onClick={() => onViewSource(asset.sourceStaticId)}>Source image</button>
+                    <div className="asset-card__identity"><strong>{asset.name}</strong><AssetManagement asset={asset} kind="video" onDownload={onDownloadAsset} onRename={onRenameVideo} onDelete={onDeleteVideo} /></div>
+                  </div>
                 </article>
               ))}
             </div>
@@ -227,6 +245,54 @@ export function AssetWorkspace({
 
       {showCostDialog && <CostDialog estimate={videoEstimate} onCancel={onCancelVideoBatch} onConfirm={onConfirmVideoBatch} />}
     </section>
+  )
+}
+
+function AssetManagement({ asset, kind, hasDerivedVideo = false, onDownload, onRename, onDelete }) {
+  const [mode, setMode] = useState('idle')
+  const [draftName, setDraftName] = useState(asset.name)
+  const label = kind === 'image' ? 'Image' : 'Video'
+
+  function beginRename() {
+    setDraftName(asset.name)
+    setMode('rename')
+  }
+
+  function saveName(event) {
+    event.preventDefault()
+    const name = draftName.trim()
+    if (!name) return
+    onRename(asset.id, name)
+    setMode('idle')
+  }
+
+  if (mode === 'rename') {
+    return (
+      <form className="asset-management__rename" onSubmit={saveName}>
+        <label><span>{label} name</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} required /></label>
+        <button type="button" aria-label={`Cancel renaming ${kind} ${asset.title}`} title="Cancel" onClick={() => setMode('idle')}><X size={14} aria-hidden="true" /></button>
+        <button type="submit" aria-label={`Save ${kind} name`} title="Save"><Check size={14} aria-hidden="true" /></button>
+      </form>
+    )
+  }
+
+  if (mode === 'delete') {
+    const message = kind === 'image' && hasDerivedVideo ? 'Delete this image and its video?' : `Delete this ${kind}?`
+    return (
+      <div className="asset-management__confirm" role="group" aria-label={`Confirm deletion of ${asset.title}`}>
+        <span>{message}</span>
+        <button type="button" onClick={() => setMode('idle')}>Cancel</button>
+        <button type="button" aria-label={`Confirm delete ${kind} ${asset.title}`} onClick={() => onDelete(asset.id)}>Delete</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="asset-management" aria-label={`Actions for ${asset.title}`}>
+      <button type="button" aria-label={`Download ${kind} ${asset.title}`} title="Download" onClick={() => onDownload(asset)}><Download size={15} aria-hidden="true" /></button>
+      <button type="button" aria-label={`Rename ${kind} ${asset.title}`} title="Rename" onClick={beginRename}><Pencil size={15} aria-hidden="true" /></button>
+      <button type="button" className="asset-management__delete" aria-label={`Delete ${kind} ${asset.title}`} title="Delete" onClick={() => setMode('delete')}><Trash2 size={15} aria-hidden="true" /></button>
+    </div>
   )
 }
 

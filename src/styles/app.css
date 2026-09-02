@@ -975,6 +975,13 @@ mark {
 .static-asset-row__details strong { font-size: var(--text-body); }
 .static-asset-row__details span { color: var(--secondary); font-size: var(--text-meta); }
 
+.static-asset-row__details > .static-asset-row__controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
 .copy-prompt-action {
   display: inline-flex;
   flex: 0 0 auto;
@@ -993,6 +1000,34 @@ mark {
 }
 
 .copy-prompt-action:hover { background: var(--surface-subtle); color: var(--ink); }
+
+.asset-management { display: flex; align-items: center; gap: 3px; }
+.asset-management > button,
+.asset-management__rename > button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--secondary);
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+.asset-management > button:hover,
+.asset-management__rename > button:hover { background: var(--surface-subtle); color: var(--ink); transform: translateY(-1px); }
+.asset-management > .asset-management__delete:hover { background: #fff1f0; color: #aa2e25; }
+
+.asset-management__rename { display: flex; align-items: flex-end; gap: 4px; min-width: 0; }
+.asset-management__rename label { display: grid; gap: 3px; min-width: 120px; color: var(--secondary); font-size: 10px; font-weight: 650; }
+.asset-management__rename input { width: 170px; min-height: 32px; padding: 5px 8px; border: 1px solid var(--strong-rule); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--text-meta); }
+.asset-management__rename input:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
+
+.asset-management__confirm { display: flex; align-items: center; gap: 6px; color: var(--secondary); font-size: var(--text-meta); }
+.asset-management__confirm span { color: var(--ink); font-weight: 650; }
+.asset-management__confirm button { min-height: 30px; padding: 4px 8px; border: 0; border-radius: 7px; background: var(--surface-subtle); color: var(--secondary); font: inherit; font-weight: 650; }
+.asset-management__confirm button:last-child { background: #fff1f0; color: #aa2e25; }
 
 .asset-card { overflow: hidden; }
 .asset-card[data-selected="true"] { border-color: var(--accent); background: #fbfcff; box-shadow: var(--focus-ring); }
@@ -1057,6 +1092,11 @@ mark {
 .asset-card__details span,
 .asset-card__details small { color: var(--secondary); font-size: var(--text-meta); }
 .asset-card__details strong { font-size: var(--text-body); }
+.asset-card__identity { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.asset-card__identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-card__identity .asset-management__rename { align-items: flex-end; flex-wrap: wrap; }
+.asset-card__identity .asset-management__rename input { width: 128px; }
+.asset-card__identity .asset-management__confirm { align-items: flex-start; flex-wrap: wrap; }
 
 .asset-card__source {
   width: max-content;

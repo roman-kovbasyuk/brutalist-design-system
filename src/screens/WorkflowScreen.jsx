@@ -329,6 +329,53 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     URL.revokeObjectURL(url)
   }
 
+  function renameStaticAsset(assetId, name) {
+    invalidateReview()
+    setStaticAssets((current) => current.map((asset) => asset.id === assetId ? { ...asset, name } : asset))
+  }
+
+  function renameVideoAsset(assetId, name) {
+    invalidateReview()
+    setVideoAssets((current) => current.map((asset) => asset.id === assetId ? { ...asset, name } : asset))
+  }
+
+  function clearBannerDrafts() {
+    setSelectedBannerIds([])
+    setActiveBannerId(null)
+    setMotionByBannerId({})
+    setMaxStep((current) => Math.min(current, 3))
+  }
+
+  function deleteStaticAsset(assetId) {
+    invalidateReview()
+    const remaining = staticAssets.filter((asset) => asset.id !== assetId)
+    setStaticAssets(remaining)
+    setVideoAssets((current) => current.filter((asset) => asset.sourceStaticId !== assetId))
+    setSelectedVisualId((current) => current === assetId ? remaining[0]?.id ?? null : current)
+    clearBannerDrafts()
+  }
+
+  function deleteVideoAsset(assetId) {
+    invalidateReview()
+    setVideoAssets((current) => current.filter((asset) => asset.id !== assetId))
+    clearBannerDrafts()
+  }
+
+  function downloadGeneratedAsset(asset) {
+    const safeName = asset.name
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || asset.mediaType
+    const kind = asset.mediaType === 'video' ? 'video' : 'image'
+    const url = URL.createObjectURL(new Blob([JSON.stringify(asset, null, 2)], { type: 'application/json' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${safeName}-${kind}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   function generateVideoAsset(staticAsset) {
     const asset = createVideoAsset(staticAsset)
     setVideoAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
@@ -507,6 +554,11 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               onUpdatePrompt={updatePrompt}
               onDeletePrompt={deletePrompt}
               onDownloadPrompt={downloadPrompt}
+              onDownloadAsset={downloadGeneratedAsset}
+              onRenameStatic={renameStaticAsset}
+              onDeleteStatic={deleteStaticAsset}
+              onRenameVideo={renameVideoAsset}
+              onDeleteVideo={deleteVideoAsset}
               onGenerateStatic={generateStaticAsset}
               onGenerateVideo={generateVideoAsset}
               onSelectStatic={selectVisual}
