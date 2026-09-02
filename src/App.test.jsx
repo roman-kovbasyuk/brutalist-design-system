@@ -163,6 +163,10 @@ describe('Lingu Studio app', () => {
     expect(within(staticAsset).getByRole('button', { name: 'Video generated' })).toBeDisabled()
     await user.click(screen.getByRole('tab', { name: 'Videos' }))
     expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
+    expect(screen.queryByText('Simulated motion')).not.toBeInTheDocument()
+    const playPreview = screen.getByRole('button', { name: 'Play video preview Arrival portrait' })
+    await user.click(playPreview)
+    expect(screen.getByRole('button', { name: 'Pause video preview Arrival portrait' })).toBeVisible()
 
     const sourceImageAction = screen.getByRole('button', { name: 'View source image Arrival portrait' })
     expect(sourceImageAction).toHaveTextContent('Source image')

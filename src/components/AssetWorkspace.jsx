@@ -1,4 +1,4 @@
-import { Check, Copy, Play } from 'lucide-react'
+import { Check, Copy, Pause, Play } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { VisualArtwork } from './VisualArtwork.jsx'
 import { CostDialog } from './CostDialog.jsx'
@@ -32,6 +32,7 @@ export function AssetWorkspace({
 }) {
   const tabRefs = useRef({})
   const [copiedPromptId, setCopiedPromptId] = useState(null)
+  const [playingVideoId, setPlayingVideoId] = useState(null)
 
   async function copyPrompt(asset) {
     await navigator.clipboard.writeText(asset.prompt)
@@ -157,8 +158,18 @@ export function AssetWorkspace({
           {videoAssets.length === 0 ? <EmptyState title="No videos yet" body="Generate a video from a static visual, or use the bulk action in Static visuals." /> : (
             <div className="asset-gallery" aria-label="Generated videos gallery">
               {videoAssets.map((asset) => (
-                <article className="asset-card asset-card--video" data-testid="video-asset" key={asset.id}>
-                  <div className="asset-card__artwork asset-card__artwork--video"><VisualArtwork visual={asset} /><span className="asset-card__play"><Play size={20} fill="currentColor" aria-hidden="true" /> Simulated motion</span></div>
+                <article className="asset-card asset-card--video" data-testid="video-asset" data-playing={playingVideoId === asset.id} key={asset.id}>
+                  <div className="asset-card__artwork asset-card__artwork--video">
+                    <VisualArtwork visual={asset} />
+                    <button
+                      type="button"
+                      className="asset-card__play"
+                      aria-label={`${playingVideoId === asset.id ? 'Pause' : 'Play'} video preview ${asset.title}`}
+                      onClick={() => setPlayingVideoId((current) => current === asset.id ? null : asset.id)}
+                    >
+                      {playingVideoId === asset.id ? <Pause size={19} fill="currentColor" aria-hidden="true" /> : <Play size={20} fill="currentColor" aria-hidden="true" />}
+                    </button>
+                  </div>
                   <div className="asset-card__details"><button type="button" className="asset-card__source" aria-label={`View source image ${asset.title}`} onClick={() => onViewSource(asset.sourceStaticId)}>Source image</button><strong>{asset.name}</strong><small>6 seconds · video · simulated locally</small></div>
                 </article>
               ))}
