@@ -1,5 +1,5 @@
-import { Check, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square } from 'lucide-react'
-import { useEffect, useMemo } from 'react'
+import { Check, ChevronDown, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BannerPreview } from './BannerPreview.jsx'
 
 const formatOptions = [
@@ -110,10 +110,10 @@ export function BannerWorkspace({
   return (
     <section className="banner-workspace" aria-label="Banner preview workspace">
       <div className="banner-toolbar">
-        <label className="banner-filter">
+        <div className="banner-filter">
           <span>Format</span>
-          <span className="banner-filter__control"><FormatIcon format={filters.format} /><select aria-label="Format" value={filters.format} onChange={(event) => setFilter('format', event.target.value)}>{formatOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></span>
-        </label>
+          <FormatSelect value={filters.format} onChange={(value) => setFilter('format', value)} />
+        </div>
         <label className="banner-filter">
           <span>Platform</span>
           <select aria-label="Platform" value={filters.platform} onChange={(event) => setFilter('platform', event.target.value)}>{platformOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
@@ -180,6 +180,125 @@ function DetailItem({ label, value }) {
 
 function MotionSelect({ label, channel, value, onChange }) {
   return <label className="banner-motion-select"><span>{label}</span><select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{motionOptions[channel].map(([preset, presetLabel]) => <option key={preset} value={preset}>{presetLabel}</option>)}</select></label>
+}
+
+function FormatSelect({ value, onChange }) {
+  const selectedIndex = Math.max(0, formatOptions.findIndex(([optionValue]) => optionValue === value))
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(selectedIndex)
+  const rootRef = useRef(null)
+  const triggerRef = useRef(null)
+  const listRef = useRef(null)
+
+  useEffect(() => {
+    setActiveIndex(selectedIndex)
+  }, [selectedIndex])
+
+  useEffect(() => {
+    if (open) listRef.current?.focus()
+  }, [open])
+
+  useEffect(() => {
+    function closeFromOutside(event) {
+      if (!rootRef.current?.contains(event.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeFromOutside)
+    return () => document.removeEventListener('pointerdown', closeFromOutside)
+  }, [])
+
+  function openMenu(direction = 0) {
+    setActiveIndex((selectedIndex + direction + formatOptions.length) % formatOptions.length)
+    setOpen(true)
+  }
+
+  function closeMenu({ restoreFocus = false } = {}) {
+    setOpen(false)
+    if (restoreFocus) triggerRef.current?.focus()
+  }
+
+  function selectFormat(optionValue) {
+    onChange(optionValue)
+    closeMenu({ restoreFocus: true })
+  }
+
+  function handleTriggerKeyDown(event) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      openMenu(event.key === 'ArrowDown' ? 0 : -1)
+    }
+  }
+
+  function handleListKeyDown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeMenu({ restoreFocus: true })
+      return
+    }
+    if (event.key === 'Tab') {
+      closeMenu()
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      selectFormat(formatOptions[activeIndex][0])
+      return
+    }
+    const nextIndex = event.key === 'ArrowDown' ? (activeIndex + 1) % formatOptions.length
+      : event.key === 'ArrowUp' ? (activeIndex - 1 + formatOptions.length) % formatOptions.length
+        : event.key === 'Home' ? 0
+          : event.key === 'End' ? formatOptions.length - 1 : null
+    if (nextIndex === null) return
+    event.preventDefault()
+    setActiveIndex(nextIndex)
+  }
+
+  const selectedLabel = formatOptions[selectedIndex][1]
+
+  return (
+    <div className="format-select" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="format-select__trigger"
+        aria-label={`Format: ${selectedLabel}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => open ? closeMenu() : openMenu()}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <FormatIcon format={value} />
+        <span>{selectedLabel}</span>
+        <ChevronDown className="format-select__chevron" size={15} aria-hidden="true" />
+      </button>
+      {open && (
+        <ul
+          ref={listRef}
+          className="format-select__menu"
+          role="listbox"
+          aria-label="Format options"
+          aria-activedescendant={`format-option-${formatOptions[activeIndex][0].toLowerCase()}`}
+          tabIndex={-1}
+          onKeyDown={handleListKeyDown}
+        >
+          {formatOptions.map(([optionValue, label], index) => (
+            <li
+              id={`format-option-${optionValue.toLowerCase()}`}
+              key={optionValue}
+              role="option"
+              aria-selected={value === optionValue}
+              data-active={activeIndex === index}
+              onClick={() => selectFormat(optionValue)}
+              onMouseEnter={() => setActiveIndex(index)}
+            >
+              <FormatIcon format={optionValue} />
+              <span>{label}</span>
+              {value === optionValue && <Check size={15} aria-hidden="true" />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 function FormatIcon({ format }) {

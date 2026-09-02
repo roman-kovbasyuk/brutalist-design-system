@@ -58,21 +58,47 @@ function BannerWorkspaceHarness({ withVideo = true, candidateSet = candidates })
 }
 
 describe('BannerWorkspace', () => {
+  test('uses an icon-led custom menu for every banner format', async () => {
+    const user = userEvent.setup()
+    render(<BannerWorkspaceHarness />)
+
+    const trigger = screen.getByRole('button', { name: 'Format: Vertical' })
+    expect(trigger.querySelector('svg')).toBeInTheDocument()
+    await user.click(trigger)
+
+    const menu = screen.getByRole('listbox', { name: 'Format options' })
+    ;['All', 'Horizontal', 'Vertical', 'Square'].forEach((format) => {
+      const option = within(menu).getByRole('option', { name: format })
+      expect(option.querySelector('svg')).toBeInTheDocument()
+    })
+    await user.click(within(menu).getByRole('option', { name: 'Horizontal' }))
+    const horizontalTrigger = screen.getByRole('button', { name: 'Format: Horizontal' })
+    expect(horizontalTrigger).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(horizontalTrigger)
+    await user.keyboard('{ArrowDown}{Enter}')
+    const verticalTrigger = screen.getByRole('button', { name: 'Format: Vertical' })
+    await user.click(verticalTrigger)
+    await user.keyboard('{Escape}')
+    expect(verticalTrigger).toHaveFocus()
+    expect(screen.queryByRole('listbox', { name: 'Format options' })).not.toBeInTheDocument()
+  })
+
   test('filters exact candidate format, platform, and media combinations', async () => {
     const user = userEvent.setup()
     render(<BannerWorkspaceHarness />)
 
     expect(screen.getAllByTestId('banner-candidate')).toHaveLength(1)
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
-    expect(screen.getAllByRole('option', { name: 'All' })).toHaveLength(2)
+    expect(screen.getAllByRole('option', { name: 'All' })).toHaveLength(1)
 
-    await user.selectOptions(screen.getByLabelText('Format'), 'Horizontal')
+    await chooseFormat(user, 'Horizontal')
     expect(screen.getByText('No banner compositions match these filters.')).toBeVisible()
     await user.selectOptions(screen.getByLabelText('Platform'), 'Google Ads')
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-horizontal')
 
     await user.click(screen.getByRole('button', { name: 'Video' }))
-    expect(screen.getByLabelText('Format')).toHaveValue('Vertical')
+    expect(screen.getByRole('button', { name: 'Format: Vertical' })).toBeVisible()
     expect(screen.getByLabelText('Platform')).toHaveValue('Video Reels')
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-video-vertical')
   })
@@ -95,7 +121,7 @@ describe('BannerWorkspace', () => {
 
     rerender(<BannerWorkspaceHarness withVideo={false} />)
     expect(screen.queryByRole('group', { name: 'Banner media' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Format')).toHaveValue('Vertical')
+    expect(screen.getByRole('button', { name: 'Format: Vertical' })).toBeVisible()
     expect(screen.getByLabelText('Platform')).toHaveValue('SMM Static')
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
   })
@@ -107,11 +133,11 @@ describe('BannerWorkspace', () => {
     await user.click(screen.getByRole('button', { name: 'Select for Figma assembly' }))
     expect(screen.getByText('1 selected for Figma assembly')).toBeVisible()
 
-    await user.selectOptions(screen.getByLabelText('Format'), 'Horizontal')
+    await chooseFormat(user, 'Horizontal')
     await user.selectOptions(screen.getByLabelText('Platform'), 'Google Ads')
     expect(screen.getByText('1 selected for Figma assembly')).toBeVisible()
 
-    await user.selectOptions(screen.getByLabelText('Format'), 'Vertical')
+    await chooseFormat(user, 'Vertical')
     await user.selectOptions(screen.getByLabelText('Platform'), 'SMM Static')
     const selectedAction = screen.getByRole('button', { name: 'Selected for Figma assembly' })
     expect(selectedAction).toHaveAttribute('aria-pressed', 'true')
@@ -165,4 +191,9 @@ describe('BannerWorkspace', () => {
     expect(within(detail).getByRole('article').querySelector('.motion-media')).toHaveAttribute('data-motion-preset', 'soft-zoom')
     expect(within(detail).getByRole('article').querySelector('.motion-cta')).toHaveAttribute('data-motion-preset', 'pop-in')
   })
+
+  async function chooseFormat(user, format) {
+    await user.click(screen.getByRole('button', { name: /^Format:/ }))
+    await user.click(screen.getByRole('option', { name: format }))
+  }
 })

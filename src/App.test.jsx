@@ -748,13 +748,14 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('button', { name: 'Generate video from this image for $1.80' }))
     await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
     await user.click(screen.getByRole('button', { name: 'Video' }))
-    await user.selectOptions(screen.getByLabelText('Format'), 'Horizontal')
+    await user.click(screen.getByRole('button', { name: 'Format: Vertical' }))
+    await user.click(screen.getByRole('option', { name: 'Horizontal' }))
     expect(screen.getByText('No banner compositions match these filters.')).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: 'Templates' }))
     await user.click(screen.getByRole('button', { name: 'Select template Reverse split' }))
 
-    expect(screen.getByLabelText('Format')).toHaveValue('Vertical')
+    expect(screen.getByRole('button', { name: 'Format: Vertical' })).toBeVisible()
     expect(screen.getByLabelText('Platform')).toHaveValue('Video Reels')
     expect(screen.getByRole('button', { name: 'Video' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(screen.getByRole('region', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
