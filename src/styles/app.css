@@ -270,6 +270,28 @@
 .campaign-history-table tbody th,
 .review-table tbody th { font-weight: 680; }
 
+.campaign-history-scroll { overflow-x: hidden; }
+
+.campaign-history-table {
+  table-layout: fixed;
+  min-width: 0;
+}
+
+.campaign-history-table th,
+.campaign-history-table td {
+  padding-inline: 12px;
+  white-space: normal;
+}
+
+.campaign-history-table th:nth-child(1) { width: 94px; }
+.campaign-history-table th:nth-child(2) { width: 126px; }
+.campaign-history-table th:nth-child(4) { width: 62px; }
+.campaign-history-table th:nth-child(5) { width: 90px; }
+.campaign-history-table th:nth-child(6) { width: 82px; }
+.campaign-history-table th:nth-child(7) { width: 58px; }
+.campaign-history-table th:nth-child(8) { width: 98px; }
+.campaign-history-table th:nth-child(9) { width: 64px; }
+
 .campaign-history-table tbody tr:has(.campaign-status[data-status="in-review"]),
 .campaign-history-table tbody tr:has(.campaign-status[data-status="ready-for-approval"]) { background: #fffdf2; }
 

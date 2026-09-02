@@ -51,6 +51,12 @@ describe('Lingu Studio app', () => {
     expect(within(osloRow).getByRole('cell', { name: '$8.16' })).toBeVisible()
   })
 
+  test('keeps campaign history within the dashboard content width', () => {
+    expect(appStyles).toMatch(/\.campaign-history-scroll\s*{[^}]*overflow-x:\s*hidden;/)
+    expect(appStyles).toMatch(/\.campaign-history-table\s*{[^}]*table-layout:\s*fixed;[^}]*min-width:\s*0;/)
+    expect(appStyles).toMatch(/\.campaign-history-table th,[\s\S]*?\.campaign-history-table td\s*{[^}]*white-space:\s*normal;/)
+  })
+
   test('opens a campaign workspace from a history row', async () => {
     const user = userEvent.setup()
     render(<App />)
