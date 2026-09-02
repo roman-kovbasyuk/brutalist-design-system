@@ -164,7 +164,9 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('tab', { name: 'Videos' }))
     expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: 'View source static visual Arrival portrait' }))
+    const sourceImageAction = screen.getByRole('button', { name: 'View source image Arrival portrait' })
+    expect(sourceImageAction).toHaveTextContent('Source image')
+    await user.click(sourceImageAction)
     expect(screen.getByRole('tab', { name: 'Static visuals' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByTestId('static-asset')).toHaveAttribute('data-selected', 'true')
 

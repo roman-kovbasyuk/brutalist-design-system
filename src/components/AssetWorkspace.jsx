@@ -159,7 +159,7 @@ export function AssetWorkspace({
               {videoAssets.map((asset) => (
                 <article className="asset-card asset-card--video" data-testid="video-asset" key={asset.id}>
                   <div className="asset-card__artwork asset-card__artwork--video"><VisualArtwork visual={asset} /><span className="asset-card__play"><Play size={20} fill="currentColor" aria-hidden="true" /> Simulated motion</span></div>
-                  <div className="asset-card__details"><button type="button" className="asset-card__source" onClick={() => onViewSource(asset.sourceStaticId)}>View source static visual {asset.title}</button><strong>{asset.name}</strong><small>6 seconds · video · simulated locally</small></div>
+                  <div className="asset-card__details"><button type="button" className="asset-card__source" aria-label={`View source image ${asset.title}`} onClick={() => onViewSource(asset.sourceStaticId)}>Source image</button><strong>{asset.name}</strong><small>6 seconds · video · simulated locally</small></div>
                 </article>
               ))}
             </div>
