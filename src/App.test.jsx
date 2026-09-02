@@ -540,6 +540,7 @@ describe('Lingu Studio app', () => {
     const continueToReview = screen.getByRole('button', { name: 'Continue to prepare for review' })
     expect(continueToReview).toBeDisabled()
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
     await user.selectOptions(screen.getByLabelText('Text motion'), 'type-reveal')
     await user.click(continueToReview)
 

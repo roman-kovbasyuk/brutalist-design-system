@@ -1,4 +1,4 @@
-import { Check, ChevronDown, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square, X } from 'lucide-react'
+import { Check, ChevronDown, Eye, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BannerPreview } from './BannerPreview.jsx'
 
@@ -92,7 +92,6 @@ export function BannerWorkspace({
     onSelectedBannerIdsChange(isSelected
       ? selectedBannerIds.filter((id) => id !== candidate.id)
       : [...selectedBannerIds, candidate.id])
-    onActiveBannerChange(candidate.id)
   }
 
   function getTemplate(candidate) {
@@ -139,11 +138,12 @@ export function BannerWorkspace({
               const isSelected = selectedBannerIds.includes(candidate.id)
               return (
                 <article className="banner-candidate" data-testid="banner-candidate" data-banner-id={candidate.id} data-selected={isSelected} key={candidate.id}>
-                  <button type="button" className="banner-candidate__preview" aria-label={`Open ${candidate.templateName}, ${candidate.dimensions} preview`} onClick={() => onActiveBannerChange(candidate.id)}>
+                  <button type="button" className="banner-candidate__preview" aria-label={isSelected ? 'Selected for Figma assembly' : 'Select for Figma assembly'} aria-pressed={isSelected} onClick={() => toggleSelection(candidate)}>
                     <BannerPreview template={getTemplate(candidate)} visual={getVisual(candidate)} content={content} ratio={candidate.format === 'Horizontal' ? '1200 / 628' : candidate.format === 'Square' ? '1 / 1' : candidate.dimensions === '1080×1920' ? '9 / 16' : '4 / 5'} compact />
+                    {isSelected && <span className="banner-candidate__check" aria-hidden="true"><Check size={16} /></span>}
+                    <span className="banner-candidate__meta"><strong>{candidate.templateName}</strong><span>{candidate.dimensions} · {candidate.platform}</span></span>
                   </button>
-                  <div className="banner-candidate__meta"><strong>{candidate.templateName}</strong><span>{candidate.dimensions} · {candidate.platform}</span></div>
-                  <button type="button" className="banner-candidate__select" aria-pressed={isSelected} onClick={() => toggleSelection(candidate)}>{isSelected && <Check size={15} aria-hidden="true" />} {isSelected ? 'Selected for Figma assembly' : 'Select for Figma assembly'}</button>
+                  <button type="button" className="banner-candidate__open" aria-label={`Open ${candidate.templateName}, ${candidate.dimensions} preview`} onClick={() => onActiveBannerChange(candidate.id)}><Eye size={16} aria-hidden="true" /></button>
                 </article>
               )
             })}

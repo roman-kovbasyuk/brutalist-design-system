@@ -130,8 +130,12 @@ describe('BannerWorkspace', () => {
     const user = userEvent.setup()
     render(<BannerWorkspaceHarness />)
 
+    const candidate = screen.getByTestId('banner-candidate')
     await user.click(screen.getByRole('button', { name: 'Select for Figma assembly' }))
     expect(screen.getByText('1 selected for Figma assembly')).toBeVisible()
+    expect(candidate).toHaveAttribute('data-selected', 'true')
+    expect(candidate.querySelector('.banner-candidate__check')).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: 'Banner detail preview' })).not.toBeInTheDocument()
 
     await chooseFormat(user, 'Horizontal')
     await user.selectOptions(screen.getByLabelText('Platform'), 'Google Ads')
@@ -141,7 +145,7 @@ describe('BannerWorkspace', () => {
     await user.selectOptions(screen.getByLabelText('Platform'), 'SMM Static')
     const selectedAction = screen.getByRole('button', { name: 'Selected for Figma assembly' })
     expect(selectedAction).toHaveAttribute('aria-pressed', 'true')
-    expect(selectedAction.querySelector('svg')).toBeInTheDocument()
+    expect(screen.getByTestId('banner-candidate').querySelector('.banner-candidate__check svg')).toBeInTheDocument()
   })
 
   test('opens exact banner details and replays independent motion channels', async () => {
