@@ -444,6 +444,15 @@
   background: var(--canvas);
 }
 
+.stage-actions--top {
+  top: 0;
+  bottom: auto;
+  margin-top: 0;
+  padding: 12px 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
 .button {
   display: inline-flex;
   align-items: center;

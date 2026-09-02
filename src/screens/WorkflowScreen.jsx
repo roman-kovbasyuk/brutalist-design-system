@@ -639,6 +639,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               <li>Total assets: {deliveryOutputs.length}</li>
               <li>Total simulated production cost: {formatCurrency(productionCost)}</li>
             </ul>
+            <StageActions placement="top"><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
             <div className="resize-grid">
               {deliveryOutputs.map(({ banner, ...format }) => (
                 <article className="resize-output" key={`${banner.id}-${format.size}`}>
@@ -647,7 +648,6 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 </article>
               ))}
             </div>
-            <StageActions><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
           </>
         )}
       </section>
@@ -659,8 +659,8 @@ function StageHeader({ count, title, description }) {
   return <header className="stage-header"><span>{count}</span><div><h1>{title}</h1><p>{description}</p></div></header>
 }
 
-function StageActions({ children }) {
-  return <footer className="stage-actions">{children}</footer>
+function StageActions({ children, placement = 'bottom' }) {
+  return <footer className={`stage-actions stage-actions--${placement}`}>{children}</footer>
 }
 
 function PrimaryButton({ children, ...props }) {
