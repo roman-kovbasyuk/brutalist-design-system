@@ -83,6 +83,7 @@ export function createStaticAsset(prompt) {
     sourcePromptId: prompt.id,
     mediaType: 'static',
     cost: staticImageCost,
+    generation: { mode: 'simulated', provider: 'local' },
   }
 }
 
@@ -93,6 +94,7 @@ export function createVideoAsset(staticAsset) {
     sourceStaticId: staticAsset.id,
     mediaType: 'video',
     cost: videoCost,
+    generation: { mode: 'simulated', provider: 'local' },
   }
 }
 
@@ -104,7 +106,7 @@ export function estimateVideoBatch(assets) {
   )
   const count = uniqueStaticAssets.size
 
-  return { count, unitCost: videoCost, totalCost: count * videoCost }
+  return { count, unitCost: videoCost, totalCost: Number((count * videoCost).toFixed(2)) }
 }
 
 export function createBannerCandidates({

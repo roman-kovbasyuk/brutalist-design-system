@@ -34,3 +34,11 @@ Reviewed the full diff against the Task 1 brief and authoritative spec. The cand
 ## Concerns
 
 None. The named fixture export contract is a documented reasonable ruling for the otherwise unspecified Dashboard consumer interface.
+
+## Fix round 1
+
+- Added `generation: { mode: 'simulated', provider: 'local' }` to both generated static and video assets. The nested metadata is explicit and machine-readable for UI simulation labels.
+- Rounded `estimateVideoBatch().totalCost` to two decimal currency precision after calculating the batch total.
+- RED: focused domain tests failed because both generated assets lacked `generation` metadata and a 13-image video estimate returned `23.400000000000002` instead of `23.4`.
+- GREEN: `npm run test:run -- src/domain/campaign.test.js` passed: 1 file, 15 tests.
+- Full verification: `npm run test:run` passed: 3 files, 24 tests; `git diff --check` passed.

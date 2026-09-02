@@ -76,6 +76,7 @@ describe('campaign domain', () => {
       sourcePromptId: 'prompt-nordic-portrait',
       mediaType: 'static',
       cost: 0.12,
+      generation: { mode: 'simulated', provider: 'local' },
     })
     expect(createStaticAsset(prompt)).toEqual(staticAsset)
     expect(videoAsset).toMatchObject({
@@ -83,6 +84,7 @@ describe('campaign domain', () => {
       sourceStaticId: 'static-prompt-nordic-portrait',
       mediaType: 'video',
       cost: 1.8,
+      generation: { mode: 'simulated', provider: 'local' },
     })
     expect(createVideoAsset(staticAsset)).toEqual(videoAsset)
   })
@@ -98,6 +100,19 @@ describe('campaign domain', () => {
       count: 1,
       unitCost: 1.8,
       totalCost: 1.8,
+    })
+  })
+
+  test('rounds multi-image video estimates to currency precision', () => {
+    const assets = Array.from({ length: 13 }, (_, index) => ({
+      id: `static-prompt-${index + 1}`,
+      mediaType: 'static',
+    }))
+
+    expect(estimateVideoBatch(assets)).toEqual({
+      count: 13,
+      unitCost: 1.8,
+      totalCost: 23.4,
     })
   })
 
