@@ -2,7 +2,12 @@ import { describe, expect, test } from 'vitest'
 import {
   analyzeBrief,
   canAdvance,
+  createBannerCandidates,
   createCreativeFingerprint,
+  createStaticAsset,
+  createVideoAsset,
+  estimateVideoBatch,
+  generatePromptIdeas,
   generateVisuals,
   getContentWarnings,
   getResizeLayouts,
@@ -10,6 +15,7 @@ import {
   isValidFigmaUrl,
 } from './campaign.js'
 import { templates } from '../data/templates.js'
+import { campaignHistory, dashboardMetrics, productionTotals } from '../data/campaigns.js'
 
 describe('campaign domain', () => {
   test('rejects an empty brief so generation cannot silently invent a campaign', () => {
@@ -37,6 +43,95 @@ describe('campaign domain', () => {
     expect(visuals).toHaveLength(5)
     expect(new Set(visuals.map((visual) => visual.id)).size).toBe(5)
     expect(visuals.every((visual) => visual.prompt.length > 20)).toBe(true)
+  })
+
+  test('turns a strategy into five stable prompt ideas with a transparent static cost', () => {
+    const strategy = analyzeBrief('A language course for moving abroad with 15% off')
+    const prompts = generatePromptIdeas(strategy)
+
+    expect(prompts).toHaveLength(5)
+    expect(prompts[0]).toMatchObject({
+      id: 'prompt-nordic-portrait',
+      title: 'Nordic portrait',
+      subject: 'person',
+      action: 'in an urban setting',
+      estimatedStaticCost: 0.12,
+      prompt:
+        'editorial campaign image, tactile natural light, clear subject separation, generous copy space, premium art direction, no text, no logos; direction 1: a person in an urban setting',
+    })
+    expect(new Set(prompts.map((prompt) => prompt.id)).size).toBe(5)
+  })
+
+  test('creates linked static and video assets with stable IDs and deterministic costs', () => {
+    const prompt = {
+      id: 'prompt-nordic-portrait',
+      title: 'Nordic portrait',
+      prompt: 'A person in an urban setting',
+    }
+    const staticAsset = createStaticAsset(prompt)
+    const videoAsset = createVideoAsset(staticAsset)
+
+    expect(staticAsset).toMatchObject({
+      id: 'static-prompt-nordic-portrait',
+      sourcePromptId: 'prompt-nordic-portrait',
+      mediaType: 'static',
+      cost: 0.12,
+    })
+    expect(createStaticAsset(prompt)).toEqual(staticAsset)
+    expect(videoAsset).toMatchObject({
+      id: 'video-static-prompt-nordic-portrait',
+      sourceStaticId: 'static-prompt-nordic-portrait',
+      mediaType: 'video',
+      cost: 1.8,
+    })
+    expect(createVideoAsset(staticAsset)).toEqual(videoAsset)
+  })
+
+  test('estimates only unique static assets for video generation', () => {
+    const staticAsset = createStaticAsset({
+      id: 'prompt-nordic-portrait',
+      title: 'Nordic portrait',
+      prompt: 'A person in an urban setting',
+    })
+
+    expect(estimateVideoBatch([staticAsset, staticAsset])).toEqual({
+      count: 1,
+      unitCost: 1.8,
+      totalCost: 1.8,
+    })
+  })
+
+  test('derives duplicate-safe banner candidates and applies format platform and media filters', () => {
+    const staticAsset = createStaticAsset({
+      id: 'prompt-nordic-portrait',
+      title: 'Nordic portrait',
+      prompt: 'A person in an urban setting',
+    })
+    const videoAsset = createVideoAsset(staticAsset)
+
+    const candidates = createBannerCandidates({
+      strategy: { headline: 'Speak before you move', body: 'Practical Norwegian', cta: 'Start learning' },
+      templates: [templates[0], templates[0]],
+      staticAssets: [staticAsset, staticAsset],
+      videoAssets: [videoAsset, videoAsset],
+    })
+
+    expect(candidates.map((candidate) => candidate.id)).toEqual([
+      'banner-split-left-static-prompt-nordic-portrait-horizontal',
+      'banner-split-left-static-prompt-nordic-portrait-vertical',
+      'banner-split-left-static-prompt-nordic-portrait-square',
+      'banner-split-left-video-static-prompt-nordic-portrait-vertical',
+    ])
+    expect(createBannerCandidates({
+      templates: templates.slice(0, 1),
+      staticAssets: [staticAsset],
+      videoAssets: [videoAsset],
+      format: 'Vertical',
+      platform: 'Video Reels',
+      media: 'video',
+    }).map((candidate) => candidate.id)).toEqual([
+      'banner-split-left-video-static-prompt-nordic-portrait-vertical',
+    ])
   })
 
   test('does not allow final rendering before designer approval', () => {
@@ -93,6 +188,27 @@ describe('campaign domain', () => {
     expect(isValidFigmaUrl('https://figma.com/file/abc')).toBe(true)
     expect(isValidFigmaUrl('javascript:alert(1)')).toBe(false)
     expect(isValidFigmaUrl('https://example.com/mockup')).toBe(false)
+  })
+})
+
+describe('dashboard fixtures', () => {
+  test('provides fixed history and production totals for the local dashboard demo', () => {
+    expect(campaignHistory).toHaveLength(4)
+    expect(productionTotals).toEqual({
+      totalBanners: 46,
+      totalReviews: 4,
+      totalGenerations: 39,
+      totalStaticVisuals: 29,
+      totalVideos: 10,
+      productionCost: 21.48,
+      staticToVideoRatio: '2.9:1',
+    })
+    expect(dashboardMetrics).toEqual({
+      totalBannersCreated: 46,
+      totalReviews: 4,
+      genAiProductionCost: 21.48,
+      staticToVideoRatio: '2.9:1',
+    })
   })
 })
 
