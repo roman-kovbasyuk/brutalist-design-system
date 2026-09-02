@@ -18,7 +18,7 @@ function MotionSummary({ bannerName, motion }) {
   )
 }
 
-export function ReviewWorkspace({ banners = [], status = 'draft' }) {
+export function ReviewWorkspace({ banners = [], status = 'draft', figmaUrl = '' }) {
   return (
     <section className="review-workspace" aria-label="Review package" data-status={status}>
       <header className="review-workspace__header">
@@ -54,6 +54,7 @@ export function ReviewWorkspace({ banners = [], status = 'draft' }) {
           </tbody>
         </table>
       </div>
+      {status !== 'draft' && figmaUrl && <a className="review-workspace__figma-link" href={figmaUrl} target="_blank" rel="noreferrer">Open Figma review</a>}
     </section>
   )
 }

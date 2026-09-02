@@ -7,9 +7,7 @@ export const steps = [
   ['Banners', 'Select banner drafts'],
   ['Review', 'Review package'],
   ['Review', 'Marketer confirmation'],
-  ['Delivery', 'Assets and manifest'],
-  ['Final QA', 'Quality checks'],
-  ['Export', 'Ready to ship'],
+  ['Assets ready', 'Assets and manifest'],
 ]
 
 export function StepRail({ currentStep, maxStep, onStepChange }) {

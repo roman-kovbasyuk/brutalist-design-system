@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Eye, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, LayoutPanelTop, RectangleHorizontal, RectangleVertical, Square, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BannerPreview } from './BannerPreview.jsx'
 
@@ -49,6 +49,11 @@ export function BannerWorkspace({
   staticAssets,
   videoAssets,
   content,
+  copyOptions = [],
+  selectedCopyIndex = 0,
+  onCopyChange,
+  randomizeImages = false,
+  onRandomizeImagesChange,
   filters,
   onFiltersChange,
   selectedBannerIds,
@@ -68,7 +73,7 @@ export function BannerWorkspace({
 
   useEffect(() => {
     if (!hasLinkedVideo && filters.media === 'video') {
-      onFiltersChange({ media: 'static', format: 'Vertical', platform: 'SMM Static' })
+      onFiltersChange({ media: 'static', format: 'Square', platform: 'SMM Static' })
     }
   }, [filters.media, hasLinkedVideo, onFiltersChange])
 
@@ -82,9 +87,14 @@ export function BannerWorkspace({
     onFiltersChange({
       ...filters,
       media,
-      format: 'Vertical',
+      format: 'Square',
       platform: media === 'video' ? 'Video Reels' : 'SMM Static',
     })
+  }
+
+  function cycleCopy(direction) {
+    if (copyOptions.length < 2) return
+    onCopyChange?.((selectedCopyIndex + direction + copyOptions.length) % copyOptions.length)
   }
 
   function toggleSelection(candidate) {
@@ -111,12 +121,24 @@ export function BannerWorkspace({
   return (
     <section className="banner-workspace" aria-label="Banner preview workspace">
       <div className="banner-toolbar">
+        <div className="banner-copy-switcher" role="group" aria-label="Copy option">
+          <button type="button" className="banner-copy-switcher__button" aria-label="Previous copy option" disabled={copyOptions.length < 2} onClick={() => cycleCopy(-1)}>
+            <ChevronLeft size={16} aria-hidden="true" />
+          </button>
+          <label className="banner-filter banner-filter--copy">
+            <span className="sr-only">Copy</span>
+            <select aria-label="Copy" value={selectedCopyIndex} onChange={(event) => onCopyChange?.(Number(event.target.value))}>
+              {copyOptions.map((option, index) => <option key={`${option.headline}-${index}`} value={index}>{option.headline}</option>)}
+            </select>
+          </label>
+          <button type="button" className="banner-copy-switcher__button" aria-label="Next copy option" disabled={copyOptions.length < 2} onClick={() => cycleCopy(1)}>
+            <ChevronRight size={16} aria-hidden="true" />
+          </button>
+        </div>
         <div className="banner-filter">
           <FormatSelect value={filters.format} onChange={(value) => setFilter('format', value)} />
         </div>
-        <label className="banner-filter banner-filter--platform">
-          <select aria-label="Platform" value={filters.platform} onChange={(event) => setFilter('platform', event.target.value)}>{platformOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        </label>
+        <button type="button" className="banner-randomize-toggle" aria-pressed={randomizeImages} onClick={() => onRandomizeImagesChange?.(!randomizeImages)}>Randomize images</button>
         {hasLinkedVideo && (
           <div className="banner-media-toggle" role="group" aria-label="Banner media">
             <button type="button" aria-pressed={filters.media === 'static'} onClick={() => setMedia('static')}>Static</button>

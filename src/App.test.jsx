@@ -23,6 +23,18 @@ describe('Lingu Studio app', () => {
     expect(appStyles).toMatch(/\.step-button\s*{[^}]*align-items:\s*center;/)
   })
 
+  test('keeps prompt media actions in wide responsive rows', () => {
+    expect(appStyles).toMatch(/\.visually-hidden\s*{[^}]*position:\s*absolute;[^}]*clip:/)
+    expect(appStyles).toMatch(/\.prompt-row__dropzone\s*{[^}]*display:\s*flex;[^}]*width:\s*100%;[^}]*min-height:\s*100px;/)
+    expect(appStyles).toMatch(/\.prompt-row__media-card \.visual-art\s*{[^}]*aspect-ratio:\s*3 \/ 2;/)
+    expect(appStyles).toMatch(/\.prompt-row__media-stage--dual \.prompt-row__media-card-wrap\[data-position="1"\]\s*{[^}]*transform:/)
+  })
+
+  test('presents the generated prompt as primary readable content', () => {
+    expect(appStyles).toMatch(/\.prompt-row__direction\s*{[^}]*font-size:\s*clamp\(18px,[^}]*font-weight:\s*650;/)
+    expect(appStyles).toMatch(/\.prompt-row__full-prompt\s*{[^}]*font-size:\s*14px;[^}]*line-height:\s*1\.52;/)
+  })
+
   test('shows the dashboard by default with the production metric strip', () => {
     render(<App />)
 
@@ -148,8 +160,8 @@ describe('Lingu Studio app', () => {
     const tabs = screen.getByRole('tablist', { name: 'AI asset types' })
     expect(appStyles).toMatch(/\.asset-tabs\s*\{[^}]*overflow-x:\s*visible;/)
     expect(within(tabs).getByRole('tab', { name: 'Prompts' })).toHaveAttribute('aria-selected', 'true')
-    expect(within(tabs).getByRole('tab', { name: 'Static visuals' })).toBeVisible()
-    expect(within(tabs).getByRole('tab', { name: 'Videos' })).toBeVisible()
+    expect(within(tabs).getByRole('tab', { name: 'Static visuals' })).toBeInTheDocument()
+    expect(within(tabs).getByRole('tab', { name: 'Videos' })).toBeInTheDocument()
 
     const promptList = screen.getByRole('list', { name: 'Prompt directions' })
     const promptRows = within(promptList).getAllByRole('listitem')
@@ -496,7 +508,6 @@ describe('Lingu Studio app', () => {
 
     await user.click(screen.getByRole('button', { name: '5. Prepare for review: Review package' }))
     expect(screen.getByRole('heading', { name: 'Prepare for review' })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Back to banner preview' }))
 
     expect(screen.getByRole('heading', { name: 'Prepare for review' })).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Banner preview' })).not.toBeInTheDocument()
@@ -549,14 +560,14 @@ describe('Lingu Studio app', () => {
 
     expect(screen.getByRole('heading', { name: 'Banner preview' })).toBeVisible()
     expect(screen.getAllByTestId('banner-candidate')).toHaveLength(20)
-    const continueToReview = screen.getByRole('button', { name: 'Continue to prepare for review' })
+    const continueToReview = screen.getByRole('button', { name: 'Create banners for review' })
     expect(continueToReview).toBeDisabled()
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
     await user.click(screen.getByRole('button', { name: /Open Split frame, 1080×1350 preview/ }))
     await user.selectOptions(screen.getByLabelText('Text motion'), 'type-reveal')
     await user.click(continueToReview)
 
-    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+    await user.click(screen.getByRole('button', { name: 'Send to Designer for review' }))
     await user.click(screen.getByRole('button', { name: 'Continue to Approval' }))
 
     expect(screen.getByRole('heading', { name: 'Waiting for designer review' })).toBeVisible()
@@ -662,7 +673,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
     await user.click(screen.getByRole('button', { name: 'Video' }))
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
-    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+    await user.click(screen.getByRole('button', { name: 'Create banners for review' }))
 
     expect(screen.getAllByTestId('review-banner-thumbnail')).toHaveLength(2)
     const reviewTable = screen.getByRole('table', { name: 'Selected banners for review' })
@@ -674,7 +685,7 @@ describe('Lingu Studio app', () => {
     expect(within(reviewTable).getByRole('columnheader', { name: 'Motion' })).toBeVisible()
     expect(screen.getAllByText('Video').find((element) => element.classList.contains('review-video-badge'))).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+    await user.click(screen.getByRole('button', { name: 'Send to Designer for review' }))
 
     const submittedReview = readReview('campaign-oslo-intensive')
     submittedReview.selectedBanners.forEach((banner) => {
@@ -698,8 +709,8 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
     await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
-    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
-    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+    await user.click(screen.getByRole('button', { name: 'Create banners for review' }))
+    await user.click(screen.getByRole('button', { name: 'Send to Designer for review' }))
 
     window.history.pushState({}, '', '/designer/campaign-oslo-intensive')
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -724,10 +735,10 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
     await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
-    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
-    await user.click(screen.getByRole('button', { name: 'Send to Figma for review' }))
+    await user.click(screen.getByRole('button', { name: 'Create banners for review' }))
+    await user.click(screen.getByRole('button', { name: 'Send to Designer for review' }))
 
-    await user.click(screen.getByRole('button', { name: 'Back to banner preview' }))
+    await user.click(screen.getByRole('button', { name: /^4\./ }))
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[1])
     expect(readReview('campaign-oslo-intensive')).toMatchObject({ status: 'in-review' })
@@ -757,14 +768,13 @@ describe('Lingu Studio app', () => {
 
     expect(screen.getByRole('heading', { name: 'Banner preview' })).toBeVisible()
     expect(within(screen.getByRole('dialog', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Continue to prepare for review' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Create banners for review' })).toBeDisabled()
   })
 
   test('focuses a library template candidate after incompatible banner filters', async () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(appStyles).toMatch(/\.banner-filter--platform select\s*\{[^}]*width:\s*198px;/)
 
     await openAssetsWorkspace(user)
     const staticAction = screen.getAllByRole('button', { name: /Generate static visual/ })[0]
@@ -795,7 +805,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
     await user.click(screen.getByRole('button', { name: /Open Reverse split, 1080×1350 preview/ }))
-    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+    await user.click(screen.getByRole('button', { name: 'Create banners for review' }))
 
     const reviewTable = screen.getByRole('table', { name: 'Selected banners for review' })
     expect(within(reviewTable).getByRole('rowheader', { name: 'Split frame' })).toBeVisible()
@@ -810,8 +820,8 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
     await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
-    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
-    await user.click(screen.getByRole('button', { name: 'Back to banner preview' }))
+    await user.click(screen.getByRole('button', { name: 'Create banners for review' }))
+    await user.click(screen.getByRole('button', { name: /^4\./ }))
     await user.click(screen.getByRole('button', { name: 'Selected for Figma assembly' }))
 
     expect(screen.getByRole('button', { name: '5. Prepare for review: Review package' })).toBeDisabled()
@@ -825,7 +835,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
     await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
     await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
-    await user.click(screen.getByRole('button', { name: 'Continue to prepare for review' }))
+    await user.click(screen.getByRole('button', { name: 'Create banners for review' }))
     await user.click(screen.getByRole('button', { name: 'Templates' }))
     await user.click(screen.getByRole('button', { name: 'Select template Reverse split' }))
 

@@ -6,10 +6,7 @@ export function VisualArtwork({ visual, compact = false }) {
       style={{ '--tone-a': colors[0], '--tone-b': colors[1], '--tone-c': colors[2] }}
       aria-hidden="true"
     >
-      <span className="visual-shape visual-shape-a" />
-      <span className="visual-shape visual-shape-b" />
-      <span className="visual-shape visual-shape-c" />
-      <span className="visual-light" />
+      {visual?.imageSrc ? <img className="visual-uploaded-image" src={visual.imageSrc} alt="" /> : visual?.videoSrc ? <video className="visual-uploaded-image" src={visual.videoSrc} muted playsInline preload="metadata" /> : <><span className="visual-shape visual-shape-a" /><span className="visual-shape visual-shape-b" /><span className="visual-shape visual-shape-c" /><span className="visual-light" /></>}
     </div>
   )
 }

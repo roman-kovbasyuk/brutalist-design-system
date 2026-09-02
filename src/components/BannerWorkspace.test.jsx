@@ -18,7 +18,8 @@ const comparisonCandidates = [
 ]
 
 function BannerWorkspaceHarness({ withVideo = true, candidateSet = candidates }) {
-  const [filters, setFilters] = useState({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
+    const [filters, setFilters] = useState({ format: 'Vertical', platform: 'all', media: 'static' })
+  const [selectedCopyIndex, setSelectedCopyIndex] = useState(0)
   const [selectedBannerIds, setSelectedBannerIds] = useState([])
   const [activeBannerId, setActiveBannerId] = useState(null)
   const [motionByBannerId, setMotionByBannerId] = useState({})
@@ -44,6 +45,13 @@ function BannerWorkspaceHarness({ withVideo = true, candidateSet = candidates })
       staticAssets={[{ id: 'static-nordic', name: 'Nordic portrait' }]}
       videoAssets={[{ id: 'video-static-nordic', name: 'Nordic portrait motion' }]}
       content={{ headline: 'Speak before you move', body: 'Practical Norwegian', offer: '15% off', cta: 'Start learning' }}
+      copyOptions={[
+        { headline: 'Speak before you move' },
+        { headline: 'Start speaking sooner' },
+        { headline: 'Move with more confidence' },
+      ]}
+      selectedCopyIndex={selectedCopyIndex}
+      onCopyChange={setSelectedCopyIndex}
       filters={filters}
       onFiltersChange={setFilters}
       selectedBannerIds={selectedBannerIds}
@@ -58,6 +66,21 @@ function BannerWorkspaceHarness({ withVideo = true, candidateSet = candidates })
 }
 
 describe('BannerWorkspace', () => {
+  test('places copy first and cycles through copy options in both directions', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<BannerWorkspaceHarness />)
+    const toolbar = container.querySelector('.banner-toolbar')
+
+    expect(toolbar.firstElementChild).toHaveClass('banner-copy-switcher')
+    expect(screen.getByLabelText('Copy')).toHaveValue('0')
+
+    await user.click(screen.getByRole('button', { name: 'Previous copy option' }))
+    expect(screen.getByLabelText('Copy')).toHaveValue('2')
+
+    await user.click(screen.getByRole('button', { name: 'Next copy option' }))
+    expect(screen.getByLabelText('Copy')).toHaveValue('0')
+  })
+
   test('uses an icon-led custom menu for every banner format', async () => {
     const user = userEvent.setup()
     render(<BannerWorkspaceHarness />)
@@ -88,20 +111,15 @@ describe('BannerWorkspace', () => {
     const user = userEvent.setup()
     const { container } = render(<BannerWorkspaceHarness />)
 
-    expect(container.querySelector('.banner-filter:not(.banner-filter--platform) > span')).not.toBeInTheDocument()
-    expect(container.querySelector('.banner-filter--platform > span')).not.toBeInTheDocument()
+    expect(container.querySelector('.banner-toolbar > .banner-filter > span')).not.toBeInTheDocument()
+    expect(container.querySelector('.banner-filter--platform')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('banner-candidate')).toHaveLength(1)
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
-    expect(screen.getAllByRole('option', { name: 'All' })).toHaveLength(1)
-
     await chooseFormat(user, 'Horizontal')
-    expect(screen.getByText('No banner compositions match these filters.')).toBeVisible()
-    await user.selectOptions(screen.getByLabelText('Platform'), 'Google Ads')
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-horizontal')
 
     await user.click(screen.getByRole('button', { name: 'Video' }))
     expect(screen.getByRole('button', { name: 'Format: Vertical' })).toBeVisible()
-    expect(screen.getByLabelText('Platform')).toHaveValue('Video Reels')
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-video-vertical')
   })
 
@@ -119,12 +137,10 @@ describe('BannerWorkspace', () => {
     const { rerender } = render(<BannerWorkspaceHarness />)
 
     await user.click(screen.getByRole('button', { name: 'Video' }))
-    expect(screen.getByLabelText('Platform')).toHaveValue('Video Reels')
 
     rerender(<BannerWorkspaceHarness withVideo={false} />)
     expect(screen.queryByRole('group', { name: 'Banner media' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Format: Vertical' })).toBeVisible()
-    expect(screen.getByLabelText('Platform')).toHaveValue('SMM Static')
     expect(screen.getByTestId('banner-candidate')).toHaveAttribute('data-banner-id', 'banner-static-vertical')
   })
 
@@ -140,11 +156,9 @@ describe('BannerWorkspace', () => {
     expect(screen.queryByRole('dialog', { name: 'Banner detail preview' })).not.toBeInTheDocument()
 
     await chooseFormat(user, 'Horizontal')
-    await user.selectOptions(screen.getByLabelText('Platform'), 'Google Ads')
     expect(screen.getByText('1 selected for Figma assembly')).toBeVisible()
 
     await chooseFormat(user, 'Vertical')
-    await user.selectOptions(screen.getByLabelText('Platform'), 'SMM Static')
     const selectedAction = screen.getByRole('button', { name: 'Selected for Figma assembly' })
     expect(selectedAction).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('banner-candidate').querySelector('.banner-candidate__check svg')).toBeInTheDocument()

@@ -1,4 +1,4 @@
-import { Check, Copy, Download, ImagePlus, Pause, Pencil, Play, Trash2, X } from 'lucide-react'
+import { Check, Copy, Download, ImagePlus, Pause, Pencil, Play, Trash2, Video, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { VisualArtwork } from './VisualArtwork.jsx'
 import { CostDialog } from './CostDialog.jsx'
@@ -31,6 +31,8 @@ export function AssetWorkspace({
   onRenameVideo,
   onDeleteVideo,
   onGenerateStatic,
+  onUploadStatic,
+  onUploadVideo,
   onGenerateVideo,
   onSelectStatic,
   onViewSource,
@@ -44,6 +46,7 @@ export function AssetWorkspace({
   const [editingPromptId, setEditingPromptId] = useState(null)
   const [deletingPromptId, setDeletingPromptId] = useState(null)
   const [promptDraft, setPromptDraft] = useState({ title: '', prompt: '' })
+  const [previewAsset, setPreviewAsset] = useState(null)
 
   async function copyPrompt(asset) {
     await navigator.clipboard.writeText(asset.prompt)
@@ -80,7 +83,7 @@ export function AssetWorkspace({
 
   return (
     <section className="asset-workspace" aria-label="AI asset workspace">
-      <div className="asset-tabs" role="tablist" aria-label="AI asset types" onKeyDown={moveTab}>
+      <div className="asset-tabs asset-tabs--hidden" role="tablist" aria-label="AI asset types" onKeyDown={moveTab}>
         {tabs.map(([id, label]) => {
           const count = id === 'prompts' ? promptIdeas.length : id === 'static' ? staticAssets.length : videoAssets.length
           return (
@@ -104,16 +107,14 @@ export function AssetWorkspace({
       {activeTab === 'prompts' && (
         <section id="asset-panel-prompts" role="tabpanel" aria-labelledby="asset-tab-prompts" className="asset-panel">
           <ol className="prompt-list" aria-label="Prompt directions">
-            {promptIdeas.map((prompt) => {
-              const created = staticAssets.some((asset) => asset.sourcePromptId === prompt.id)
+            {promptIdeas.map((prompt, promptIndex) => {
               const editing = editingPromptId === prompt.id
               const confirmingDelete = deletingPromptId === prompt.id
+              const mediaFree = prompt.mediaActions === false
+              const startsCopyGroup = promptIndex === 0 || promptIdeas[promptIndex - 1]?.copyIndex !== prompt.copyIndex
+              const endsCopyGroup = promptIndex === promptIdeas.length - 1 || promptIdeas[promptIndex + 1]?.copyIndex !== prompt.copyIndex
               return (
-                <li className={`prompt-row ${editing ? 'prompt-row--editing' : ''} ${confirmingDelete ? 'prompt-row--confirming' : ''}`} data-testid="prompt-card" key={prompt.id}>
-                  {created && <div className="prompt-row__generated-left" aria-label="Static visual generated"><Check size={13} aria-hidden="true" /><span>Generated</span></div>}
-                  <div className="prompt-row__identity">
-                    <div><h2>{editing ? 'Edit prompt' : (prompt.copyVariant?.headline ?? prompt.title)}</h2><small>{editing ? 'Update the name and full generation text' : `${prompt.copyVariant?.body ?? prompt.shot} · ${prompt.copyVariant?.cta ?? ''}`}</small></div>
-                  </div>
+                <li className={`prompt-row prompt-row--copy-${prompt.copyIndex ?? 0} ${startsCopyGroup ? 'prompt-row--copy-start' : ''} ${endsCopyGroup ? 'prompt-row--copy-end' : ''} ${mediaFree ? 'prompt-row--media-free' : ''} ${editing ? 'prompt-row--editing' : ''} ${confirmingDelete ? 'prompt-row--confirming' : ''}`} data-copy-index={prompt.copyIndex ?? 0} data-copy-label={startsCopyGroup ? `Copy ${(prompt.copyIndex ?? 0) + 1} · ${prompt.copyVariant?.headline ?? prompt.title}` : undefined} data-testid="prompt-card" key={prompt.id}>
                   {editing ? (
                     <form className="prompt-row__editor" onSubmit={(event) => savePrompt(event, prompt.id)}>
                       <label><span>Prompt name</span><input value={promptDraft.title} onChange={(event) => setPromptDraft((current) => ({ ...current, title: event.target.value }))} required /></label>
@@ -138,6 +139,7 @@ export function AssetWorkspace({
                           }
                         }}
                       >
+                        <p className="prompt-row__eyebrow">Copy {(prompt.copyIndex ?? 0) + 1} · {prompt.copyVariant?.headline ?? prompt.title}</p>
                         <p className="prompt-row__direction">
                           <mark className="prompt-highlight prompt-highlight--hero" aria-label={`Object or person: ${prompt.hero}`}>{prompt.hero}</mark>{' '}
                           <mark className="prompt-highlight prompt-highlight--scene" aria-label={`Location or scene: ${prompt.scene}`}>{prompt.scene.toLowerCase()}</mark>{' '}
@@ -146,7 +148,7 @@ export function AssetWorkspace({
                         </p>
                         <p className="prompt-row__full-prompt">{prompt.prompt}</p>
                       </div>
-                      <div className="prompt-row__action">
+                      {!mediaFree && <div className="prompt-row__action">
                         <div className="prompt-row__management" aria-label={`Actions for ${prompt.title}`}>
                           <button type="button" aria-label={`Download prompt ${prompt.title}`} title="Download" onClick={() => onDownloadPrompt(prompt)}><Download size={15} aria-hidden="true" /></button>
                           <button type="button" aria-label={`Edit prompt ${prompt.title}`} title="Edit" onClick={() => beginPromptEdit(prompt)}><Pencil size={15} aria-hidden="true" /></button>
@@ -159,11 +161,9 @@ export function AssetWorkspace({
                             <button type="button" aria-label={`Confirm delete ${prompt.title}`} onClick={() => { onDeletePrompt(prompt.id); setDeletingPromptId(null) }}>Delete</button>
                           </div>
                         ) : (
-                          <div className={`prompt-row__visual-placeholder ${created ? 'prompt-row__visual-placeholder--generated' : ''}`} aria-label={created ? 'Static visual generated' : 'Upload video or photo to generate video'}>
-                            {created ? <><Check size={14} aria-hidden="true" />Generated</> : <><span>Upload video/photo<small>to generate video</small></span><em>or</em><button type="button" className="button button--secondary" aria-label={`Generate static visual for ${prompt.title}`} onClick={() => onGenerateStatic(prompt)}><ImagePlus size={14} aria-hidden="true" />Generate visual</button></>}
-                          </div>
+                          <PromptMediaAction prompt={prompt} staticAsset={staticAssets.find((asset) => asset.sourcePromptId === prompt.id)} videoAsset={videoAssets.find((asset) => asset.sourceStaticId === staticAssets.find((item) => item.sourcePromptId === prompt.id)?.id)} onUpload={onUploadStatic} onUploadVideo={onUploadVideo} onGenerateStatic={onGenerateStatic} onGenerateVideo={onGenerateVideo} onDeleteImage={onDeleteStatic} onDeleteVideo={onDeleteVideo} onPreview={setPreviewAsset} />
                         )}
-                      </div>
+                      </div>}
                     </>
                   )}
                 </li>
@@ -263,8 +263,61 @@ export function AssetWorkspace({
       )}
 
       {showCostDialog && <CostDialog estimate={videoEstimate} onCancel={onCancelVideoBatch} onConfirm={onConfirmVideoBatch} />}
+      {previewAsset && <dialog className="asset-preview-dialog" open aria-label="Asset preview" onClick={(event) => { if (event.target === event.currentTarget) setPreviewAsset(null) }}><div className="asset-preview-dialog__content"><button type="button" className="asset-preview-dialog__close" aria-label="Close preview" onClick={() => setPreviewAsset(null)}><X size={18} /></button><div className="asset-preview-dialog__art"><VisualArtwork visual={previewAsset} /></div><strong>{previewAsset.name}</strong><span>{previewAsset.mediaType === 'video' ? 'Video preview' : 'Static visual preview'}</span></div></dialog>}
     </section>
   )
+}
+
+function PromptMediaAction({ prompt, staticAsset, videoAsset, onUpload, onUploadVideo, onGenerateStatic, onGenerateVideo, onDeleteImage, onDeleteVideo, onPreview }) {
+  const imageInputRef = useRef(null)
+  const videoInputRef = useRef(null)
+  const [order, setOrder] = useState('video-first')
+  const hasImage = Boolean(staticAsset)
+  const hasVideo = Boolean(videoAsset)
+  function upload(event) { onUpload?.(prompt, event.target.files?.[0]); event.target.value = '' }
+  function uploadVideo(event) { if (event.target.files?.[0] && staticAsset) onUploadVideo?.(staticAsset, event.target.files[0]); event.target.value = '' }
+
+  if (!hasImage) return <div className="prompt-row__media-empty">
+    <MediaDropzone action="image" onUpload={() => imageInputRef.current?.click()} onGenerate={() => onGenerateStatic(prompt)} />
+    <MediaDropzone action="video" disabled />
+    <input ref={imageInputRef} className="visually-hidden" type="file" accept="image/*" onChange={upload} />
+  </div>
+
+  if (!hasVideo) return <div className="prompt-row__media-stage">
+    <PromptMediaCard asset={staticAsset} label="Image" onDelete={onDeleteImage} onPreview={onPreview} />
+    <MediaDropzone action="video" onUpload={() => videoInputRef.current?.click()} onGenerate={() => onGenerateVideo(staticAsset)} />
+    <input ref={videoInputRef} className="visually-hidden" type="file" accept="video/*" onChange={uploadVideo} />
+  </div>
+
+  const cards = order === 'video-first' ? [[videoAsset, 'Video'], [staticAsset, 'Image']] : [[staticAsset, 'Image'], [videoAsset, 'Video']]
+  return <div className="prompt-row__media-stage prompt-row__media-stage--dual">
+    <div className="prompt-row__media-stack" aria-label="Image and video assets. Click a card to move it to the front.">
+      {cards.map(([asset, label], index) => <PromptMediaCard asset={asset} label={label} position={index} key={asset.id} onDelete={label === 'Image' ? onDeleteImage : onDeleteVideo} onPreview={onPreview} onPromote={() => setOrder(label === 'Video' ? 'video-first' : 'image-first')} />)}
+    </div>
+  </div>
+}
+
+function MediaDropzone({ action, disabled = false, onUpload, onGenerate }) {
+  const image = action === 'image'
+  const actionLabel = image ? 'Create AI visual' : 'Generate AI video'
+  return <div className={`prompt-row__dropzone${disabled ? ' prompt-row__dropzone--disabled' : ''}`}>
+    <button type="button" className="prompt-row__upload-link" onClick={onUpload} disabled={disabled}>Upload</button>
+    <em>or</em>
+    <button type="button" className="button button--secondary" aria-label={image ? 'Generate static visual' : 'Generate AI video'} onClick={onGenerate} disabled={disabled}>
+      {image ? <ImagePlus size={18} /> : <Video size={18} />}{actionLabel}
+    </button>
+  </div>
+}
+
+function PromptMediaCard({ asset, label, position, onDelete, onPreview, onPromote }) {
+  const isVideo = label === 'Video'
+  return <div className="prompt-row__media-card-wrap" data-position={position}>
+    <button type="button" className="prompt-row__media-card" onClick={() => onPromote ? onPromote() : onPreview(asset)} aria-label={onPromote ? `Move ${label.toLowerCase()} to front` : `Preview ${label.toLowerCase()} ${asset.name}`}>
+      <VisualArtwork visual={asset} />
+      {isVideo && <span className="prompt-row__play"><Play size={20} fill="currentColor" /></span>}
+    </button>
+    <button type="button" className="prompt-row__asset-delete" aria-label={`Delete ${label.toLowerCase()}`} onClick={() => onDelete?.(asset.id)}><Trash2 size={15} /></button>
+  </div>
 }
 
 function AssetManagement({ asset, kind, hasDerivedVideo = false, onDownload, onRename, onDelete }) {

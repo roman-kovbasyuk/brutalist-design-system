@@ -49,6 +49,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   const [brief, setBrief] = useState(initialBrief)
   const [error, setError] = useState('')
   const [strategy, setStrategy] = useState(null)
+  const [editingSummary, setEditingSummary] = useState(false)
   const [promptIdeas, setPromptIdeas] = useState([])
   const [imagePromptCounts, setImagePromptCounts] = useState([1, 1, 1, 1, 1])
   const [promptGeneratingIndex, setPromptGeneratingIndex] = useState(null)
@@ -60,8 +61,11 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   const [assetTab, setAssetTab] = useState('prompts')
   const [showVideoCostDialog, setShowVideoCostDialog] = useState(false)
   const [selectedVisualId, setSelectedVisualId] = useState(null)
+  const [randomizeImages, setRandomizeImages] = useState(false)
+  const [selectedCopyIndex, setSelectedCopyIndex] = useState(0)
   const [selectedTemplateId, setSelectedTemplateId] = useState(requestedTemplate?.id ?? null)
-  const [bannerFilters, setBannerFilters] = useState({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
+  const [bannerFilters, setBannerFilters] = useState({ format: 'Square', platform: 'SMM Static', media: 'static' })
+  const [deliveryFormat, setDeliveryFormat] = useState('All')
   const [selectedBannerIds, setSelectedBannerIds] = useState([])
   const [activeBannerId, setActiveBannerId] = useState(null)
   const [pendingTemplateId, setPendingTemplateId] = useState(null)
@@ -131,14 +135,22 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     return () => observer.disconnect()
   }, [maxStep, processing, visualProcessing])
 
+  const copyOptions = useMemo(() => strategy ? [
+    { headline: strategy.headline, body: strategy.body, cta: strategy.cta },
+    { headline: 'Start speaking sooner', body: 'Build practical Norwegian confidence for everyday life in Oslo.', cta: 'Explore the intensive' },
+    { headline: 'Your first week, in Norwegian', body: 'Learn the words and confidence to make your move feel local.', cta: 'See the course' },
+    { headline: 'Move with more confidence', body: 'Short, focused lessons for real conversations from day one.', cta: 'Save 15% today' },
+    { headline: 'Find your voice in Oslo', body: 'A supportive intensive for navigating your new everyday with ease.', cta: 'Start your journey' },
+  ] : [], [strategy])
+  const bannerContent = copyOptions[selectedCopyIndex] ?? strategy
   const selectedStaticVisual = staticAssets.find((visual) => visual.id === selectedVisualId)
   const linkedVideos = useMemo(() => videoAssets.filter((asset) => asset.sourceStaticId === selectedVisualId), [videoAssets, selectedVisualId])
   const bannerCandidates = useMemo(() => createBannerCandidates({
     strategy,
     templates,
-    staticAssets: selectedStaticVisual ? [selectedStaticVisual] : [],
+    staticAssets: randomizeImages ? staticAssets : (selectedStaticVisual ? [selectedStaticVisual] : []),
     videoAssets: linkedVideos,
-  }), [strategy, selectedStaticVisual, linkedVideos])
+  }), [strategy, templates, staticAssets, randomizeImages, selectedStaticVisual, linkedVideos])
   const selectedBanners = selectedBannerIds.map((id) => bannerCandidates.find((candidate) => candidate.id === id)).filter(Boolean)
   const activeBanner = selectedBannerIds.includes(activeBannerId)
     ? bannerCandidates.find((candidate) => candidate.id === activeBannerId)
@@ -180,6 +192,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setError('')
     setStrategy(null)
     setPromptIdeas([])
+    setSelectedCopyIndex(0)
     setImagePromptCounts([1, 1, 1, 1, 1])
     setPromptGeneratingIndex(null)
     setProcessing(null)
@@ -190,8 +203,9 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setAssetTab('prompts')
     setShowVideoCostDialog(false)
     setSelectedVisualId(null)
+    setSelectedCopyIndex(0)
     setSelectedTemplateId(requestedTemplate?.id ?? null)
-    setBannerFilters({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
+    setBannerFilters({ format: 'Square', platform: 'SMM Static', media: 'static' })
     setSelectedBannerIds([])
     setActiveBannerId(null)
     setPendingTemplateId(null)
@@ -286,6 +300,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setAssetTab('prompts')
     setShowVideoCostDialog(false)
     setSelectedVisualId(null)
+    setSelectedCopyIndex(0)
     setSelectedBannerIds([])
     setActiveBannerId(null)
     setMotionByBannerId({})
@@ -339,9 +354,25 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setMaxStep((current) => Math.min(current, 4))
   }
 
+  function selectCopy(index) {
+    setSelectedCopyIndex(index)
+    const option = copyOptions[index]
+    const prompt = promptIdeas.find((item) => item.copyVariant?.headline === option?.headline)
+    const visual = staticAssets.find((asset) => asset.sourcePromptId === prompt?.id)
+    if (visual) selectVisual(visual.id)
+  }
+
   function generateStaticAsset(prompt) {
     const asset = createStaticAsset(prompt)
     setStaticAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
+    selectVisual(asset.id)
+  }
+
+  function uploadStaticAsset(prompt, file) {
+    if (!file) return
+    const generated = createStaticAsset(prompt)
+    const asset = { ...generated, id: `uploaded-${prompt.id}-${Date.now()}`, name: file.name.replace(/\.[^.]+$/, '') || generated.name, imageSrc: URL.createObjectURL(file), source: 'uploaded' }
+    setStaticAssets((current) => [...current.filter((item) => item.sourcePromptId !== prompt.id), asset])
     selectVisual(asset.id)
   }
 
@@ -422,6 +453,19 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setVideoAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
   }
 
+  function uploadVideoAsset(staticAsset, file) {
+    if (!file) return
+    const generated = createVideoAsset(staticAsset)
+    const asset = {
+      ...generated,
+      id: `uploaded-video-${staticAsset.id}-${Date.now()}`,
+      name: file.name.replace(/\.[^.]+$/, '') || generated.name,
+      videoSrc: URL.createObjectURL(file),
+      source: 'uploaded',
+    }
+    setVideoAssets((current) => [...current.filter((item) => item.sourceStaticId !== staticAsset.id), asset])
+  }
+
   function viewSourceStaticAsset(staticId) {
     selectVisual(staticId)
     setAssetTab('static')
@@ -495,6 +539,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
       simulation: 'local',
     }
     writeReview(campaignId, packageRecord)
+    setReview(packageRecord)
     setMaxStep((current) => Math.max(current, 6))
   }
 
@@ -506,6 +551,21 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
       marketerName: 'Maya Chen',
       approvedAt: new Date().toISOString(),
     })
+    setMaxStep(7)
+    setStep(7)
+    setPendingFocusStep(7)
+  }
+
+  function simulateApproval() {
+    if (reviewStatus !== 'in-review' || !review) return
+    const approvedReview = {
+      ...review,
+      status: 'approved',
+      marketerName: 'Maya Chen',
+      approvedAt: new Date().toISOString(),
+    }
+    writeReview(campaignId, approvedReview)
+    setReview(approvedReview)
     setMaxStep(7)
     setStep(7)
     setPendingFocusStep(7)
@@ -549,16 +609,27 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
           <>
             <span id="campaign-step-1" className="workflow-anchor" aria-hidden="true" />
             <section className={`workflow-card ${maxStep >= 1 ? '' : 'workflow-card--locked'}`}>
-            <StageHeader count="01 / 09" title="Tell us your campaign idea" description="A free-form brief is the only required input. We’ll prepare the copy and prompts." />
-            <div className="stage-grid stage-grid--brief">
+            <StageHeader count="01 / 07" title={strategy ? 'Campaign summary' : 'Tell us your campaign idea'} description={strategy ? 'Review and refine the summary before continuing through the campaign.' : 'A free-form brief is the only required input. We’ll prepare the copy and prompts.'} />
+            <div className={`stage-grid stage-grid--brief ${strategy ? 'stage-grid--summary' : ''}`}>
               <div className="field-group field-group--large">
-                <label htmlFor="campaign-brief">Campaign idea</label>
-                <textarea id="campaign-brief" value={brief} onChange={(event) => updateBrief(event.target.value)} />
-                <div className="field-meta"><span>{brief.length} characters</span><span>Write naturally</span></div>
+                <label htmlFor="campaign-brief">{strategy ? 'Campaign summary' : 'Campaign idea'}</label>
+                {strategy && !editingSummary ? (
+                  <div className="campaign-summary-compact" role="button" tabIndex="0" aria-label="Edit campaign summary" onClick={() => setEditingSummary(true)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setEditingSummary(true) }}>{brief}</div>
+                ) : (
+                  <textarea id="campaign-brief" value={brief} autoFocus={Boolean(strategy && editingSummary)} onChange={(event) => updateBrief(event.target.value)} onBlur={() => strategy && setEditingSummary(false)} />
+                )}
+                {!strategy && <div className="field-meta"><span>{brief.length} characters</span><span>Write naturally</span></div>}
                 {error && <p className="inline-error" role="alert">{error}</p>}
               </div>
             </div>
-            <StageActions><PrimaryButton onClick={handleAnalyze}>Analyze brief</PrimaryButton></StageActions>
+            {strategy && (
+              <dl className="copy-strategy campaign-summary-strategy">
+                <SummaryRow label="Audience" value={strategy.audience} />
+                <SummaryRow label="Objective" value={strategy.goal} />
+                <SummaryRow label="Offer" value={strategy.offer} />
+              </dl>
+            )}
+            {!strategy && <StageActions><PrimaryButton onClick={handleAnalyze}>Analyze brief</PrimaryButton></StageActions>}
             </section>
           </>
         )}
@@ -567,7 +638,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
           <>
             <span id="campaign-step-2" className="workflow-anchor" aria-hidden="true" />
             <section className={`workflow-card ${maxStep >= 2 ? '' : 'workflow-card--locked'}`}>
-            <StageHeader count="02 / 09" title="Copy" description="Refine the campaign message and review five visual moments generated from the brief." />
+            <StageHeader count="02 / 07" title="Copy" description="Refine the campaign message and review five visual moments generated from the brief." />
             {strategy ? (
               <>
                 <CopyWorkspace strategy={strategy} imagePromptCounts={imagePromptCounts} promptGeneratingIndex={promptGeneratingIndex} onImagePromptCountChange={updateImagePromptCount} />
@@ -588,7 +659,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
           <>
             <span id="campaign-step-3" className="workflow-anchor" aria-hidden="true" />
             <section className={`workflow-card ${maxStep >= 3 ? '' : 'workflow-card--locked'}`}>
-            <StageHeader count="03 / 09" title="AI assets" description="Turn prompt directions into static visuals and locally simulated motion assets." />
+            <StageHeader count="03 / 07" title="AI assets" description="Turn prompt directions into static visuals and locally simulated motion assets." />
             <AssetWorkspace
               activeTab={assetTab}
               promptIdeas={promptIdeas}
@@ -607,6 +678,8 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               onRenameVideo={renameVideoAsset}
               onDeleteVideo={deleteVideoAsset}
               onGenerateStatic={generateStaticAsset}
+              onUploadStatic={uploadStaticAsset}
+              onUploadVideo={uploadVideoAsset}
               onGenerateVideo={generateVideoAsset}
               onSelectStatic={selectVisual}
               onViewSource={viewSourceStaticAsset}
@@ -622,13 +695,18 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
           <>
             <span id="campaign-step-4" className="workflow-anchor" aria-hidden="true" />
             <section className={`workflow-card ${maxStep >= 4 ? '' : 'workflow-card--locked'}`}>
-            <StageHeader count="04 / 09" title="Banner preview" description="Compare 20 compositions for the selected visual, then choose the drafts to assemble in Figma." />
+            <StageHeader count="04 / 07" title="Banner preview" description="Compare 20 compositions for the selected visual, then choose the drafts to assemble in Figma." />
             <BannerWorkspace
               candidates={bannerCandidates}
               templates={templates}
               staticAssets={staticAssets}
               videoAssets={videoAssets}
-              content={strategy}
+              content={bannerContent}
+              copyOptions={copyOptions}
+              selectedCopyIndex={selectedCopyIndex}
+              onCopyChange={selectCopy}
+              randomizeImages={randomizeImages}
+              onRandomizeImagesChange={setRandomizeImages}
               filters={bannerFilters}
               onFiltersChange={setBannerFilters}
               selectedBannerIds={selectedBannerIds}
@@ -639,7 +717,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               onMotionChange={updateBannerMotion}
               onReplayMotion={replayBannerMotion}
             />
-            <StageActions><SecondaryButton onClick={() => changeStep(3)}>Back</SecondaryButton><PrimaryButton disabled={selectedBannerIds.length === 0} onClick={() => advance(5)}>Continue to prepare for review</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => changeStep(3)}>Back</SecondaryButton><PrimaryButton disabled={selectedBannerIds.length === 0} onClick={() => advance(5)}>Create banners for review</PrimaryButton></StageActions>
             </section>
           </>
         )}
@@ -648,7 +726,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
           <>
             <span id="campaign-step-5" className="workflow-anchor" aria-hidden="true" />
             <section className={`workflow-card ${maxStep >= 5 ? '' : 'workflow-card--locked'}`}>
-            <StageHeader count="05 / 09" title="Prepare for review" description="Review every selected banner before sending the immutable local package to the designer endpoint." />
+            <StageHeader count="05 / 07" title="Review" description="Review every selected banner before sending the immutable local package to the designer endpoint." />
             {visibleReviewBanners.length === 0 ? (
               <section className="review-submission-status" data-status={reviewStatus} aria-live="polite">
                 <strong>Nothing to review yet</strong>
@@ -657,18 +735,17 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               </section>
             ) : (
               <>
-                <ReviewWorkspace banners={visibleReviewBanners} status={reviewStatus} />
+                <ReviewWorkspace banners={visibleReviewBanners} status={reviewStatus} figmaUrl={review?.figmaUrl} />
                 {reviewStatus === 'draft' ? (
-                  <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={submitReviewPackage}>Send to Figma for review</PrimaryButton></StageActions>
+                  <StageActions><PrimaryButton onClick={submitReviewPackage}>Send to Designer for review</PrimaryButton></StageActions>
                 ) : (
                   <>
-                    <section className="review-submission-status" data-status={reviewStatus} aria-live="polite">
+                    <section className="review-submission-status" data-status={reviewStatus} aria-live="polite" role={reviewStatus === 'in-review' ? 'button' : undefined} tabIndex={reviewStatus === 'in-review' ? 0 : undefined} onClick={simulateApproval} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') simulateApproval() }}>
                       <strong>{reviewStatus === 'in-review' ? 'In review' : reviewStatus === 'ready-for-approval' ? 'Ready for approval' : 'Approved'}</strong>
-                      <a className="review-figma-link" href={review?.figmaUrl} target="_blank" rel="noreferrer">Open Figma review</a>
                       <p>You will be notified by email and Slack</p>
                       <p className="local-simulation-label">Local simulation</p>
                     </section>
-                    <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Continue to Approval</PrimaryButton></StageActions>
+                    <StageActions><PrimaryButton onClick={() => advance(6)}>Continue to Approval</PrimaryButton></StageActions>
                   </>
                 )}
               </>
@@ -680,8 +757,8 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
         {!processing && (
           <>
             <span id="campaign-step-6" className="workflow-anchor" aria-hidden="true" />
-            <section className={`workflow-card ${maxStep >= 6 ? '' : 'workflow-card--locked'}`}>
-            <StageHeader count="06 / 09" title="Approval" description="The marketer confirms the designer’s locally persisted review before delivery is unlocked." />
+            <section className={`workflow-card workflow-card--approval ${maxStep >= 6 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="06 / 07" title="Approval" description="The marketer confirms the designer’s locally persisted review before delivery is unlocked." />
             <section className="approval-panel" data-status={reviewStatus} aria-live="polite">
               {reviewStatus === 'ready-for-approval' ? (
                 <>
@@ -694,8 +771,8 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 <>
                   <span className="status-label">Approved</span>
                   <h2>Review confirmed</h2>
-                  <p>Delivery is available for the current approved package.</p>
-                  <PrimaryButton onClick={() => advance(7)}>Open Delivery</PrimaryButton>
+                  <p>Assets are ready for the current approved package.</p>
+                  <PrimaryButton onClick={() => advance(7)}>Open Assets ready</PrimaryButton>
                 </>
               ) : (
                 <>
@@ -706,7 +783,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 </>
               )}
             </section>
-            <StageActions><SecondaryButton onClick={() => changeStep(5)}>Back to Prepare for review</SecondaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => changeStep(5)}>Back to Review</SecondaryButton></StageActions>
             </section>
           </>
         )}
@@ -715,7 +792,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
           <>
             <span id="campaign-step-7" className="workflow-anchor" aria-hidden="true" />
             <section className={`workflow-card ${maxStep >= 7 ? '' : 'workflow-card--locked'}`}>
-            <StageHeader count="07 / 09" title="Delivery" description="Responsive production formats are generated locally from every approved selected banner." />
+            <StageHeader count="07 / 07" title="Assets ready" description="Responsive production formats are generated locally from every approved selected banner." />
             {reviewStatus === 'approved' ? (
               <>
                 <ul className="delivery-summary" aria-label="Production summary">
@@ -726,9 +803,10 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                   <li>Total assets: {deliveryOutputs.length}</li>
                   <li>Total simulated production cost: {formatCurrency(productionCost)}</li>
                 </ul>
-                <StageActions placement="top"><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
+                <StageActions placement="top"><PrimaryButton onClick={downloadAssets}><Download size={15} />Download all assets</PrimaryButton></StageActions>
+                <div className="resize-filters"><label>Format<select value={deliveryFormat} onChange={(event) => setDeliveryFormat(event.target.value)}><option>All</option>{[...new Set(deliveryOutputs.map((output) => output.label))].map((label) => <option key={label}>{label}</option>)}</select></label></div>
                 <div className="resize-grid">
-                  {deliveryOutputs.map(({ banner, ...format }) => (
+                  {deliveryOutputs.filter((output) => deliveryFormat === 'All' || output.label === deliveryFormat).map(({ banner, ...format }) => (
                     <article className="resize-output" key={`${banner.id}-${format.size}`}>
                       <div className="resize-preview-wrap"><BannerPreview template={banner.template} visual={banner.visual} content={banner.content} ratio={format.ratio} resizeLayout={format.layout} compact motionPreset={banner.motionPreset} motionVersion={banner.motionPreset?.replayVersion ?? 0} /></div>
                       <div><span>{banner.templateName} · {format.label}</span><strong>{format.size}</strong><small>{format.layout}</small></div>
@@ -738,26 +816,12 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               </>
             ) : (
               <section className="approval-panel" data-status={reviewStatus} aria-live="polite">
-                <span className="status-label">Delivery locked</span>
+                <span className="status-label">Assets locked</span>
                 <h2>Approve the review package first</h2>
-                <p>Delivery and downloads become available after the designer review is confirmed.</p>
+                <p>Ready-made banners and downloads become available after the review is confirmed.</p>
                 <StageActions><SecondaryButton onClick={() => changeStep(6)}>Go to Approval</SecondaryButton></StageActions>
               </section>
             )}
-            </section>
-          </>
-        )}
-        {!processing && (
-          <>
-            <span id="campaign-step-8" className="workflow-anchor" aria-hidden="true" />
-            <section className={`workflow-card workflow-extra-section ${maxStep >= 8 ? '' : 'workflow-card--locked'}`}>
-              <StageHeader count="08 / 09" title="Final QA" description="Check the approved package before it leaves the workspace." />
-              <section className="approval-panel"><span className="status-label">Quality check</span><h2>Final assets are ready to inspect</h2><p>Review formats, motion, and copy one last time before export.</p></section>
-            </section>
-            <span id="campaign-step-9" className="workflow-anchor" aria-hidden="true" />
-            <section className={`workflow-card workflow-extra-section ${maxStep >= 9 ? '' : 'workflow-card--locked'}`}>
-              <StageHeader count="09 / 09" title="Export" description="Package the approved campaign for handoff." />
-              <section className="approval-panel"><span className="status-label">Ready to ship</span><h2>Export from Delivery</h2><p>Download the approved assets from the Delivery section above.</p></section>
             </section>
           </>
         )}
@@ -773,6 +837,10 @@ function StageHeader({ count, title, description }) {
 
 function StageActions({ children, placement = 'bottom' }) {
   return <footer className={`stage-actions stage-actions--${placement}`}>{children}</footer>
+}
+
+function SummaryRow({ label, value }) {
+  return <div><dt>{label}</dt><dd>{value}</dd></div>
 }
 
 function PrimaryButton({ children, ...props }) {
