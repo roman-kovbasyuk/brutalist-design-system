@@ -46,7 +46,12 @@ export default function App() {
 
   return (
     <AppShell activeView={route.view} campaignId={activeCampaignId} onNavigate={navigate}>
-      <div hidden={route.view !== 'dashboard'}><DashboardScreen onOpenCampaign={(campaignId) => navigate(`/campaign/${campaignId}`)} /></div>
+      <div hidden={route.view !== 'dashboard'}>
+        <DashboardScreen
+          onOpenCampaign={(campaignId) => navigate(`/campaign/${campaignId}`)}
+          onCreateCampaign={() => navigate(`/campaign/campaign-${Date.now()}`)}
+        />
+      </div>
       <div hidden={route.view !== 'campaign'}><WorkflowScreen campaignId={activeCampaignId} requestedTemplate={requestedTemplate} /></div>
       <div hidden={route.view !== 'templates'}><TemplatesScreen onChoose={chooseTemplate} /></div>
       <div hidden={route.view !== 'system'}><DesignSystemScreen /></div>

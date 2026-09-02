@@ -224,13 +224,13 @@ describe('dashboard fixtures', () => {
       totalStaticVisuals: 29,
       totalVideos: 10,
       productionCost: 21.48,
-      staticToVideoRatio: '2.9:1',
     })
     expect(dashboardMetrics).toEqual({
       totalBannersCreated: 46,
+      totalImages: 29,
+      totalVideos: 10,
       totalReviews: 4,
       genAiProductionCost: 21.48,
-      staticToVideoRatio: '2.9:1',
     })
   })
 })

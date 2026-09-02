@@ -4,19 +4,27 @@ export const steps = [
   ['Brief', 'Campaign idea'],
   ['Copy', 'Audience, offer, and copy'],
   ['AI assets', 'Prompts, static, and video'],
-  ['Banner preview', 'Select banner drafts'],
-  ['Prepare for review', 'Review package'],
-  ['Approval', 'Marketer confirmation'],
+  ['Banners', 'Select banner drafts'],
+  ['Review', 'Review package'],
+  ['Review', 'Marketer confirmation'],
   ['Delivery', 'Assets and manifest'],
+  ['Final QA', 'Quality checks'],
+  ['Export', 'Ready to ship'],
 ]
 
 export function StepRail({ currentStep, maxStep, onStepChange }) {
+  function jumpTo(number) {
+    onStepChange(number)
+    document.getElementById(`campaign-step-${number}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
     <nav className="step-rail" aria-label="Campaign stages">
       <p className="step-rail-title">Campaign</p>
       <ol>
-        {steps.map(([label, detail], index) => {
+        {steps.map(([label], index) => {
           const number = index + 1
+          if (number === 5) return null
           const isComplete = number < maxStep && number !== currentStep
           const isAvailable = number <= maxStep
           return (
@@ -27,16 +35,15 @@ export function StepRail({ currentStep, maxStep, onStepChange }) {
                 data-current={number === currentStep}
                 data-complete={isComplete}
                 aria-current={number === currentStep ? 'step' : undefined}
-                aria-label={`${number}. ${label}: ${detail}`}
+                aria-label={`${number}. ${label}`}
                 disabled={!isAvailable}
-                onClick={() => onStepChange(number)}
+                onClick={() => jumpTo(number)}
               >
                 <span className="step-number">
-                  {isComplete ? <Check size={13} aria-hidden="true" /> : String(number).padStart(2, '0')}
+                  {isComplete ? <Check size={13} aria-hidden="true" /> : String(number)}
                 </span>
                 <span>
                   <strong>{label}</strong>
-                  <small>{detail}</small>
                 </span>
               </button>
             </li>

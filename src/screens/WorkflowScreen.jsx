@@ -29,6 +29,7 @@ const analysisStates = [
   'Preparing image and video prompts',
 ]
 const analysisPhaseDuration = 250
+const visualGenerationStates = ['Thinking about visual ideas and prompts', 'Structuring five shot directions', 'Preparing the prompt workspace']
 const defaultMotionPreset = { text: 'fade-up', image: 'soft-zoom', cta: 'pop-in', replayVersion: 0 }
 
 function getResumableStep(review) {
@@ -49,7 +50,11 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   const [error, setError] = useState('')
   const [strategy, setStrategy] = useState(null)
   const [promptIdeas, setPromptIdeas] = useState([])
+  const [imagePromptCounts, setImagePromptCounts] = useState([1, 1, 1, 1, 1])
+  const [promptGeneratingIndex, setPromptGeneratingIndex] = useState(null)
   const [processing, setProcessing] = useState(null)
+  const [visualProcessing, setVisualProcessing] = useState(false)
+  const [pendingFocusStep, setPendingFocusStep] = useState(null)
   const [staticAssets, setStaticAssets] = useState([])
   const [videoAssets, setVideoAssets] = useState([])
   const [assetTab, setAssetTab] = useState('prompts')
@@ -73,6 +78,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     if (strategy && selectedVisualId) {
       setStep(4)
       setMaxStep(4)
+      setPendingFocusStep(4)
     }
   }, [requestedTemplate]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -90,6 +96,40 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
 
     return () => window.clearTimeout(timerId)
   }, [processing]) // The timer is replaced and cleared for every deterministic phase.
+
+  useEffect(() => {
+    if (!visualProcessing) return undefined
+    const timerId = window.setTimeout(() => setVisualProcessing(false), 900)
+    return () => window.clearTimeout(timerId)
+  }, [visualProcessing])
+
+  useEffect(() => {
+    if (!pendingFocusStep || processing || visualProcessing) return undefined
+    const frameId = window.requestAnimationFrame(() => {
+      document.getElementById(`campaign-step-${pendingFocusStep}`)?.scrollIntoView({
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+        block: 'start',
+      })
+      setPendingFocusStep(null)
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [pendingFocusStep, processing, visualProcessing])
+
+  useEffect(() => {
+    if (processing || visualProcessing || typeof IntersectionObserver === 'undefined') return undefined
+    const anchors = [...document.querySelectorAll('.workflow-anchor[id^="campaign-step-"]')]
+    if (anchors.length === 0) return undefined
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)[0]
+      if (!visible) return
+      const nextStep = Number(visible.target.id.replace('campaign-step-', ''))
+      if (nextStep > 0 && nextStep <= maxStep) setStep((current) => current === nextStep ? current : nextStep)
+    }, { rootMargin: '-96px 0px -58% 0px', threshold: 0 })
+    anchors.forEach((anchor) => observer.observe(anchor))
+    return () => observer.disconnect()
+  }, [maxStep, processing, visualProcessing])
 
   const selectedStaticVisual = staticAssets.find((visual) => visual.id === selectedVisualId)
   const linkedVideos = useMemo(() => videoAssets.filter((asset) => asset.sourceStaticId === selectedVisualId), [videoAssets, selectedVisualId])
@@ -125,10 +165,6 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   const deliveryBanners = review?.selectedBanners ?? []
   const hasPersistedReviewPackage = reviewStatus !== 'draft' && deliveryBanners.length > 0
   const hasReviewPackage = selectedBannerIds.length > 0 || hasPersistedReviewPackage
-  const isPersistedOnlyWorkflow = hasPersistedReviewPackage
-    && !strategy
-    && staticAssets.length === 0
-    && videoAssets.length === 0
   const visibleReviewBanners = reviewStatus === 'draft' ? reviewBanners : deliveryBanners
   const deliveryOutputs = useMemo(() => deliveryBanners.flatMap((banner) => getResizeLayouts(banner.template).map((format) => ({ ...format, banner }))), [deliveryBanners])
   const generatedAssets = review?.generatedAssets ?? [...staticAssets, ...videoAssets]
@@ -144,7 +180,11 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setError('')
     setStrategy(null)
     setPromptIdeas([])
+    setImagePromptCounts([1, 1, 1, 1, 1])
+    setPromptGeneratingIndex(null)
     setProcessing(null)
+    setVisualProcessing(false)
+    setPendingFocusStep(null)
     setStaticAssets([])
     setVideoAssets([])
     setAssetTab('prompts')
@@ -159,14 +199,6 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     setReview(persistedReview)
     return subscribeToReview(campaignId, setReview)
   }, [campaignId]) // A new URL campaign must never inherit the prior campaign's local workflow state.
-
-  useEffect(() => {
-    if (reviewStatus !== 'draft' || step < 6) return
-
-    const nextPermittedStep = reviewBanners.length > 0 ? 5 : 4
-    setStep(nextPermittedStep)
-    setMaxStep((current) => Math.min(current, nextPermittedStep))
-  }, [reviewBanners.length, reviewStatus, step])
 
   useEffect(() => {
     if (!pendingTemplateId || bannerCandidates.length === 0) return
@@ -193,14 +225,30 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     if (nextStep === 7 && (reviewStatus !== 'approved' || deliveryBanners.length === 0)) return
     setStep(nextStep)
     setMaxStep((current) => Math.max(current, nextStep))
+    setPendingFocusStep(nextStep)
   }
 
+  function handleGenerateVisuals() {
+    setPromptIdeas(generatePromptIdeas(strategy, imagePromptCounts))
+    setVisualProcessing(true)
+    setStep(3)
+    setMaxStep((current) => Math.max(current, 4))
+    setPendingFocusStep(3)
+  }
+
+  function updateImagePromptCount(index, count) {
+    const nextCounts = imagePromptCounts.map((value, optionIndex) => optionIndex === index ? count : value)
+    setImagePromptCounts(nextCounts)
+    setPromptIdeas(generatePromptIdeas(strategy, nextCounts))
+    setPromptGeneratingIndex(index)
+    window.setTimeout(() => setPromptGeneratingIndex((current) => current === index ? null : current), 650)
+  }
+
+
   function changeStep(nextStep) {
-    if (isPersistedOnlyWorkflow && nextStep < 5) return
-    if (nextStep === 5 && !hasReviewPackage) return
-    if (nextStep === 6 && !hasPersistedReviewPackage) return
-    if (nextStep === 7 && (reviewStatus !== 'approved' || deliveryBanners.length === 0)) return
+    if (nextStep > maxStep) return
     setStep(nextStep)
+    setPendingFocusStep(nextStep)
   }
 
   function invalidateReview() {
@@ -244,7 +292,8 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     invalidateReview()
     setProcessing(null)
     setStep(2)
-    setMaxStep((current) => Math.max(current, 2))
+    setMaxStep((current) => Math.max(current, 4))
+    setPendingFocusStep(2)
   }
 
   function updateStrategy(field, value) {
@@ -293,7 +342,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   function generateStaticAsset(prompt) {
     const asset = createStaticAsset(prompt)
     setStaticAssets((current) => current.some((item) => item.id === asset.id) ? current : [...current, asset])
-    setSelectedVisualId((current) => current ?? asset.id)
+    selectVisual(asset.id)
   }
 
   function updatePrompt(promptId, changes) {
@@ -459,6 +508,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
     })
     setMaxStep(7)
     setStep(7)
+    setPendingFocusStep(7)
   }
 
   function downloadPackage(filename, payload) {
@@ -492,11 +542,14 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   return (
     <div className="workflow-layout">
       <StepRail currentStep={processing ? null : step} maxStep={maxStep} onStepChange={changeStep} />
-      <section className="workflow-stage" key={processing ? 'processing' : step}>
+      <section className={`workflow-stage ${visualProcessing ? 'workflow-stage--processing' : ''}`} key={processing ? 'processing' : step}>
         {processing && <ProcessingScreen states={analysisStates} activeIndex={processing.activeIndex} progress={(processing.activeIndex + 1) * 20} />}
-        {!processing && step === 1 && (
+        {visualProcessing && !processing && <ProcessingScreen states={visualGenerationStates} activeIndex={1} progress={64} />}
+        {!processing && !visualProcessing && (
           <>
-            <StageHeader count="01 / 07" title="Tell us your campaign idea" description="A free-form brief is the only required input. We’ll prepare the copy and prompts." />
+            <span id="campaign-step-1" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card ${maxStep >= 1 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="01 / 09" title="Tell us your campaign idea" description="A free-form brief is the only required input. We’ll prepare the copy and prompts." />
             <div className="stage-grid stage-grid--brief">
               <div className="field-group field-group--large">
                 <label htmlFor="campaign-brief">Campaign idea</label>
@@ -504,27 +557,38 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 <div className="field-meta"><span>{brief.length} characters</span><span>Write naturally</span></div>
                 {error && <p className="inline-error" role="alert">{error}</p>}
               </div>
-              <aside className="brief-aside">
-                <p>The system will identify</p>
-                <ul><li>audience and objective</li><li>offer and CTA</li><li>message structure</li><li>image and video prompts</li></ul>
-                <span>Demo mode uses a local generator. Your data never leaves the browser.</span>
-              </aside>
             </div>
             <StageActions><PrimaryButton onClick={handleAnalyze}>Analyze brief</PrimaryButton></StageActions>
+            </section>
           </>
         )}
 
-        {!processing && step === 2 && strategy && (
+        {!processing && (
           <>
-            <StageHeader count="02 / 07" title="Copy" description="Refine the campaign message and review five visual moments generated from the brief." />
-            <CopyWorkspace strategy={strategy} promptIdeas={promptIdeas} onCopyChange={updateStrategy} />
-            <StageActions><SecondaryButton onClick={() => setStep(1)}>Back</SecondaryButton><PrimaryButton onClick={() => advance(3)}>Generate visuals</PrimaryButton></StageActions>
+            <span id="campaign-step-2" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card ${maxStep >= 2 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="02 / 09" title="Copy" description="Refine the campaign message and review five visual moments generated from the brief." />
+            {strategy ? (
+              <>
+                <CopyWorkspace strategy={strategy} imagePromptCounts={imagePromptCounts} promptGeneratingIndex={promptGeneratingIndex} onImagePromptCountChange={updateImagePromptCount} />
+              </>
+            ) : (
+              <section className="approval-panel" aria-live="polite">
+                <span className="status-label">Brief required</span>
+                <h2>Analyze a campaign brief to create copy</h2>
+                <p>Copy, prompts, and visual assets will appear here after the brief is analyzed.</p>
+                <StageActions><SecondaryButton onClick={() => changeStep(1)}>Go to Brief</SecondaryButton></StageActions>
+              </section>
+            )}
+            </section>
           </>
         )}
 
-        {step === 3 && (
+        {!processing && (
           <>
-            <StageHeader count="03 / 07" title="AI assets" description="Turn prompt directions into static visuals and locally simulated motion assets." />
+            <span id="campaign-step-3" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card ${maxStep >= 3 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="03 / 09" title="AI assets" description="Turn prompt directions into static visuals and locally simulated motion assets." />
             <AssetWorkspace
               activeTab={assetTab}
               promptIdeas={promptIdeas}
@@ -550,13 +614,15 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               onCancelVideoBatch={() => setShowVideoCostDialog(false)}
               onConfirmVideoBatch={confirmVideoBatch}
             />
-            <StageActions><SecondaryButton onClick={() => setStep(2)}>Back to Copy</SecondaryButton><PrimaryButton disabled={staticAssets.length === 0} onClick={() => advance(4)}>Continue to banner preview</PrimaryButton></StageActions>
+            </section>
           </>
         )}
 
-        {step === 4 && (
+        {!processing && (
           <>
-            <StageHeader count="04 / 07" title="Banner preview" description="Compare 20 compositions for the selected visual, then choose the drafts to assemble in Figma." />
+            <span id="campaign-step-4" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card ${maxStep >= 4 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="04 / 09" title="Banner preview" description="Compare 20 compositions for the selected visual, then choose the drafts to assemble in Figma." />
             <BannerWorkspace
               candidates={bannerCandidates}
               templates={templates}
@@ -573,33 +639,49 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
               onMotionChange={updateBannerMotion}
               onReplayMotion={replayBannerMotion}
             />
-            <StageActions><SecondaryButton onClick={() => setStep(3)}>Back</SecondaryButton><PrimaryButton disabled={selectedBannerIds.length === 0} onClick={() => advance(5)}>Continue to prepare for review</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => changeStep(3)}>Back</SecondaryButton><PrimaryButton disabled={selectedBannerIds.length === 0} onClick={() => advance(5)}>Continue to prepare for review</PrimaryButton></StageActions>
+            </section>
           </>
         )}
 
-        {step === 5 && visibleReviewBanners.length > 0 && (
+        {!processing && (
           <>
-            <StageHeader count="05 / 07" title="Prepare for review" description="Review every selected banner before sending the immutable local package to the designer endpoint." />
-            <ReviewWorkspace banners={visibleReviewBanners} status={reviewStatus} />
-            {reviewStatus === 'draft' ? (
-              <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={submitReviewPackage}>Send to Figma for review</PrimaryButton></StageActions>
+            <span id="campaign-step-5" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card ${maxStep >= 5 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="05 / 09" title="Prepare for review" description="Review every selected banner before sending the immutable local package to the designer endpoint." />
+            {visibleReviewBanners.length === 0 ? (
+              <section className="review-submission-status" data-status={reviewStatus} aria-live="polite">
+                <strong>Nothing to review yet</strong>
+                <p>Create and select banner drafts first, or switch to Banner preview.</p>
+                <StageActions><SecondaryButton onClick={() => changeStep(4)}>Go to banner preview</SecondaryButton></StageActions>
+              </section>
             ) : (
               <>
-                <section className="review-submission-status" data-status={reviewStatus} aria-live="polite">
-                  <strong>{reviewStatus === 'in-review' ? 'In review' : reviewStatus === 'ready-for-approval' ? 'Ready for approval' : 'Approved'}</strong>
-                  <a className="review-figma-link" href={review?.figmaUrl} target="_blank" rel="noreferrer">Open Figma review</a>
-                  <p>You will be notified by email and Slack</p>
-                  <p className="local-simulation-label">Local simulation</p>
-                </section>
-                <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Continue to Approval</PrimaryButton></StageActions>
+                <ReviewWorkspace banners={visibleReviewBanners} status={reviewStatus} />
+                {reviewStatus === 'draft' ? (
+                  <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={submitReviewPackage}>Send to Figma for review</PrimaryButton></StageActions>
+                ) : (
+                  <>
+                    <section className="review-submission-status" data-status={reviewStatus} aria-live="polite">
+                      <strong>{reviewStatus === 'in-review' ? 'In review' : reviewStatus === 'ready-for-approval' ? 'Ready for approval' : 'Approved'}</strong>
+                      <a className="review-figma-link" href={review?.figmaUrl} target="_blank" rel="noreferrer">Open Figma review</a>
+                      <p>You will be notified by email and Slack</p>
+                      <p className="local-simulation-label">Local simulation</p>
+                    </section>
+                    <StageActions><SecondaryButton onClick={() => changeStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Continue to Approval</PrimaryButton></StageActions>
+                  </>
+                )}
               </>
             )}
+            </section>
           </>
         )}
 
-        {step === 6 && (
+        {!processing && (
           <>
-            <StageHeader count="06 / 07" title="Approval" description="The marketer confirms the designer’s locally persisted review before delivery is unlocked." />
+            <span id="campaign-step-6" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card ${maxStep >= 6 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="06 / 09" title="Approval" description="The marketer confirms the designer’s locally persisted review before delivery is unlocked." />
             <section className="approval-panel" data-status={reviewStatus} aria-live="polite">
               {reviewStatus === 'ready-for-approval' ? (
                 <>
@@ -624,30 +706,59 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
                 </>
               )}
             </section>
-            <StageActions><SecondaryButton onClick={() => setStep(5)}>Back to Prepare for review</SecondaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => changeStep(5)}>Back to Prepare for review</SecondaryButton></StageActions>
+            </section>
           </>
         )}
 
-        {step === 7 && reviewStatus === 'approved' && (
+        {!processing && (
           <>
-            <StageHeader count="07 / 07" title="Delivery" description="Responsive production formats are generated locally from every approved selected banner." />
-            <ul className="delivery-summary" aria-label="Production summary">
-              <li><Check size={17} aria-hidden="true" />Designer reviewed: {review?.designerName ?? 'Not recorded'}</li>
-              <li>Marketer approved: {review?.marketerName ?? 'Not recorded'}</li>
-              <li>Formats: {new Set(deliveryOutputs.map((output) => output.label)).size}</li>
-              <li>Selected video count: {selectedVideoCount}</li>
-              <li>Total assets: {deliveryOutputs.length}</li>
-              <li>Total simulated production cost: {formatCurrency(productionCost)}</li>
-            </ul>
-            <StageActions placement="top"><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
-            <div className="resize-grid">
-              {deliveryOutputs.map(({ banner, ...format }) => (
-                <article className="resize-output" key={`${banner.id}-${format.size}`}>
-                  <div className="resize-preview-wrap"><BannerPreview template={banner.template} visual={banner.visual} content={banner.content} ratio={format.ratio} resizeLayout={format.layout} compact motionPreset={banner.motionPreset} motionVersion={banner.motionPreset?.replayVersion ?? 0} /></div>
-                  <div><span>{banner.templateName} · {format.label}</span><strong>{format.size}</strong><small>{format.layout}</small></div>
-                </article>
-              ))}
-            </div>
+            <span id="campaign-step-7" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card ${maxStep >= 7 ? '' : 'workflow-card--locked'}`}>
+            <StageHeader count="07 / 09" title="Delivery" description="Responsive production formats are generated locally from every approved selected banner." />
+            {reviewStatus === 'approved' ? (
+              <>
+                <ul className="delivery-summary" aria-label="Production summary">
+                  <li><Check size={17} aria-hidden="true" />Designer reviewed: {review?.designerName ?? 'Not recorded'}</li>
+                  <li>Marketer approved: {review?.marketerName ?? 'Not recorded'}</li>
+                  <li>Formats: {new Set(deliveryOutputs.map((output) => output.label)).size}</li>
+                  <li>Selected video count: {selectedVideoCount}</li>
+                  <li>Total assets: {deliveryOutputs.length}</li>
+                  <li>Total simulated production cost: {formatCurrency(productionCost)}</li>
+                </ul>
+                <StageActions placement="top"><PrimaryButton onClick={downloadAssets}><Download size={15} />Download assets</PrimaryButton></StageActions>
+                <div className="resize-grid">
+                  {deliveryOutputs.map(({ banner, ...format }) => (
+                    <article className="resize-output" key={`${banner.id}-${format.size}`}>
+                      <div className="resize-preview-wrap"><BannerPreview template={banner.template} visual={banner.visual} content={banner.content} ratio={format.ratio} resizeLayout={format.layout} compact motionPreset={banner.motionPreset} motionVersion={banner.motionPreset?.replayVersion ?? 0} /></div>
+                      <div><span>{banner.templateName} · {format.label}</span><strong>{format.size}</strong><small>{format.layout}</small></div>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <section className="approval-panel" data-status={reviewStatus} aria-live="polite">
+                <span className="status-label">Delivery locked</span>
+                <h2>Approve the review package first</h2>
+                <p>Delivery and downloads become available after the designer review is confirmed.</p>
+                <StageActions><SecondaryButton onClick={() => changeStep(6)}>Go to Approval</SecondaryButton></StageActions>
+              </section>
+            )}
+            </section>
+          </>
+        )}
+        {!processing && (
+          <>
+            <span id="campaign-step-8" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card workflow-extra-section ${maxStep >= 8 ? '' : 'workflow-card--locked'}`}>
+              <StageHeader count="08 / 09" title="Final QA" description="Check the approved package before it leaves the workspace." />
+              <section className="approval-panel"><span className="status-label">Quality check</span><h2>Final assets are ready to inspect</h2><p>Review formats, motion, and copy one last time before export.</p></section>
+            </section>
+            <span id="campaign-step-9" className="workflow-anchor" aria-hidden="true" />
+            <section className={`workflow-card workflow-extra-section ${maxStep >= 9 ? '' : 'workflow-card--locked'}`}>
+              <StageHeader count="09 / 09" title="Export" description="Package the approved campaign for handoff." />
+              <section className="approval-panel"><span className="status-label">Ready to ship</span><h2>Export from Delivery</h2><p>Download the approved assets from the Delivery section above.</p></section>
+            </section>
           </>
         )}
       </section>
@@ -656,7 +767,8 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
 }
 
 function StageHeader({ count, title, description }) {
-  return <header className="stage-header"><span>{count}</span><div><h1>{title}</h1><p>{description}</p></div></header>
+  const [current, total] = count.split(' / ')
+  return <header className="stage-header"><span className="stage-count" aria-label={`Step ${current} of ${total}`}><strong>{current}</strong></span><div><h1>{title}</h1><p>{description}</p></div></header>
 }
 
 function StageActions({ children, placement = 'bottom' }) {

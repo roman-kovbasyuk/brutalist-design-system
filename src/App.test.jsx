@@ -28,19 +28,21 @@ describe('Lingu Studio app', () => {
     expect(within(navigation).getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Campaign production' })).toBeVisible()
     expect(screen.getByText('Total banners created')).toBeVisible()
+    expect(screen.getByText('Total images')).toBeVisible()
+    expect(screen.getByText('Total videos')).toBeVisible()
     expect(screen.getByText('Total reviews')).toBeVisible()
     expect(screen.getByText('GenAI production cost')).toBeVisible()
-    expect(screen.getByText('Static-to-video ratio')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Campaigns' })).toBeVisible()
   })
 
   test('renders every campaign history field in a semantic table', () => {
     render(<App />)
 
     const table = screen.getByRole('table', { name: 'Campaign history' })
-    ;['Date', 'Status', 'Campaign', 'Banners', 'Total generations', 'Static visuals', 'Videos', 'Production cost', 'Action'].forEach((column) => {
+    ;['Date', 'Campaign', 'Banners', 'Total generations', 'Static visuals', 'Videos', 'Production cost', 'Action', 'Status'].forEach((column) => {
       expect(within(table).getByRole('columnheader', { name: column })).toBeVisible()
     })
-    const osloRow = within(table).getByRole('row', { name: /Sep 2, 2026 In review Oslo intensive launch 16 12 8 4 \$8\.16/ })
+    const osloRow = within(table).getByRole('row', { name: /Sep 2, 2026 Oslo intensive launch 16 12 8 4 \$8\.16 In review/ })
     expect(within(osloRow).getByRole('cell', { name: 'Sep 2, 2026' })).toBeVisible()
     expect(within(osloRow).getByRole('cell', { name: 'In review' })).toBeVisible()
     expect(within(osloRow).getByRole('rowheader', { name: 'Oslo intensive launch' })).toBeVisible()
@@ -61,10 +63,11 @@ describe('Lingu Studio app', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(screen.getByRole('button', { name: 'Open Oslo intensive launch' }))
+    await user.click(screen.getByRole('link', { name: 'Open Oslo intensive launch' }))
 
     expect(window.location.pathname).toBe('/campaign/campaign-oslo-intensive')
     expect(screen.getByLabelText('Campaign idea')).toBeVisible()
+    expect(screen.queryByText('The system will identify')).not.toBeInTheDocument()
     expect(screen.queryByText('local generation', { exact: true })).not.toBeInTheDocument()
   })
 

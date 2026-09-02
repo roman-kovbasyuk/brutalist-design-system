@@ -5,6 +5,13 @@ import { TemplateCard } from './TemplateCard.jsx'
 import { templates } from '../data/templates.js'
 
 describe('BannerPreview', () => {
+  test('uses fallback copy when campaign content is not available yet', () => {
+    render(<BannerPreview template={templates[0]} content={null} />)
+
+    expect(screen.getByText('Speak before you move')).toBeInTheDocument()
+    expect(screen.getByText('Practical Norwegian for real conversations.')).toBeInTheDocument()
+  })
+
   test('uses the authored story ratio for a story master', () => {
     const storyTemplate = templates.find((template) => template.masterRatio === 'story')
     render(<BannerPreview template={storyTemplate} />)

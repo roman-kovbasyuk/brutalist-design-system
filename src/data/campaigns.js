@@ -74,9 +74,10 @@ export const productionTotals = {
 
 export const dashboardMetrics = {
   totalBannersCreated: productionTotals.totalBanners,
+  totalImages: productionTotals.totalStaticVisuals,
+  totalVideos: productionTotals.totalVideos,
   totalReviews: productionTotals.totalReviews,
   genAiProductionCost: productionTotals.productionCost,
-  staticToVideoRatio: productionTotals.staticToVideoRatio,
 }
 
 export const generationCosts = { staticImageCost, videoCost }

@@ -75,20 +75,36 @@ export function generateVisuals(strategy) {
   }))
 }
 
-export function generatePromptIdeas(strategy) {
+export function generatePromptIdeas(strategy, promptsPerCopy = 1) {
   const isLanguageCampaign = /language|norwegian|move|moving|oslo|язык|норвеж|переезд|осло/i.test(strategy.sourceBrief ?? '')
   const shots = isLanguageCampaign ? languageShotDirections : generalShotDirections
+  const copyOptions = [
+    { headline: strategy.headline, body: strategy.body, cta: strategy.cta },
+    { headline: 'Start speaking sooner', body: 'Build practical Norwegian confidence for everyday life in Oslo.', cta: 'Explore the intensive' },
+    { headline: 'Your first week, in Norwegian', body: 'Learn the words and confidence to make your move feel local.', cta: 'See the course' },
+    { headline: 'Move with more confidence', body: 'Short, focused lessons for real conversations from day one.', cta: 'Save 15% today' },
+    { headline: 'Find your voice in Oslo', body: 'A supportive intensive for navigating your new everyday with ease.', cta: 'Start your journey' },
+  ]
 
-  return visualSeeds.map((seed, index) => {
-    const shot = shots[index]
-    return {
+  return copyOptions.flatMap((copy, copyIndex) => {
+    const seed = visualSeeds[copyIndex]
+    const shot = shots[copyIndex]
+    const count = Array.isArray(promptsPerCopy)
+      ? Math.max(1, Math.min(5, Number(promptsPerCopy[copyIndex]) || 1))
+      : Math.max(1, Math.min(5, Number(promptsPerCopy) || 1))
+    return Array.from({ length: count }, (_, variantIndex) => ({
       ...seed,
       ...shot,
-      id: `prompt-${seed.id}`,
+      id: count === 1 ? `prompt-${seed.id}` : `prompt-${seed.id}-copy-${copyIndex + 1}-${variantIndex + 1}`,
+      title: count === 1 ? shot.title : `${shot.title} · Copy ${copyIndex + 1} · ${variantIndex + 1}`,
       subject: shot.hero,
+      scene: shot.shot.split(' · ')[0],
+      lighting: shot.shot.split(' · ')[1] ?? '',
+      copyIndex,
+      copyVariant: copy,
       estimatedStaticCost: staticImageCost,
-      prompt: `${strategy.imagePrompt}; shot ${index + 1}: ${shot.hero} ${shot.action}; ${shot.shot.toLowerCase()}; preserve deliberate negative space for the campaign copy`,
-    }
+      prompt: `${strategy.imagePrompt}; copy ${copyIndex + 1} (${copy.headline} / ${copy.cta}); shot ${copyIndex + 1}, variation ${variantIndex + 1}: ${shot.hero} ${shot.action}; ${shot.shot.toLowerCase()}; preserve deliberate negative space for the campaign copy`,
+    }))
   })
 }
 
@@ -134,6 +150,7 @@ export function createBannerCandidates({
   platform = 'all',
   media = 'all',
 } = {}) {
+  const campaignStrategy = strategy ?? {}
   const uniqueAssets = (assets) => [...new Map(assets.map((asset) => [asset.id, asset])).values()]
   const uniqueTemplates = uniqueAssets(templates)
   const createCandidates = (assets, formats, mediaType) =>
@@ -149,16 +166,17 @@ export function createBannerCandidates({
           mediaType,
           sourceAssetId: asset.id,
           sourceStaticId: mediaType === 'video' ? asset.sourceStaticId : asset.id,
-          headline: strategy.headline ?? '',
-          body: strategy.body ?? '',
-          offer: strategy.offer ?? '',
-          cta: strategy.cta ?? '',
+          headline: campaignStrategy.headline ?? '',
+          body: campaignStrategy.body ?? '',
+          offer: campaignStrategy.offer ?? '',
+          cta: campaignStrategy.cta ?? '',
           motion: template.motion,
         })),
       ),
     )
+  const previewAssets = staticAssets.length > 0 ? staticAssets : [{ id: 'placeholder-static', mediaType: 'static' }]
   const candidates = [
-    ...createCandidates(staticAssets, bannerFormats, 'static'),
+    ...createCandidates(previewAssets, bannerFormats, 'static'),
     ...createCandidates(videoAssets, [videoFormat], 'video'),
   ]
   const normalized = (value) => value.toLowerCase()
@@ -174,7 +192,8 @@ export function createBannerCandidates({
 export function canAdvance(step, state) {
   if (step === 1) return Boolean(state.brief?.trim())
   if (step === 2) return Boolean(state.strategy)
-  if (step === 3 || step === 4) return Boolean(state.selectedVisualId)
+  if (step === 3) return Boolean(state.selectedVisualId)
+  if (step === 4) return Boolean(state.strategy)
   if (step === 5) return Boolean(state.selectedTemplateId)
   if (step === 6) return state.reviewStatus === 'approved'
   return false

@@ -1,4 +1,37 @@
-export function CopyWorkspace({ strategy, promptIdeas, onCopyChange }) {
+import { Copy as CopyIcon, LoaderCircle, Minus, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+
+export function CopyWorkspace({ strategy, imagePromptCounts = [], promptGeneratingIndex = null, onImagePromptCountChange }) {
+  const [options, setOptions] = useState(() => buildCopyOptions(strategy))
+  const [draggingIndex, setDraggingIndex] = useState(null)
+
+  function duplicateOption(index) {
+    setOptions((current) => [...current.slice(0, index + 1), { ...current[index] }, ...current.slice(index + 1)])
+  }
+
+  function deleteOption(index) {
+    setOptions((current) => current.length <= 1 ? current : current.filter((_, optionIndex) => optionIndex !== index))
+  }
+
+  function moveOption(targetIndex) {
+    if (draggingIndex === null || draggingIndex === targetIndex) return
+    setOptions((current) => {
+      const next = [...current]
+      const [moved] = next.splice(draggingIndex, 1)
+      next.splice(targetIndex, 0, moved)
+      return next
+    })
+    setDraggingIndex(null)
+  }
+
+  function generateMoreOptions() {
+    setOptions((current) => [...current, ...Array.from({ length: 5 }, (_, index) => ({
+      headline: `New copy direction ${current.length + index + 1}`,
+      body: 'A fresh campaign message shaped for everyday confidence and clear action.',
+      cta: 'Learn more',
+    }))])
+  }
+
   return (
     <section className="copy-workbench" aria-label="Copy and shot planning">
       <div className="copy-workbench__message">
@@ -7,7 +40,6 @@ export function CopyWorkspace({ strategy, promptIdeas, onCopyChange }) {
             <h2>Campaign message</h2>
             <p>AI interpretation of the brief. Edit the copy before creating assets.</p>
           </div>
-          <span className="copy-editable-status">Editable</span>
         </header>
 
         <dl className="copy-strategy">
@@ -16,63 +48,33 @@ export function CopyWorkspace({ strategy, promptIdeas, onCopyChange }) {
           <DescriptionRow label="Offer" value={strategy.offer} />
         </dl>
 
-        <div className="copy-fields">
-          <TextField label="Headline" value={strategy.headline} onChange={(value) => onCopyChange('headline', value)} />
-          <TextField label="Body copy" value={strategy.body} onChange={(value) => onCopyChange('body', value)} multiline />
-          <TextField label="CTA" value={strategy.cta} onChange={(value) => onCopyChange('cta', value)} />
-        </div>
-      </div>
-
-      <div className="shot-planner">
-        <header className="copy-section-header copy-section-header--shots">
-          <div>
-            <h2>5 shot prompts</h2>
-            <p>Distinct visual moments created from the campaign brief.</p>
-          </div>
-          <span className="shot-count" aria-label="Five prompts ready">5 ready</span>
-        </header>
-
-        <div className="prompt-legend" aria-label="Prompt highlight legend">
-          <span><i className="prompt-legend__swatch prompt-legend__swatch--hero" aria-hidden="true" />Hero</span>
-          <span><i className="prompt-legend__swatch prompt-legend__swatch--action" aria-hidden="true" />Action</span>
+        <div className="copy-options-wrap">
+          <div className="copy-options-heading"><h3>Copy options</h3></div>
+          <table className="copy-options-table" aria-label="Five headline, body, and CTA options">
+            <thead><tr><th scope="col">#</th><th scope="col">Headline</th><th scope="col">Body</th><th scope="col">CTA</th><th scope="col">Image prompts</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+            <tbody>{options.map((option, index) => { const count = imagePromptCounts[index] ?? 1; const generating = promptGeneratingIndex === index; return <tr key={`${option.headline}-${index}`} draggable onDragStart={() => setDraggingIndex(index)} onDragOver={(event) => event.preventDefault()} onDrop={() => moveOption(index)} onDragEnd={() => setDraggingIndex(null)} className={draggingIndex === index ? 'copy-option-row--dragging' : ''}><th scope="row">{index + 1}</th><td contentEditable suppressContentEditableWarning>{option.headline}</td><td contentEditable suppressContentEditableWarning>{option.body}</td><td contentEditable suppressContentEditableWarning>{option.cta}</td><td className="copy-options-table__prompts"><button type="button" aria-label={`Decrease image prompts for copy ${index + 1}`} onClick={() => onImagePromptCountChange?.(index, Math.max(1, count - 1))} disabled={count <= 1 || generating}><Minus size={12} aria-hidden="true" /></button><strong aria-label={`${count} image prompts`}>{count}</strong><button type="button" aria-label={`Increase image prompts for copy ${index + 1}`} onClick={() => onImagePromptCountChange?.(index, Math.min(5, count + 1))} disabled={count >= 5 || generating}>{generating ? <LoaderCircle className="prompt-generating-spinner" size={14} aria-hidden="true" /> : <Plus size={12} aria-hidden="true" />}</button></td><td className="copy-options-table__actions"><button type="button" aria-label={`Duplicate copy option ${index + 1}`} title="Duplicate" onClick={() => duplicateOption(index)}><CopyIcon size={14} aria-hidden="true" /></button><button type="button" aria-label={`Delete copy option ${index + 1}`} title="Delete" onClick={() => deleteOption(index)} disabled={options.length <= 1}><Trash2 size={14} aria-hidden="true" /></button></td></tr> })}</tbody>
+          </table>
         </div>
 
-        <ol className="shot-list">
-          {promptIdeas.map((prompt, index) => (
-            <li className="shot-prompt" data-testid="shot-prompt" key={prompt.id}>
-              <div className="shot-prompt__heading">
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <h3>{prompt.title}</h3>
-                <small>{prompt.shot}</small>
-              </div>
-              <p className="shot-prompt__sentence">
-                <mark className="prompt-highlight prompt-highlight--hero" aria-label={`Hero: ${prompt.hero}`}>{prompt.hero}</mark>{' '}
-                <mark className="prompt-highlight prompt-highlight--action" aria-label={`Action: ${prompt.action}`}>{prompt.action}</mark>.
-              </p>
-              <details className="shot-prompt__technical">
-                <summary>Technical prompt</summary>
-                <p>{prompt.prompt}</p>
-              </details>
-            </li>
-          ))}
-        </ol>
+        <div className="copy-options-more"><button type="button" className="button button--secondary" onClick={generateMoreOptions}><Sparkles size={14} aria-hidden="true" />Generate 5 more</button></div>
+
       </div>
+
     </section>
   )
 }
 
-function DescriptionRow({ label, value }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>
+function buildCopyOptions(strategy) {
+  const variants = [
+    [strategy.headline, strategy.body, strategy.cta],
+    ['Start speaking sooner', 'Build practical Norwegian confidence for everyday life in Oslo.', 'Explore the intensive'],
+    ['Your first week, in Norwegian', 'Learn the words and confidence to make your move feel local.', 'See the course'],
+    ['Move with more confidence', 'Short, focused lessons for real conversations from day one.', 'Save 15% today'],
+    ['Find your voice in Oslo', 'A supportive intensive for navigating your new everyday with ease.', 'Start your journey'],
+  ]
+  return variants.map(([headline, body, cta]) => ({ headline, body, cta }))
 }
 
-function TextField({ label, value, onChange, multiline = false }) {
-  const id = `field-${label}`
-  return (
-    <label className="text-field" htmlFor={id}>
-      <span>{label}</span>
-      {multiline
-        ? <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} />
-        : <input id={id} value={value} onChange={(event) => onChange(event.target.value)} />}
-    </label>
-  )
+function DescriptionRow({ label, value }) {
+  return <div><dt>{label}</dt><dd>{value}</dd></div>
 }

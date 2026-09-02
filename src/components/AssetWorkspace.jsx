@@ -1,11 +1,11 @@
-import { Check, Copy, Download, Pause, Pencil, Play, Trash2, X } from 'lucide-react'
+import { Check, Copy, Download, ImagePlus, Pause, Pencil, Play, Trash2, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { VisualArtwork } from './VisualArtwork.jsx'
 import { CostDialog } from './CostDialog.jsx'
 
 const tabs = [
   ['prompts', 'Prompts'],
-  ['static', 'Static visuals'],
+  ['static', 'Visuals'],
   ['videos', 'Videos'],
 ]
 
@@ -81,7 +81,9 @@ export function AssetWorkspace({
   return (
     <section className="asset-workspace" aria-label="AI asset workspace">
       <div className="asset-tabs" role="tablist" aria-label="AI asset types" onKeyDown={moveTab}>
-        {tabs.map(([id, label]) => (
+        {tabs.map(([id, label]) => {
+          const count = id === 'prompts' ? promptIdeas.length : id === 'static' ? staticAssets.length : videoAssets.length
+          return (
           <button
             key={id}
             id={`asset-tab-${id}`}
@@ -93,23 +95,24 @@ export function AssetWorkspace({
             ref={(node) => { tabRefs.current[id] = node }}
             onClick={() => onTabChange(id)}
           >
-            {label}
+            {label} <span className="asset-tab-count">{count}</span>
           </button>
-        ))}
+          )
+        })}
       </div>
 
       {activeTab === 'prompts' && (
         <section id="asset-panel-prompts" role="tabpanel" aria-labelledby="asset-tab-prompts" className="asset-panel">
-          <div className="asset-panel__intro"><p>Five local prompt directions are ready to turn into static visuals.</p></div>
           <ol className="prompt-list" aria-label="Prompt directions">
             {promptIdeas.map((prompt) => {
               const created = staticAssets.some((asset) => asset.sourcePromptId === prompt.id)
               const editing = editingPromptId === prompt.id
               const confirmingDelete = deletingPromptId === prompt.id
               return (
-                <li className={`prompt-row ${editing ? 'prompt-row--editing' : ''}`} data-testid="prompt-card" key={prompt.id}>
+                <li className={`prompt-row ${editing ? 'prompt-row--editing' : ''} ${confirmingDelete ? 'prompt-row--confirming' : ''}`} data-testid="prompt-card" key={prompt.id}>
+                  {created && <div className="prompt-row__generated-left" aria-label="Static visual generated"><Check size={13} aria-hidden="true" /><span>Generated</span></div>}
                   <div className="prompt-row__identity">
-                    <div><h2>{editing ? 'Edit prompt' : prompt.title}</h2><small>{editing ? 'Update the name and full generation text' : prompt.shot}</small></div>
+                    <div><h2>{editing ? 'Edit prompt' : (prompt.copyVariant?.headline ?? prompt.title)}</h2><small>{editing ? 'Update the name and full generation text' : `${prompt.copyVariant?.body ?? prompt.shot} · ${prompt.copyVariant?.cta ?? ''}`}</small></div>
                   </div>
                   {editing ? (
                     <form className="prompt-row__editor" onSubmit={(event) => savePrompt(event, prompt.id)}>
@@ -122,12 +125,26 @@ export function AssetWorkspace({
                     </form>
                   ) : (
                     <>
-                      <div className="prompt-row__content">
+                      <div
+                        className="prompt-row__content prompt-row__content--editable"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Edit prompt ${prompt.title}`}
+                        onClick={() => beginPromptEdit(prompt)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            beginPromptEdit(prompt)
+                          }
+                        }}
+                      >
                         <p className="prompt-row__direction">
-                          <mark aria-label={`Hero: ${prompt.hero}`}>{prompt.hero}</mark>{' '}
-                          <mark aria-label={`Action: ${prompt.action}`}>{prompt.action}</mark>, shaped for the campaign message and clear copy space.
+                          <mark className="prompt-highlight prompt-highlight--hero" aria-label={`Object or person: ${prompt.hero}`}>{prompt.hero}</mark>{' '}
+                          <mark className="prompt-highlight prompt-highlight--scene" aria-label={`Location or scene: ${prompt.scene}`}>{prompt.scene.toLowerCase()}</mark>{' '}
+                          <mark className="prompt-highlight prompt-highlight--action" aria-label={`Action: ${prompt.action}`}>{prompt.action}</mark>,{' '}
+                          <mark className="prompt-highlight prompt-highlight--topic" aria-label="Connection to campaign topic">shaped for the campaign message</mark> and clear copy space.
                         </p>
-                        <details><summary>Full generated prompt</summary><p>{prompt.prompt}</p></details>
+                        <p className="prompt-row__full-prompt">{prompt.prompt}</p>
                       </div>
                       <div className="prompt-row__action">
                         <div className="prompt-row__management" aria-label={`Actions for ${prompt.title}`}>
@@ -142,15 +159,9 @@ export function AssetWorkspace({
                             <button type="button" aria-label={`Confirm delete ${prompt.title}`} onClick={() => { onDeletePrompt(prompt.id); setDeletingPromptId(null) }}>Delete</button>
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            className="button button--secondary"
-                            aria-label={created ? `Generate static visual for ${prompt.title} (already generated)` : `Generate static visual for ${prompt.title}`}
-                            onClick={() => onGenerateStatic(prompt)}
-                            disabled={created}
-                          >
-                            {created ? 'Generated' : 'Generate visual'}
-                          </button>
+                          <div className={`prompt-row__visual-placeholder ${created ? 'prompt-row__visual-placeholder--generated' : ''}`} aria-label={created ? 'Static visual generated' : 'Upload video or photo to generate video'}>
+                            {created ? <><Check size={14} aria-hidden="true" />Generated</> : <><span>Upload video/photo<small>to generate video</small></span><em>or</em><button type="button" className="button button--secondary" aria-label={`Generate static visual for ${prompt.title}`} onClick={() => onGenerateStatic(prompt)}><ImagePlus size={14} aria-hidden="true" />Generate visual</button></>}
+                          </div>
                         )}
                       </div>
                     </>
@@ -159,6 +170,14 @@ export function AssetWorkspace({
               )
             })}
           </ol>
+          {staticAssets.length > 0 && (
+            <section className="generated-visuals" aria-label="Generated visuals">
+              <h3>Generated visuals</h3>
+              <div className="generated-visuals__list">
+                {staticAssets.map((asset) => <button type="button" className="generated-visual-card" data-selected={selectedStaticId === asset.id} key={asset.id} onClick={() => onSelectStatic(asset.id)}><VisualArtwork visual={asset} compact /><span>{asset.title}</span></button>)}
+              </div>
+            </section>
+          )}
         </section>
       )}
 
