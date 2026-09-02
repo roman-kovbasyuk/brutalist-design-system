@@ -1,17 +1,43 @@
 :root {
   color-scheme: light;
-  --paper: #f4f4f1;
+
+  --canvas: #ffffff;
+  --paper: #f7f8fb;
   --surface: #ffffff;
-  --ink: #111111;
-  --secondary: #666660;
-  --muted: #8a8a83;
-  --rule: #d9d9d2;
-  --strong-rule: #b9b9b1;
-  --success: #1d6b43;
-  --warning: #8a5a00;
-  --error: #9a2929;
+  --surface-subtle: #f3f5f9;
+  --surface-raised: #ffffff;
+  --ink: #1b2433;
+  --secondary: #586579;
+  --muted: #7c899b;
+  --rule: #dde3ec;
+  --strong-rule: #c6d0de;
+
+  --accent: #3559d6;
+  --accent-strong: #2949bd;
+  --accent-soft: #edf1ff;
+  --success: #17734c;
+  --success-soft: #eaf7ef;
+  --warning: #8b6500;
+  --warning-soft: #fff7d8;
+  --highlight: #ffe27a;
+  --error: #b1374c;
+  --error-soft: #fff0f3;
+
   --radius-sm: 10px;
   --radius-md: 14px;
-  --shadow-float: 0 18px 50px rgba(17, 17, 17, 0.12);
+  --radius-lg: 16px;
+  --shadow-float: 0 14px 28px rgba(31, 46, 72, 0.1);
+  --shadow-dialog: 0 24px 64px rgba(24, 35, 52, 0.22);
+  --focus-ring: 0 0 0 3px rgba(53, 89, 214, 0.23);
+
   --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --text-meta: 12px;
+  --text-body: 14px;
+  --text-body-lg: 15px;
+  --text-section: 22px;
+  --text-page: 40px;
+  --line-body: 1.55;
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 140ms;
+  --duration-standard: 200ms;
 }

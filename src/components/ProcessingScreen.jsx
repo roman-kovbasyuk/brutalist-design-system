@@ -17,7 +17,7 @@ export function ProcessingScreen({ states, activeIndex, progress }) {
         aria-valuenow={progress}
         aria-valuetext={`${activeState} — ${progress}% complete`}
       >
-        <span style={{ width: `${progress}%` }} />
+        <span style={{ '--progress': progress / 100 }} />
       </div>
       <ol className="processing-screen__states" aria-label="Brief analysis states">
         {states.map((state, index) => {

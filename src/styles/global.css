@@ -1,31 +1,91 @@
 * { box-sizing: border-box; }
 
-html { background: var(--paper); }
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  -webkit-font-smoothing: antialiased;
+html {
+  background: var(--canvas);
+  scroll-behavior: smooth;
 }
 
-button, input, textarea { color: inherit; font: inherit; }
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select { color: inherit; font: inherit; }
+
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
-a { color: inherit; text-underline-offset: 3px; }
-::selection { background: var(--ink); color: var(--surface); }
-:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+button:not(:disabled):active { transform: scale(0.985); }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+::selection { background: var(--accent); color: #ffffff; }
+input,
+textarea { caret-color: var(--accent); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-track { background: var(--paper); }
-::-webkit-scrollbar-thumb { background: var(--strong-rule); border: 3px solid var(--paper); border-radius: 10px; }
+::-webkit-scrollbar-thumb {
+  border: 3px solid var(--paper);
+  border-radius: 999px;
+  background: #b9c4d3;
+}
+::-webkit-scrollbar-thumb:hover { background: #9faec1; }
 
-h1, h2, h3, p { margin-top: 0; }
-h1, h2, h3 { letter-spacing: -0.035em; text-wrap: balance; }
+h1,
+h2,
+h3,
+p { margin-top: 0; }
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+p { max-width: 72ch; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 80ms !important;
+  }
 }
