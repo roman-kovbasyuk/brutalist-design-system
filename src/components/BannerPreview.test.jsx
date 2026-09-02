@@ -24,4 +24,28 @@ describe('BannerPreview', () => {
 
     expect(screen.getByRole('article', { name: /Template preview/ })).toHaveStyle({ aspectRatio: '9 / 16' })
   })
+
+  test('keeps motion transforms inside channel wrappers and exposes their replay state', () => {
+    const { rerender } = render(
+      <BannerPreview
+        template={templates[0]}
+        motionPreset={{ text: 'fade-up', image: 'soft-zoom', cta: 'pop-in' }}
+        motionVersion={2}
+      />,
+    )
+
+    const preview = screen.getByRole('article')
+    expect(preview).toHaveAttribute('data-motion-version', '2')
+    expect(preview.querySelector('.motion-media')).toHaveAttribute('data-motion-preset', 'soft-zoom')
+    expect(preview.querySelector('.motion-copy')).toHaveAttribute('data-motion-preset', 'fade-up')
+    expect(preview.querySelector('.motion-cta')).toHaveAttribute('data-motion-preset', 'pop-in')
+    expect(preview.querySelector('.banner-media')).not.toHaveClass('motion-media--soft-zoom')
+    expect(preview.querySelector('.banner-copy')).not.toHaveClass('motion-copy--fade-up')
+
+    rerender(<BannerPreview template={templates[0]} motionPreset={{ text: 'type-reveal', image: 'pan-up', cta: 'pulse' }} motionVersion={3} />)
+    expect(preview).toHaveAttribute('data-motion-version', '3')
+    expect(preview.querySelector('.motion-copy')).toHaveClass('motion-copy--type-reveal')
+    expect(preview.querySelector('.motion-media')).toHaveClass('motion-media--pan-up')
+    expect(preview.querySelector('.motion-cta')).toHaveClass('motion-cta--pulse')
+  })
 })

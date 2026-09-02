@@ -246,9 +246,12 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
     await user.click(screen.getByRole('button', { name: 'Continue to banner preview' }))
 
-    expect(screen.getAllByTestId('template-option')).toHaveLength(20)
-    await user.click(screen.getAllByRole('button', { name: /Select template/ })[0])
-    await user.click(screen.getByRole('button', { name: 'Build draft' }))
+    expect(screen.getByRole('heading', { name: 'Banner preview' })).toBeVisible()
+    expect(screen.getAllByTestId('banner-candidate')).toHaveLength(20)
+    const continueToReview = screen.getByRole('button', { name: 'Continue to prepare for review' })
+    expect(continueToReview).toBeDisabled()
+    await user.click(screen.getAllByRole('button', { name: 'Select for Figma assembly' })[0])
+    await user.click(continueToReview)
 
     expect(screen.getAllByText('Speak before you move').some((element) => !element.closest('[hidden]'))).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Prepare Figma packet' }))
@@ -275,6 +278,20 @@ describe('Lingu Studio app', () => {
 
     await user.click(screen.getByRole('button', { name: 'Templates' }))
     expect(screen.getAllByTestId('template-card')).toHaveLength(20)
+  })
+
+  test('returns a library template choice to its matching banner candidate without skipping preview', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await openAssetsWorkspace(user)
+    await user.click(screen.getAllByRole('button', { name: /Generate static visual/ })[0])
+    await user.click(screen.getByRole('button', { name: 'Templates' }))
+    await user.click(screen.getByRole('button', { name: 'Select template Reverse split' }))
+
+    expect(screen.getByRole('heading', { name: 'Banner preview' })).toBeVisible()
+    expect(within(screen.getByRole('region', { name: 'Banner detail preview' })).getByText('Reverse split')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue to prepare for review' })).toBeDisabled()
   })
 
   test('preserves campaign progress while visiting reference screens', async () => {

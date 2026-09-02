@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, ClipboardCheck, Download, ExternalLink, Sparkles } from 'lucide-react'
 import { BannerPreview } from '../components/BannerPreview.jsx'
+import { BannerWorkspace } from '../components/BannerWorkspace.jsx'
 import { AssetWorkspace } from '../components/AssetWorkspace.jsx'
 import { ProcessingScreen } from '../components/ProcessingScreen.jsx'
 import { StepRail } from '../components/StepRail.jsx'
-import { TemplateCard } from '../components/TemplateCard.jsx'
 import {
   analyzeBrief,
+  createBannerCandidates,
   createCreativeFingerprint,
   createStaticAsset,
   createVideoAsset,
@@ -44,6 +45,10 @@ export function WorkflowScreen({ requestedTemplate }) {
   const [showVideoCostDialog, setShowVideoCostDialog] = useState(false)
   const [selectedVisualId, setSelectedVisualId] = useState(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState(requestedTemplate?.id ?? null)
+  const [bannerFilters, setBannerFilters] = useState({ format: 'Vertical', platform: 'SMM Static', media: 'static' })
+  const [selectedBannerIds, setSelectedBannerIds] = useState([])
+  const [activeBannerId, setActiveBannerId] = useState(null)
+  const [motionByBannerId, setMotionByBannerId] = useState({})
   const [reviewStatus, setReviewStatus] = useState('ready')
   const [figmaUrl, setFigmaUrl] = useState('https://figma.com/file/demo-lingu-studio')
   const [approvedFingerprint, setApprovedFingerprint] = useState(null)
@@ -51,11 +56,13 @@ export function WorkflowScreen({ requestedTemplate }) {
   useEffect(() => {
     if (!requestedTemplate?.id) return
     setSelectedTemplateId(requestedTemplate.id)
+    setActiveBannerId(null)
+    setSelectedBannerIds([])
     setReviewStatus('ready')
     setApprovedFingerprint(null)
     if (strategy && selectedVisualId) {
-      setStep(5)
-      setMaxStep(5)
+      setStep(4)
+      setMaxStep((current) => Math.max(current, 4))
     }
   }, [requestedTemplate]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -76,6 +83,9 @@ export function WorkflowScreen({ requestedTemplate }) {
       setAssetTab('prompts')
       setShowVideoCostDialog(false)
       setSelectedVisualId(null)
+      setSelectedBannerIds([])
+      setActiveBannerId(null)
+      setMotionByBannerId({})
       setReviewStatus('ready')
       setApprovedFingerprint(null)
       setProcessing(null)
@@ -85,10 +95,21 @@ export function WorkflowScreen({ requestedTemplate }) {
     return () => window.clearTimeout(timerId)
   }, [processing]) // The timer is replaced and cleared for every deterministic phase.
 
-  const selectedVisual = staticAssets.find((visual) => visual.id === selectedVisualId)
+  const selectedStaticVisual = staticAssets.find((visual) => visual.id === selectedVisualId)
+  const linkedVideos = useMemo(() => videoAssets.filter((asset) => asset.sourceStaticId === selectedVisualId), [videoAssets, selectedVisualId])
+  const bannerCandidates = useMemo(() => createBannerCandidates({
+    strategy,
+    templates,
+    staticAssets: selectedStaticVisual ? [selectedStaticVisual] : [],
+    videoAssets: linkedVideos,
+  }), [strategy, selectedStaticVisual, linkedVideos])
+  const selectedBanners = selectedBannerIds.map((id) => bannerCandidates.find((candidate) => candidate.id === id)).filter(Boolean)
+  const activeBanner = bannerCandidates.find((candidate) => candidate.id === activeBannerId) ?? selectedBanners[0] ?? null
+  const compatibilityBanner = activeBanner ?? selectedBanners[0] ?? null
+  const selectedVisual = staticAssets.find((visual) => visual.id === (compatibilityBanner?.sourceStaticId ?? selectedVisualId))
   const videoEligibleAssets = staticAssets.filter((asset) => !videoAssets.some((video) => video.sourceStaticId === asset.id))
   const videoEstimate = estimateVideoBatch(videoEligibleAssets)
-  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId)
+  const selectedTemplate = templates.find((template) => template.id === (compatibilityBanner?.templateId ?? selectedTemplateId))
   const resizeLayouts = useMemo(() => getResizeLayouts(selectedTemplate), [selectedTemplate])
   const copyWarnings = useMemo(() => getContentWarnings(strategy), [strategy])
   const creativeFingerprint = createCreativeFingerprint({
@@ -100,6 +121,22 @@ export function WorkflowScreen({ requestedTemplate }) {
   const reviewIsCurrent = reviewStatus === 'approved' && isApprovalCurrent(approvedFingerprint, creativeFingerprint)
   const visibleReviewStatus = reviewIsCurrent ? 'approved' : reviewStatus === 'in-review' ? 'in-review' : 'ready'
   const figmaLinkIsValid = isValidFigmaUrl(figmaUrl.trim())
+
+  useEffect(() => {
+    if (bannerCandidates.length === 0) {
+      setActiveBannerId(null)
+      return
+    }
+    setActiveBannerId((current) => {
+      if (bannerCandidates.some((candidate) => candidate.id === current)) return current
+      return bannerCandidates.find((candidate) => (
+        candidate.templateId === selectedTemplateId &&
+        candidate.format === bannerFilters.format &&
+        candidate.platform === bannerFilters.platform &&
+        candidate.mediaType === bannerFilters.media
+      ))?.id ?? bannerCandidates.find((candidate) => candidate.templateId === selectedTemplateId)?.id ?? bannerCandidates[0].id
+    })
+  }, [bannerCandidates, bannerFilters, selectedTemplateId])
 
   function advance(nextStep) {
     setStep(nextStep)
@@ -123,6 +160,9 @@ export function WorkflowScreen({ requestedTemplate }) {
     setAssetTab('prompts')
     setShowVideoCostDialog(false)
     setSelectedVisualId(null)
+    setSelectedBannerIds([])
+    setActiveBannerId(null)
+    setMotionByBannerId({})
     setReviewStatus('ready')
     setApprovedFingerprint(null)
     setMaxStep((current) => Math.min(current, 2))
@@ -139,6 +179,9 @@ export function WorkflowScreen({ requestedTemplate }) {
     setShowVideoCostDialog(false)
     setSelectedVisualId(null)
     setSelectedTemplateId(null)
+    setSelectedBannerIds([])
+    setActiveBannerId(null)
+    setMotionByBannerId({})
     setReviewStatus('ready')
     setApprovedFingerprint(null)
     setMaxStep(1)
@@ -146,6 +189,9 @@ export function WorkflowScreen({ requestedTemplate }) {
 
   function selectVisual(visualId) {
     setSelectedVisualId(visualId)
+    setSelectedBannerIds([])
+    setActiveBannerId(null)
+    setMotionByBannerId({})
     setReviewStatus('ready')
     setApprovedFingerprint(null)
     setMaxStep((current) => Math.min(current, 4))
@@ -178,11 +224,33 @@ export function WorkflowScreen({ requestedTemplate }) {
     setShowVideoCostDialog(false)
   }
 
-  function selectTemplate(templateId) {
-    setSelectedTemplateId(templateId)
+  function selectBannerCandidate(candidateId) {
+    setActiveBannerId(candidateId)
+    const candidate = bannerCandidates.find((item) => item.id === candidateId)
+    if (candidate) setSelectedTemplateId(candidate.templateId)
     setReviewStatus('ready')
     setApprovedFingerprint(null)
-    setMaxStep((current) => Math.min(current, 5))
+  }
+
+  function updateBannerMotion(bannerId, channel, preset) {
+    setMotionByBannerId((current) => ({
+      ...current,
+      [bannerId]: {
+        ...(current[bannerId] ?? {}),
+        [channel]: preset,
+        replayVersion: (current[bannerId]?.replayVersion ?? 0) + 1,
+      },
+    }))
+  }
+
+  function replayBannerMotion(bannerId) {
+    setMotionByBannerId((current) => ({
+      ...current,
+      [bannerId]: {
+        ...(current[bannerId] ?? {}),
+        replayVersion: (current[bannerId]?.replayVersion ?? 0) + 1,
+      },
+    }))
   }
 
   function approveReview() {
@@ -284,17 +352,30 @@ export function WorkflowScreen({ requestedTemplate }) {
 
         {step === 4 && (
           <>
-            <StageHeader count="04 / 07" title="Choose a composition" description="The template sets hierarchy and balance while keeping your copy and selected visual." />
-            <div className="template-picker">
-              {templates.map((template) => <TemplateCard key={template.id} template={template} selected={selectedTemplateId === template.id} onChoose={selectTemplate} mode="picker" />)}
-            </div>
-            <StageActions><SecondaryButton onClick={() => setStep(3)}>Back</SecondaryButton><PrimaryButton disabled={!selectedTemplateId} onClick={() => advance(5)}>Build draft</PrimaryButton></StageActions>
+            <StageHeader count="04 / 07" title="Banner preview" description="Compare 20 compositions for the selected visual, then choose the drafts to assemble in Figma." />
+            <BannerWorkspace
+              candidates={bannerCandidates}
+              templates={templates}
+              staticAssets={staticAssets}
+              videoAssets={videoAssets}
+              content={strategy}
+              filters={bannerFilters}
+              onFiltersChange={setBannerFilters}
+              selectedBannerIds={selectedBannerIds}
+              onSelectedBannerIdsChange={setSelectedBannerIds}
+              activeBannerId={activeBannerId}
+              onActiveBannerChange={selectBannerCandidate}
+              motionByBannerId={motionByBannerId}
+              onMotionChange={updateBannerMotion}
+              onReplayMotion={replayBannerMotion}
+            />
+            <StageActions><SecondaryButton onClick={() => setStep(3)}>Back</SecondaryButton><PrimaryButton disabled={selectedBannerIds.length === 0} onClick={() => advance(5)}>Continue to prepare for review</PrimaryButton></StageActions>
           </>
         )}
 
-        {step === 5 && selectedTemplate && (
+        {step === 5 && selectedTemplate && selectedBannerIds.length > 0 && (
           <>
-            <StageHeader count="05 / 07" title="Draft master" description="Copy, visual, and composition are assembled. This is a preview, not the final creative." />
+            <StageHeader count="05 / 07" title="Prepare for review" description="The active selected banner is shown here while the review packet workflow is integrated." />
             <div className="assembly-grid">
               <div className="master-preview"><BannerPreview template={selectedTemplate} visual={selectedVisual} content={strategy} /></div>
               <aside className="assembly-spec">
@@ -310,7 +391,7 @@ export function WorkflowScreen({ requestedTemplate }) {
                 )}
               </aside>
             </div>
-            <StageActions><SecondaryButton onClick={() => setStep(4)}>Change template</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Prepare Figma packet</PrimaryButton></StageActions>
+            <StageActions><SecondaryButton onClick={() => setStep(4)}>Back to banner preview</SecondaryButton><PrimaryButton onClick={() => advance(6)}>Prepare Figma packet</PrimaryButton></StageActions>
           </>
         )}
 
