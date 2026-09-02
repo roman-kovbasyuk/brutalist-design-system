@@ -164,6 +164,7 @@ describe('Lingu Studio app', () => {
     await user.click(screen.getByRole('tab', { name: 'Videos' }))
     expect(screen.getAllByTestId('video-asset')).toHaveLength(1)
     expect(screen.queryByText('Simulated motion')).not.toBeInTheDocument()
+    expect(screen.queryByText('6 seconds · video · simulated locally')).not.toBeInTheDocument()
     const playPreview = screen.getByRole('button', { name: 'Play video preview Arrival portrait' })
     await user.click(playPreview)
     expect(screen.getByRole('button', { name: 'Pause video preview Arrival portrait' })).toBeVisible()

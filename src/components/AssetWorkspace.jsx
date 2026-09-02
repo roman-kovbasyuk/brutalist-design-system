@@ -170,7 +170,7 @@ export function AssetWorkspace({
                       {playingVideoId === asset.id ? <Pause size={19} fill="currentColor" aria-hidden="true" /> : <Play size={20} fill="currentColor" aria-hidden="true" />}
                     </button>
                   </div>
-                  <div className="asset-card__details"><button type="button" className="asset-card__source" aria-label={`View source image ${asset.title}`} onClick={() => onViewSource(asset.sourceStaticId)}>Source image</button><strong>{asset.name}</strong><small>6 seconds · video · simulated locally</small></div>
+                  <div className="asset-card__details"><button type="button" className="asset-card__source" aria-label={`View source image ${asset.title}`} onClick={() => onViewSource(asset.sourceStaticId)}>Source image</button><strong>{asset.name}</strong></div>
                 </article>
               ))}
             </div>
