@@ -6,7 +6,7 @@ const destinations = [
   { id: 'campaign', label: 'Campaign', icon: WandSparkles },
   { id: 'templates', label: 'Templates', icon: LayoutTemplate, path: '/templates' },
   { id: 'system', label: 'Design system', icon: Blocks, path: '/system' },
-  { id: 'docs', label: 'Documentation', icon: BookOpen, path: '/docs' },
+  { id: 'docs', label: 'Documentation', icon: BookOpen, path: '/docs/', external: true },
 ]
 
 export function AppShell({ activeView, campaignId, onNavigate, children }) {
@@ -19,15 +19,13 @@ export function AppShell({ activeView, campaignId, onNavigate, children }) {
         </button>
 
         <nav className="global-nav" aria-label="Main navigation">
-          {destinations.filter(({ id }) => !(activeView === 'campaign' && id === 'campaign')).map(({ id, label, icon: Icon, path }) => (
-            <button
-              className="nav-item"
-              data-active={activeView === id}
-              aria-current={activeView === id ? 'page' : undefined}
-              key={id}
-              type="button"
-              onClick={() => onNavigate(path ?? `/campaign/${campaignId}`)}
-            >
+          {destinations.filter(({ id }) => !(activeView === 'campaign' && id === 'campaign')).map(({ id, label, icon: Icon, path, external }) => external ? (
+            <a className="nav-item" href={path} key={id}>
+              <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+              <span>{label}</span>
+            </a>
+          ) : (
+            <button className="nav-item" data-active={activeView === id} aria-current={activeView === id ? 'page' : undefined} key={id} type="button" onClick={() => onNavigate(path ?? `/campaign/${campaignId}`)}>
               <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </button>

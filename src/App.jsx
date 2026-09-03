@@ -4,7 +4,6 @@ import { campaignHistory } from './data/campaigns.js'
 import { DashboardScreen } from './screens/DashboardScreen.jsx'
 import { DesignSystemScreen } from './screens/DesignSystemScreen.jsx'
 import { DesignerReviewScreen } from './screens/DesignerReviewScreen.jsx'
-import { DocumentationScreen } from './screens/DocumentationScreen.jsx'
 import { TemplatesScreen } from './screens/TemplatesScreen.jsx'
 import { WorkflowScreen } from './screens/WorkflowScreen.jsx'
 
@@ -56,7 +55,6 @@ export default function App() {
       <div hidden={route.view !== 'campaign'}><WorkflowScreen campaignId={activeCampaignId} requestedTemplate={requestedTemplate} /></div>
       <div hidden={route.view !== 'templates'}><TemplatesScreen onChoose={chooseTemplate} /></div>
       <div hidden={route.view !== 'system'}><DesignSystemScreen /></div>
-      <div hidden={route.view !== 'docs'}><DocumentationScreen /></div>
       {route.view === 'designer' && <DesignerReviewScreen campaign={getCampaign(route.campaignId)} campaignId={route.campaignId} />}
     </AppShell>
   )
@@ -71,7 +69,6 @@ function getRoute(pathname) {
 
   if (pathname === '/templates') return { view: 'templates' }
   if (pathname === '/system') return { view: 'system' }
-  if (pathname === '/docs') return { view: 'docs' }
   return { view: 'dashboard' }
 }
 

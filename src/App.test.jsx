@@ -50,6 +50,12 @@ describe('Lingu Studio app', () => {
     expect(screen.getByRole('heading', { name: 'Campaigns' })).toBeVisible()
   })
 
+  test('links documentation to the standalone Markdown site', () => {
+    render(<App />)
+
+    expect(screen.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', '/docs/')
+  })
+
   test('renders every campaign history field in a semantic table', () => {
     render(<App />)
 
