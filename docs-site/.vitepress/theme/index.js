@@ -1,4 +1,5 @@
 import DefaultTheme from 'vitepress/theme'
+import './custom.css'
 
 const STORAGE_PREFIX = 'lingu-docs-checklist:'
 
