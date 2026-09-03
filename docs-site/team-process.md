@@ -1,4 +1,4 @@
-# Team process
+# Процесс команды
 
 ## Ownership
 
@@ -6,18 +6,18 @@
 | --- | --- |
 | Ira | Wireflows, UI state/copy matrix, loading/empty/error states, responsive и accessibility QA |
 | Vlad | Template directions, canonical slots, variables/tokens, versioned template manifest |
-| Roman + Codex | State machine, API contracts, generation/safety pipeline, renderer, plugin/webhook handshake, E2E evidence |
+| Roman | State machine, API contracts, generation/safety pipeline, renderer, plugin/webhook handshake, E2E evidence |
 | Вся команда | Golden path decision log, pilot dataset, demo rehearsal, go/no-go sign-off |
 
-## Handoff sequence
+## Последовательность handoff
 
 1. Команда фиксирует golden path и MVP boundaries.
 2. Ira и Vlad фиксируют screen/state contract и template manifest contract.
-3. Roman + Codex реализуют vertical slice на deterministic demo adapters.
-4. Команда проверяет review package в Figma; дизайнер отмечает frames как Ready for Development.
-5. Маркетолог принимает exact snapshot; только после этого проверяется delivery package.
+3. Roman реализует vertical slice на deterministic demo adapters.
+4. Команда проверяет review package в Figma; дизайнер отмечает frames статусом `Ready for Development`.
+5. Маркетолог подтверждает exact snapshot; только после этого проверяется delivery package.
 
-## Readiness checklist
+## Чеклист готовности
 
 - [ ] State machine и API contracts согласованы.
 - [ ] Для templates определены slots, safe zones, ratios и limits.
@@ -29,6 +29,6 @@
 - [ ] Pilot dataset и demo rehearsal завершены.
 - [ ] Команда приняла go / no-go решение.
 
-## Definition of ready
+## Критерий готовности
 
-MVP готов к демонстрации, когда golden path проходит end-to-end на demo adapters, review gate фиксируется в Figma-процессе, а delivery требует explicit approval exact snapshot.
+MVP готов к демонстрации, когда golden path проходит end-to-end на demo adapters, review gate зафиксирован в Figma-процессе, а delivery требует явного подтверждения exact snapshot.

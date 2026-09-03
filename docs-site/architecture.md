@@ -1,6 +1,6 @@
-# Technical architecture
+# Техническая архитектура
 
-## Runtime
+## Runtime и структура кода
 
 React 19 + Vite 8, plain CSS и deterministic local data. Основные границы кода:
 
@@ -12,7 +12,7 @@ React 19 + Vite 8, plain CSS и deterministic local data. Основные гр�
 
 State живёт в React state; checklist-подобные пользовательские отметки, если нужны, явно помечаются как local-only. Backend persistence в V1 нет.
 
-## Integration boundaries
+## Границы интеграций
 
 ```mermaid
 flowchart TD
@@ -26,10 +26,10 @@ flowchart TD
 
 Пунктирные узлы не являются рабочими сетевыми интеграциями текущего V1.
 
-## Build and hosting
+## Сборка и hosting
 
 1. `npm run build` собирает React app в `dist/`.
-2. Тот же build запускает `vitepress build docs-site --outDir ../dist/docs`.
+2. Тот же build запускает `vitepress build docs-site --outDir dist/docs`.
 3. Docker builder выполняет production build, nginx отдаёт `/docs/` как статические файлы.
 4. Cloud Run service `lingu-studio` работает в `europe-west6`.
 
