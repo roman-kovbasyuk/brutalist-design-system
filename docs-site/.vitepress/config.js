@@ -3,8 +3,8 @@ import taskLists from 'markdown-it-task-lists'
 
 export default withMermaid({
   base: '/docs/',
-  title: 'Lingu Studio Docs',
-  description: 'Lingu Studio MVP team documentation',
+  title: 'Banner Studio Docs',
+  description: 'Banner Studio MVP team documentation',
   cleanUrls: true,
   appearance: false,
   markdown: {

@@ -1,4 +1,4 @@
-# Lingu Studio: team docs
+# Banner Studio: team docs
 
 This is the working guide for the MVP. It explains the user workflow, the product limits, and who owns each part of the work.
 

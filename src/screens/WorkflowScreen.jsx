@@ -581,7 +581,7 @@ export function WorkflowScreen({ requestedTemplate, campaignId }) {
   }
 
   function downloadAssets() {
-    downloadPackage('lingu-studio-simulated-assets.json', {
+      downloadPackage('banner-studio-simulated-assets.json', {
       simulation: 'local',
       kind: 'simulated-assets',
       assets: deliveryOutputs.map(serializeDeliveryOutput),
