@@ -124,22 +124,6 @@ const checklistItems = [
 const checklistOwners = ['Все владельцы', 'Ira', 'Vlad', 'Roman + Codex', 'Вся команда']
 const checklistStages = ['Все стадии', 'До implementation', 'Parallel work', 'Launch readiness']
 
-const overallMermaid = `flowchart LR
-  Marketer --> App[Lingu Studio]
-  App --> Jobs[AI jobs]
-  Jobs --> Assets[Images / video]
-  Vlad --> Publish[Publish Template]
-  Publish --> Registry[Template registry]
-  Registry --> App
-  App --> Package[Review package]
-  Package --> Slack[Slack assignment]
-  Slack --> Designer
-  Designer --> Import[Import Review Package]
-  Import --> Figma[Figma frames]
-  Figma --> Webhook[Ready webhook]
-  Webhook --> App
-  App --> Delivery[Approved delivery]`
-
 const marketerMermaid = `flowchart TD
   Brief --> Copy --> Assets --> Templates --> Review
   Review --> Figma[Figma review]
@@ -217,8 +201,17 @@ export function DocumentationScreen() {
           </div>
           <div className="docs-diagram-card">
             <div className="docs-diagram-card__header"><div><span className="docs-kicker">ARCHITECTURE MAP</span><h3>От контекста до готового пакета</h3></div><span className="docs-diagram-card__badge">Source of truth: app DB</span></div>
-            <ArchitectureDiagram />
-            <MermaidSource source={overallMermaid} />
+            <figure className="docs-architecture-figure">
+              <div className="docs-architecture-viewport">
+                <img
+                  src="/docs/lingu-studio-architecture.svg"
+                  alt="Архитектура Lingu Studio: от брифа до готового пакета"
+                  width="1440"
+                  height="820"
+                />
+              </div>
+              <figcaption className="docs-architecture-caption">Маркетолог задаёт контекст и принимает финальное решение; приложение управляет генерацией и review package, а дизайнер подтверждает качество в Figma.</figcaption>
+            </figure>
           </div>
         </section>
 
@@ -330,40 +323,6 @@ export function DocumentationScreen() {
   )
 }
 
-function ArchitectureDiagram() {
-  return (
-    <div className="docs-architecture-diagram" role="img" aria-label="Общая логика Lingu Studio">
-      <div className="docs-architecture-row">
-        <DiagramNode label="Маркетолог" meta="brief + choices" tone="blue" />
-        <DiagramConnector />
-        <DiagramNode label="Lingu Studio" meta="campaign DB" tone="blue" />
-        <DiagramConnector />
-        <DiagramNode label="AI jobs" meta="image / video" tone="yellow" />
-        <DiagramConnector />
-        <DiagramNode label="Assets" meta="object storage" tone="green" />
-      </div>
-      <div className="docs-architecture-row docs-architecture-row--secondary">
-        <DiagramNode label="Vlad" meta="visual system" tone="yellow" />
-        <DiagramConnector />
-        <DiagramNode label="Publish Template" meta="plugin command" tone="yellow" />
-        <DiagramConnector />
-        <DiagramNode label="Template registry" meta="manifest v1" tone="blue" />
-        <DiagramConnector />
-        <DiagramNode label="Assembler" meta="review package" tone="blue" />
-      </div>
-      <div className="docs-architecture-row">
-        <DiagramNode label="Designer" meta="Slack + Figma" tone="green" />
-        <DiagramConnector />
-        <DiagramNode label="Import package" meta="root wrappers" tone="blue" />
-        <DiagramConnector />
-        <DiagramNode label="Ready webhook" meta="all frames ready" tone="yellow" />
-        <DiagramConnector />
-        <DiagramNode label="Approval → delivery" meta="PNG / MP4 / ZIP" tone="green" />
-      </div>
-    </div>
-  )
-}
-
 function ChecklistSection() {
   const [ownerFilter, setOwnerFilter] = useState('Все владельцы')
   const [stageFilter, setStageFilter] = useState('Все стадии')
@@ -422,14 +381,6 @@ function readChecklistProgress() {
   } catch {
     return new Set()
   }
-}
-
-function DiagramNode({ label, meta, tone }) {
-  return <div className={`docs-diagram-node docs-diagram-node--${tone}`}><strong>{label}</strong><span>{meta}</span></div>
-}
-
-function DiagramConnector() {
-  return <ArrowRight className="docs-diagram-connector" size={15} aria-hidden="true" />
 }
 
 function MermaidSource({ source, label = 'Показать Mermaid source' }) {

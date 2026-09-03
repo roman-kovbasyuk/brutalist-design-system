@@ -2454,17 +2454,10 @@ mark {
 .docs-diagram-card__header { justify-content: space-between; gap: 20px; margin-bottom: 26px; }
 .docs-diagram-card__header h3 { margin: 8px 0 0; font-size: 20px; letter-spacing: -.03em; font-weight: 500; }
 .docs-diagram-card__badge { color: var(--success); font-size: 11px; white-space: nowrap; }
-.docs-architecture-diagram { overflow-x: auto; padding: 3px 0 5px; }
-.docs-architecture-row { display: grid; grid-template-columns: repeat(5, minmax(128px, 1fr)); gap: 14px; min-width: 730px; align-items: stretch; }
-.docs-architecture-row--middle { grid-template-columns: repeat(4, minmax(150px, 1fr)); margin: 17px 8%; }
-.docs-diagram-node { min-height: 82px; padding: 14px; border: 1px solid var(--rule); background: var(--surface-subtle); }
-.docs-diagram-node strong { display: block; font-size: 13px; font-weight: 500; }
-.docs-diagram-node span { display: block; margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.4; }
-.docs-diagram-node--accent { border-color: rgba(47,96,255,.4); background: rgba(47,96,255,.05); }
-.docs-diagram-node--accent strong { color: var(--accent); }
-.docs-diagram-connector { display: block; width: 1px; height: 17px; margin: 0 auto; background: var(--rule-strong); }
-.docs-diagram-connector--dashed { border-left: 1px dashed var(--accent); background: transparent; }
-.docs-diagram-label { margin: 8px 0 0; color: var(--muted); font-size: 10px; text-align: center; text-transform: uppercase; letter-spacing: .09em; }
+.docs-architecture-figure { margin: 0; }
+.docs-architecture-viewport { overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-color: var(--rule-strong) transparent; -webkit-overflow-scrolling: touch; }
+.docs-architecture-viewport img { display: block; width: 100%; min-width: 760px; height: auto; }
+.docs-architecture-caption { max-width: 72ch; margin-top: 14px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .docs-role-grid,
 .docs-plugin-grid,
@@ -2564,6 +2557,8 @@ mark {
   .docs-pipeline__item { min-height: auto; }
   .docs-pipeline__item strong { margin-top: 18px; }
   .docs-diagram-card__header { align-items: flex-start; flex-direction: column; }
+  .docs-architecture-viewport { margin-inline: -18px; padding-inline: 18px; }
+  .docs-architecture-viewport img { min-width: 720px; }
   .docs-approval-flow { grid-template-columns: 1fr; }
   .docs-approval-flow > div { min-height: auto; }
   .docs-approval-flow strong { margin-top: 10px; }

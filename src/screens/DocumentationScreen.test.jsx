@@ -20,6 +20,12 @@ describe('DocumentationScreen', () => {
     expect(screen.getByRole('heading', { name: 'Что приложение делает' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Что приложение не делает' })).toBeVisible()
 
+    const architecture = screen.getByRole('img', {
+      name: 'Архитектура Lingu Studio: от брифа до готового пакета',
+    })
+    expect(architecture).toHaveAttribute('src', '/docs/lingu-studio-architecture.svg')
+    expect(screen.queryByText('Показать Mermaid source')).not.toBeInTheDocument()
+
     const sectionNav = screen.getByRole('navigation', { name: 'Разделы документации' })
     expect(within(sectionNav).getByRole('link', { name: 'Как работает' })).toHaveAttribute('href', '#how-it-works')
     expect(within(sectionNav).getByRole('link', { name: 'Роли команды' })).toHaveAttribute('href', '#team')
