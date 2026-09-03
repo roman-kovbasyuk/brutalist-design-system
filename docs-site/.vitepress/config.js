@@ -3,13 +3,13 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 export default withMermaid({
   base: '/docs/',
   title: 'Lingu Studio Docs',
-  description: 'Техническая документация Lingu Studio MVP',
+  description: 'Lingu Studio MVP team documentation',
   cleanUrls: true,
   appearance: false,
   themeConfig: {
     nav: [],
     sidebar: [
-      { text: 'Документация', items: [{ text: 'Обзор', link: '/' }, { text: 'Workflow', link: '/workflow' }, { text: 'Technical architecture', link: '/architecture' }, { text: 'Team process', link: '/team-process' }] },
+      { text: 'Documentation', items: [{ text: 'Overview', link: '/' }, { text: 'Workflow', link: '/workflow' }, { text: 'Technical architecture', link: '/architecture' }, { text: 'Team process', link: '/team-process' }, { text: 'MVP launch roadmap', link: '/roadmap' }] },
     ],
     outline: { level: [2, 3] },
     socialLinks: [],

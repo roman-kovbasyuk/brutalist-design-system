@@ -7,6 +7,7 @@ This is the working guide for the MVP. It explains the user workflow, the produc
 - [Workflow](./workflow) — the steps from a campaign brief to final files.
 - [Technical architecture](./architecture) — how the current demo is built and where future integrations will connect.
 - [Team process](./team-process) — team responsibilities, handoffs, and the launch checklist.
+- [MVP launch roadmap](./roadmap) — the ordered path from scope to public release.
 
 ## What is included in V1
 
