@@ -11,3 +11,17 @@
   margin: 0 0.55rem 0 0;
   vertical-align: -1px;
 }
+
+.vp-doc .owner-tag {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 999px;
+  color: var(--vp-c-text-2);
+  background: var(--vp-c-bg-soft);
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+}

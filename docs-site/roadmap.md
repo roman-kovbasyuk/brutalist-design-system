@@ -24,10 +24,10 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Whole team** — Choose one campaign type and one delivery format for the pilot.
-- [ ] **Owner: Ira** — Write the happy path: brief → copy → image ideas → templates → review → approval → delivery.
-- [ ] **Owner: Roman** — List what is explicitly out of scope: real provider jobs, billing, multi-team accounts, and non-essential integrations.
-- [ ] **Owner: Whole team** — Record the decision in the team log.
+- [ ] Choose one campaign type and one delivery format for the pilot. <span class="owner-tag">Whole team</span>
+- [ ] Write the happy path: brief → copy → image ideas → templates → review → approval → delivery. <span class="owner-tag">Ira</span>
+- [ ] List what is explicitly out of scope: real provider jobs, billing, multi-team accounts, and non-essential integrations. <span class="owner-tag">Roman</span>
+- [ ] Record the decision in the team log. <span class="owner-tag">Whole team</span>
 
 **Exit check:** Everyone can describe the same workflow and the same V1 limits.
 
@@ -38,11 +38,11 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Ira** — Document screen states: loading, empty, error, retry, blocked, and success.
-- [ ] **Owner: Vlad** — Document template slots, safe areas, sizes, ratios, and content limits.
-- [ ] **Owner: Roman** — Document campaign, copy, image, template, review, and delivery data formats.
-- [ ] **Owner: Whole team** — Agree on status names and who may change each status.
-- [ ] **Owner: Roman** — Add one example payload for the pilot campaign.
+- [ ] Document screen states: loading, empty, error, retry, blocked, and success. <span class="owner-tag">Ira</span>
+- [ ] Document template slots, safe areas, sizes, ratios, and content limits. <span class="owner-tag">Vlad</span>
+- [ ] Document campaign, copy, image, template, review, and delivery data formats. <span class="owner-tag">Roman</span>
+- [ ] Agree on status names and who may change each status. <span class="owner-tag">Whole team</span>
+- [ ] Add one example payload for the pilot campaign. <span class="owner-tag">Roman</span>
 
 **Exit check:** A designer can review the examples, and an engineer can validate the data without guessing.
 
@@ -53,11 +53,11 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Roman** — Connect the screens to the agreed status flow.
-- [ ] **Owner: Roman** — Add predictable demo actions for copy, image ideas, and banner compositions.
-- [ ] **Owner: Roman** — Keep every result tied to a campaign and a version.
-- [ ] **Owner: Ira** — Review clear progress, errors, retry actions, and blocked states.
-- [ ] **Owner: Roman** — Add tests for the main status changes and the public documentation route.
+- [ ] Connect the screens to the agreed status flow. <span class="owner-tag">Roman</span>
+- [ ] Add predictable demo actions for copy, image ideas, and banner compositions. <span class="owner-tag">Roman</span>
+- [ ] Keep every result tied to a campaign and a version. <span class="owner-tag">Roman</span>
+- [ ] Review clear progress, errors, retry actions, and blocked states. <span class="owner-tag">Ira</span>
+- [ ] Add tests for the main status changes and the public documentation route. <span class="owner-tag">Roman</span>
 
 **Exit check:** Repeating the same demo action produces the same result and status.
 
@@ -68,11 +68,11 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Roman** — Create a locked review package from the current composition.
-- [ ] **Owner: Roman** — Send the package to the Figma review flow.
-- [ ] **Owner: Vlad** — Mark reviewed frames `Ready for Development`.
-- [ ] **Owner: Roman** — Record the approved version; do not silently replace it after approval.
-- [ ] **Owner: Roman** — Allow delivery only from that exact approved version.
+- [ ] Create a locked review package from the current composition. <span class="owner-tag">Roman</span>
+- [ ] Send the package to the Figma review flow. <span class="owner-tag">Roman</span>
+- [ ] Mark reviewed frames `Ready for Development`. <span class="owner-tag">Vlad</span>
+- [ ] Record the approved version; do not silently replace it after approval. <span class="owner-tag">Roman</span>
+- [ ] Allow delivery only from that exact approved version. <span class="owner-tag">Roman</span>
 
 **Exit check:** A changed composition creates a new version and requires another review.
 
@@ -83,12 +83,12 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Ira** — Check the main screens on desktop and mobile sizes.
-- [ ] **Owner: Ira** — Check keyboard navigation, focus, labels, and readable error messages.
-- [ ] **Owner: Roman** — Test empty, error, retry, blocked, and stale states.
-- [ ] **Owner: Roman** — Test unsafe AI output handling and rejection messages.
-- [ ] **Owner: Roman** — Test PNG / MP4 / ZIP export from an approved version.
-- [ ] **Owner: Whole team** — Fix all launch-blocking issues and record known limitations.
+- [ ] Check the main screens on desktop and mobile sizes. <span class="owner-tag">Ira</span>
+- [ ] Check keyboard navigation, focus, labels, and readable error messages. <span class="owner-tag">Ira</span>
+- [ ] Test empty, error, retry, blocked, and stale states. <span class="owner-tag">Roman</span>
+- [ ] Test unsafe AI output handling and rejection messages. <span class="owner-tag">Roman</span>
+- [ ] Test PNG / MP4 / ZIP export from an approved version. <span class="owner-tag">Roman</span>
+- [ ] Fix all launch-blocking issues and record known limitations. <span class="owner-tag">Whole team</span>
 
 **Exit check:** No launch-blocking issue remains in the happy path or its recovery states.
 
@@ -100,11 +100,11 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Ira** — Select three to five representative campaigns.
-- [ ] **Owner: Roman** — Run each campaign from brief to delivery without changing the data by hand.
-- [ ] **Owner: Vlad** — Complete the Figma review; **Owner: Marketer** — approve the exact version.
-- [ ] **Owner: Ira** — Record time spent, blocked steps, unclear labels, and missing information.
-- [ ] **Owner: Whole team** — Turn repeated problems into tasks; do not hide them in the demo.
+- [ ] Select three to five representative campaigns. <span class="owner-tag">Ira</span>
+- [ ] Run each campaign from brief to delivery without changing the data by hand. <span class="owner-tag">Roman</span>
+- [ ] Complete the Figma review and approve the exact version. <span class="owner-tag">Vlad + Marketer</span>
+- [ ] Record time spent, blocked steps, unclear labels, and missing information. <span class="owner-tag">Ira</span>
+- [ ] Turn repeated problems into tasks; do not hide them in the demo. <span class="owner-tag">Whole team</span>
 
 **Exit check:** The pilot dataset completes the happy path and the team has a written list of remaining limits.
 
@@ -115,11 +115,11 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Whole team** — Review the pilot results and all open launch gates.
-- [ ] **Owner: Roman** — Confirm that the demo does not claim unavailable integrations.
-- [ ] **Owner: Ira** — Confirm that designer review cannot be bypassed; **Owner: Marketer** — confirm approval is required.
-- [ ] **Owner: Whole team** — Choose one decision: `Go`, `Go with known limits`, or `No-go`.
-- [ ] **Owner: Whole team** — Record the decision, owner, and next review date.
+- [ ] Review the pilot results and all open launch gates. <span class="owner-tag">Whole team</span>
+- [ ] Confirm that the demo does not claim unavailable integrations. <span class="owner-tag">Roman</span>
+- [ ] Confirm that designer review cannot be bypassed and approval is required. <span class="owner-tag">Ira + Marketer</span>
+- [ ] Choose one decision: `Go`, `Go with known limits`, or `No-go`. <span class="owner-tag">Whole team</span>
+- [ ] Record the decision, owner, and next review date. <span class="owner-tag">Whole team</span>
 
 **Exit check:** The decision is written down and every open issue has an owner.
 
@@ -131,12 +131,12 @@ flowchart LR
 
 ### Checklist
 
-- [ ] **Owner: Roman** — Run the production build and route checks.
-- [ ] **Owner: Roman** — Deploy the tagged build to Cloud Run.
-- [ ] **Owner: Ira** — Open the public app and documentation on desktop and mobile.
-- [ ] **Owner: Whole team** — Run one final campaign through the public build.
-- [ ] **Owner: Ira** — Share the known-limitations list with the pilot users.
-- [ ] **Owner: Whole team** — Collect feedback in the decision log and schedule the next review.
+- [ ] Run the production build and route checks. <span class="owner-tag">Roman</span>
+- [ ] Deploy the tagged build to Cloud Run. <span class="owner-tag">Roman</span>
+- [ ] Open the public app and documentation on desktop and mobile. <span class="owner-tag">Ira</span>
+- [ ] Run one final campaign through the public build. <span class="owner-tag">Whole team</span>
+- [ ] Share the known-limitations list with the pilot users. <span class="owner-tag">Ira</span>
+- [ ] Collect feedback in the decision log and schedule the next review. <span class="owner-tag">Whole team</span>
 
 **Exit check:** The public build works, the docs match the product, and the first pilot run is traceable.
 
