@@ -20,6 +20,8 @@ flowchart LR
 **Owner:** Whole team  
 **Goal:** Agree on the one workflow the MVP must prove.
 
+### Checklist
+
 - [ ] **Owner: Whole team** — Choose one campaign type and one delivery format for the pilot.
 - [ ] **Owner: Ira** — Write the happy path: brief → copy → image ideas → templates → review → approval → delivery.
 - [ ] **Owner: Roman** — List what is explicitly out of scope: real provider jobs, billing, multi-team accounts, and non-essential integrations.
@@ -31,6 +33,8 @@ flowchart LR
 
 **Owners:** Ira, Vlad, Roman  
 **Goal:** Define what each step needs and returns before implementation changes.
+
+### Checklist
 
 - [ ] **Owner: Ira** — Document screen states: loading, empty, error, retry, blocked, and success.
 - [ ] **Owner: Vlad** — Document template slots, safe areas, sizes, ratios, and content limits.
@@ -45,6 +49,8 @@ flowchart LR
 **Owner:** Roman  
 **Goal:** Make the full happy path work with local sample data.
 
+### Checklist
+
 - [ ] **Owner: Roman** — Connect the screens to the agreed status flow.
 - [ ] **Owner: Roman** — Add predictable demo actions for copy, image ideas, and banner compositions.
 - [ ] **Owner: Roman** — Keep every result tied to a campaign and a version.
@@ -58,6 +64,8 @@ flowchart LR
 **Owners:** Vlad, Roman  
 **Goal:** Make designer and marketer approval explicit.
 
+### Checklist
+
 - [ ] **Owner: Roman** — Create a locked review package from the current composition.
 - [ ] **Owner: Roman** — Send the package to the Figma review flow.
 - [ ] **Owner: Vlad** — Mark reviewed frames `Ready for Development`.
@@ -70,6 +78,8 @@ flowchart LR
 
 **Owners:** Ira, Roman  
 **Goal:** Remove blockers before anyone outside the team sees the MVP.
+
+### Checklist
 
 - [ ] **Owner: Ira** — Check the main screens on desktop and mobile sizes.
 - [ ] **Owner: Ira** — Check keyboard navigation, focus, labels, and readable error messages.
@@ -86,6 +96,8 @@ flowchart LR
 **Helpers:** Roman, marketer  
 **Goal:** Prove that the workflow works with realistic content.
 
+### Checklist
+
 - [ ] **Owner: Ira** — Select three to five representative campaigns.
 - [ ] **Owner: Roman** — Run each campaign from brief to delivery without changing the data by hand.
 - [ ] **Owner: Vlad** — Complete the Figma review; **Owner: Marketer** — approve the exact version.
@@ -98,6 +110,8 @@ flowchart LR
 
 **Owner:** Whole team  
 **Goal:** Decide whether the MVP is safe to show or needs another cycle.
+
+### Checklist
 
 - [ ] **Owner: Whole team** — Review the pilot results and all open launch gates.
 - [ ] **Owner: Roman** — Confirm that the demo does not claim unavailable integrations.
@@ -112,6 +126,8 @@ flowchart LR
 **Owner:** Roman  
 **Helpers:** Whole team  
 **Goal:** Publish one traceable build and watch the first uses.
+
+### Checklist
 
 - [ ] **Owner: Roman** — Run the production build and route checks.
 - [ ] **Owner: Roman** — Deploy the tagged build to Cloud Run.

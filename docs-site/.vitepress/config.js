@@ -1,4 +1,5 @@
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import taskLists from 'markdown-it-task-lists'
 
 export default withMermaid({
   base: '/docs/',
@@ -6,6 +7,11 @@ export default withMermaid({
   description: 'Lingu Studio MVP team documentation',
   cleanUrls: true,
   appearance: false,
+  markdown: {
+    config: (md) => {
+      md.use(taskLists, { enabled: true })
+    },
+  },
   themeConfig: {
     nav: [],
     sidebar: [
