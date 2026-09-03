@@ -1,38 +1,40 @@
-# Техническая архитектура
+# Technical architecture
 
-## Runtime и структура кода
+## Current demo
 
-React 19 + Vite 8, plain CSS и deterministic local data. Основные границы кода:
+The app uses React 19, Vite 8, plain CSS, and local sample data. The main code areas are:
 
-- `src/screens/` — route-level workflow surfaces.
-- `src/components/` — reusable UI and preview components.
-- `src/domain/` — campaign and review state rules.
-- `src/data/` — demo campaigns, templates and visuals.
-- `src/test/` — jsdom setup and component test support.
+- `src/screens/` — complete workflow screens.
+- `src/components/` — reusable interface and preview pieces.
+- `src/domain/` — rules for campaign and review status changes.
+- `src/data/` — sample campaigns, templates, and visuals.
+- `src/test/` — test setup and shared test helpers.
 
-State живёт в React state; checklist-подобные пользовательские отметки, если нужны, явно помечаются как local-only. Backend persistence в V1 нет.
+The demo keeps its data in React state. Nothing is saved to a backend in V1. If a checklist mark is added, it is local to the current browser session.
 
-## Границы интеграций
+## Where future integrations connect
 
 ```mermaid
 flowchart TD
-  UI[React screens] --> Domain[Domain rules]
-  Domain --> Demo[Deterministic demo data]
-  Domain -. future adapter .-> Providers[Image / video providers]
-  Domain -. future adapter .-> Figma[Figma Bridge Plugin]
-  Figma -. future event .-> Webhook[Ready webhook]
-  Domain -. future adapter .-> Slack[Slack assignment]
+  UI[React screens] --> Rules[Workflow rules]
+  Rules --> Demo[Local demo data]
+  Rules -. future connection .-> Providers[Image and video services]
+  Rules -. future connection .-> Figma[Figma plugin]
+  Figma -. future event .-> Webhook[Ready status event]
+  Rules -. future connection .-> Slack[Slack assignment]
 ```
 
-Пунктирные узлы не являются рабочими сетевыми интеграциями текущего V1.
+The dotted connections are placeholders. They are not working network integrations in the current V1 demo.
 
-## Сборка и hosting
+## Build and hosting
 
-1. `npm run build` собирает React app в `dist/`.
-2. Тот же build запускает `vitepress build docs-site --outDir dist/docs`.
-3. Docker builder выполняет production build, nginx отдаёт `/docs/` как статические файлы.
-4. Cloud Run service `lingu-studio` работает в `europe-west6`.
+1. `npm run build` builds the React app into `dist/`.
+2. The same command builds these documentation pages into `dist/docs/`.
+3. Nginx serves the app at `/` and the documentation at `/docs/`.
+4. The public demo runs on Cloud Run in `europe-west6`.
 
-## Change contract
+## Change rules
 
-Изменение state transition требует теста на transition и обновления этой страницы. Изменение public route требует route test и проверки nginx fallback.
+- If a workflow status changes, update its test and this page.
+- If a public URL changes, add a route test and check the Nginx fallback.
+- If a template rule changes, update the template manifest and review examples.

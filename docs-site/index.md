@@ -1,20 +1,20 @@
-# Lingu Studio: технические документы
+# Lingu Studio: team docs
 
-Это рабочая документация MVP. Здесь описаны только зафиксированные workflow, технические границы и процессы команды.
+This is the working guide for the MVP. It explains the user workflow, the product limits, and who owns each part of the work.
 
-## Содержание
+## Contents
 
-- [Workflow](./workflow) — путь от brief до delivery и обязательная точка review.
-- [Technical architecture](./architecture) — модули приложения, состояние, сборка и границы интеграций.
-- [Team process](./team-process) — владельцы артефактов, handoff-процесс и launch gates.
+- [Workflow](./workflow) — the steps from a campaign brief to final files.
+- [Technical architecture](./architecture) — how the current demo is built and where future integrations will connect.
+- [Team process](./team-process) — team responsibilities, handoffs, and the launch checklist.
 
-## V1 boundaries
+## What is included in V1
 
-- Приложение frontend-only и работает на локальных demo-данных.
-- Copy, visual directions, templates, review package и delivery представлены детерминированными сценариями.
-- Реальные provider jobs, Figma writes, Slack notifications, webhooks, billing и multi-org не входят в V1.
-- Дизайнерский review остаётся обязательным human gate перед delivery.
+- The app is a frontend demo with local sample data.
+- Copy, images, templates, review files, and exports use predictable demo scenarios.
+- Real AI providers, Figma writes, Slack messages, webhooks, billing, and multi-team accounts are not connected yet.
+- A designer review is required before anything can be delivered.
 
 ## Source of truth
 
-Изменения в workflow сначала фиксируются в этой документации и в соответствующих тестах. UI не должен обещать интеграцию, которой нет в текущем runtime.
+When the workflow changes, update this documentation and the matching tests first. The UI must not promise an integration that is not available in the current demo.
