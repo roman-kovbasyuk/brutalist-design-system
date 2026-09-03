@@ -2,6 +2,8 @@
 
 This roadmap is the step-by-step path from the current demo to a launchable MVP. Complete each phase in order. A phase is complete only when its exit check passes.
 
+The checkboxes are personal. Click them as you work; your progress is saved in this browser and is not shared with the team.
+
 ## At a glance
 
 ```mermaid
