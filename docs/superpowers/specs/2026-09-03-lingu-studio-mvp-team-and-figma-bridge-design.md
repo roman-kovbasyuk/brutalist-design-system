@@ -105,7 +105,7 @@ Lingu Studio сокращает время от маркетингового б�
 
 | Участник | Основная зона ответственности | Право финального решения | Обязательные артефакты |
 |---|---|---|---|
-| **Roman + Codex** | Product implementation, архитектура, data contracts, GenAI jobs, Figma/Slack integration, rendering, tests | Техническая архитектура и реализация в рамках утверждённых контрактов | API/schema, state machine, plugin/backend, working vertical slice, test evidence |
+| **Roman** | Product implementation, архитектура, data contracts, GenAI jobs, Figma/Slack integration, rendering, tests | Техническая архитектура и реализация в рамках утверждённых контрактов | API/schema, state machine, plugin/backend, working vertical slice, test evidence |
 | **Ira** | UX/UI, information architecture, flow, интерфейсный copy, states, accessibility, design-engineering QA | UX flow, UI behavior и пользовательская терминология | Wireflows, screen/state matrix, component specs, copy deck, responsive/a11y acceptance |
 | **Vlad** | Visual design, brand expression, banner templates, Figma variables/components, visual QA | Визуальная система и готовность template versions | Figma library, token set, 3–5 template directions, four-ratio variants, template QA |
 | **Вся команда** | MVP scope, success metrics, review SLA, acceptance | Go/no-go по пилоту | Approved spec, decision log, pilot checklist |
@@ -114,7 +114,7 @@ Lingu Studio сокращает время от маркетингового б�
 
 - Ira определяет **как пользователь понимает и проходит процесс**; она не должна ждать готового backend для проектирования состояний.
 - Vlad определяет **как выглядит и ведёт себя banner template**; он не проектирует API и не настраивает generation providers.
-- Roman и Codex определяют **как система сохраняет, генерирует, импортирует и подтверждает данные**; реализация не должна незаметно менять утверждённые UX-copy или visual tokens.
+- Roman определяют **как система сохраняет, генерирует, импортирует и подтверждает данные**; реализация не должна незаметно менять утверждённые UX-copy или visual tokens.
 - Изменение общего контракта требует короткого decision note и подтверждения затронутых владельцев.
 
 ---

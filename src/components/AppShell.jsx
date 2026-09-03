@@ -1,4 +1,4 @@
-import { Blocks, LayoutDashboard, LayoutTemplate, WandSparkles } from 'lucide-react'
+import { Blocks, BookOpen, LayoutDashboard, LayoutTemplate, WandSparkles } from 'lucide-react'
 import { campaignHistory } from '../data/campaigns.js'
 
 const destinations = [
@@ -6,6 +6,7 @@ const destinations = [
   { id: 'campaign', label: 'Campaign', icon: WandSparkles },
   { id: 'templates', label: 'Templates', icon: LayoutTemplate, path: '/templates' },
   { id: 'system', label: 'Design system', icon: Blocks, path: '/system' },
+  { id: 'docs', label: 'Documentation', icon: BookOpen, path: '/docs' },
 ]
 
 export function AppShell({ activeView, campaignId, onNavigate, children }) {
