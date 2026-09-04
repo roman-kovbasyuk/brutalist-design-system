@@ -3,6 +3,7 @@ import { z } from 'zod'
 const nonEmptyString = z.string().trim().min(1)
 const pixel = z.number().int().nonnegative()
 const positivePixel = z.number().int().positive()
+const semanticVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
 
 const placementSchema = z.strictObject({
   x: pixel,
@@ -50,9 +51,19 @@ const imageSlotSchema = z.strictObject({
 
 const slotSchema = z.union([textSlotSchema, imageSlotSchema])
 
+const compositionInputSchema = z.strictObject({
+  ratioIds: z.array(nonEmptyString).min(1),
+  slotValues: z.record(z.string(), z.string()),
+  assetMetadata: z.record(z.string(), z.strictObject({
+    width: z.number().int().nonnegative(),
+    height: z.number().int().nonnegative(),
+    mimeType: nonEmptyString,
+  })),
+})
+
 export const templateManifestSchema = z.strictObject({
   id: nonEmptyString,
-  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/),
+  version: z.string().regex(semanticVersion),
   name: nonEmptyString,
   ratios: z.array(ratioSchema).min(1),
   slots: z.array(slotSchema).min(1),
@@ -117,10 +128,11 @@ export const templateManifestSchema = z.strictObject({
 const hasValue = (value) => typeof value === 'string' && value.trim().length > 0
 
 export function validateComposition(manifest, compositionInput) {
+  const parsedInput = compositionInputSchema.safeParse(compositionInput)
+  if (!parsedInput.success) return { valid: false, errors: ['Invalid composition input.'] }
+
   const errors = []
-  const ratioIds = compositionInput?.ratioIds ?? []
-  const slotValues = compositionInput?.slotValues ?? {}
-  const assetMetadata = compositionInput?.assetMetadata ?? {}
+  const { ratioIds, slotValues, assetMetadata } = parsedInput.data
   const ratios = new Map(manifest.ratios.map((ratio) => [ratio.id, ratio]))
   const slots = new Map(manifest.slots.map((slot) => [slot.id, slot]))
 

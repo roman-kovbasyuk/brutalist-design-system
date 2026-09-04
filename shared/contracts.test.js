@@ -9,6 +9,16 @@ import {
 } from './contracts.js'
 import { pilotCampaignFixture } from './fixtures/pilotCampaign.js'
 import { pilotTemplateFixture } from './fixtures/pilotTemplate.js'
+import { hashCanonical } from './canonicalJson.js'
+
+const validVersionSnapshot = () => ({
+  selectedCopy: pilotCampaignFixture.selectedCopy,
+  selectedDirection: pilotCampaignFixture.selectedDirection,
+  composition: pilotCampaignFixture.composition,
+  assets: [],
+  templateManifest: pilotTemplateFixture,
+  templateManifestHash: hashCanonical(pilotTemplateFixture),
+})
 
 describe('MVP contracts', () => {
   test('accepts the pilot campaign fixture', () => {
@@ -39,29 +49,38 @@ describe('MVP contracts', () => {
       },
       assets: [],
       templateManifest: pilotTemplateFixture,
-      templateManifestHash: 'a'.repeat(64),
+      templateManifestHash: hashCanonical(pilotTemplateFixture),
     }
 
     expect(campaignVersionSnapshotSchema.safeParse(snapshot).success).toBe(false)
   })
 
-  test('requires a complete manifest and its lowercase hash in an immutable snapshot', () => {
-    const snapshot = {
-      selectedCopy: pilotCampaignFixture.selectedCopy,
-      selectedDirection: pilotCampaignFixture.selectedDirection,
-      composition: pilotCampaignFixture.composition,
-      assets: [],
-    }
-
-    expect(campaignVersionSnapshotSchema.safeParse(snapshot).success).toBe(false)
-    expect(campaignVersionSnapshotSchema.parse({
-      ...snapshot,
+  test('accepts an immutable snapshot bound to its canonical manifest', () => {
+    expect(campaignVersionSnapshotSchema.parse(validVersionSnapshot())).toMatchObject({
       templateManifest: pilotTemplateFixture,
-      templateManifestHash: 'a'.repeat(64),
-    })).toMatchObject({
-      templateManifest: pilotTemplateFixture,
-      templateManifestHash: 'a'.repeat(64),
+      templateManifestHash: hashCanonical(pilotTemplateFixture),
     })
+  })
+
+  test('rejects a snapshot with a manifest hash that does not match its canonical manifest', () => {
+    expect(campaignVersionSnapshotSchema.safeParse({
+      ...validVersionSnapshot(),
+      templateManifestHash: 'a'.repeat(64),
+    }).success).toBe(false)
+  })
+
+  test('rejects a snapshot whose composition template id differs from its manifest', () => {
+    expect(campaignVersionSnapshotSchema.safeParse({
+      ...validVersionSnapshot(),
+      composition: { ...pilotCampaignFixture.composition, templateId: 'other-template' },
+    }).success).toBe(false)
+  })
+
+  test('rejects a snapshot whose composition template version differs from its manifest', () => {
+    expect(campaignVersionSnapshotSchema.safeParse({
+      ...validVersionSnapshot(),
+      composition: { ...pilotCampaignFixture.composition, templateVersion: '1.0.1' },
+    }).success).toBe(false)
   })
 
   test('accepts only lowercase SHA-256 asset hashes', () => {

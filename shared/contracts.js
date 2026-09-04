@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hashCanonical } from './canonicalJson.js'
 import { templateManifestSchema } from './templateManifest.js'
 
 const nonEmptyString = z.string().trim().min(1)
@@ -83,6 +84,16 @@ export const campaignVersionSnapshotSchema = z.strictObject({
   assets: z.array(assetReferenceSchema),
   templateManifest: templateManifestSchema,
   templateManifestHash: assetHashSchema,
+}).superRefine((snapshot, context) => {
+  if (snapshot.templateManifestHash !== hashCanonical(snapshot.templateManifest)) {
+    context.addIssue({ code: 'custom', path: ['templateManifestHash'], message: 'Template manifest hash must match its canonical manifest.' })
+  }
+  if (snapshot.composition.templateId !== snapshot.templateManifest.id) {
+    context.addIssue({ code: 'custom', path: ['composition', 'templateId'], message: 'Composition template id must match its manifest.' })
+  }
+  if (snapshot.composition.templateVersion !== snapshot.templateManifest.version) {
+    context.addIssue({ code: 'custom', path: ['composition', 'templateVersion'], message: 'Composition template version must match its manifest.' })
+  }
 })
 
 export const campaignSchema = z.strictObject({

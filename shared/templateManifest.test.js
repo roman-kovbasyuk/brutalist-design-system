@@ -22,6 +22,14 @@ describe('template manifest contract', () => {
     expect(templateManifestSchema.parse(pilotTemplateFixture)).toEqual(pilotTemplateFixture)
   })
 
+  test.each(['0.0.0', '1.2.3', '1.2.3-rc.1+build.5'])('accepts SemVer version %s', (version) => {
+    expect(templateManifestSchema.safeParse({ ...pilotTemplateFixture, version }).success).toBe(true)
+  })
+
+  test.each(['01.2.3', '1.02.3', '1.2.03', '1.2.3-01'])('rejects non-compliant SemVer version %s', (version) => {
+    expect(templateManifestSchema.safeParse({ ...pilotTemplateFixture, version }).success).toBe(false)
+  })
+
   test('rejects a text placement outside its ratio safe area', () => {
     const manifest = cloneTemplate()
     manifest.slots[0].placements.square.x = 40
@@ -96,5 +104,12 @@ describe('template manifest contract', () => {
     })
 
     expect(result).toEqual({ valid: false, errors: ['Asset asset-direction-1 is smaller than image slot image minimum dimensions (800×800).'] })
+  })
+
+  test('returns deterministic validation errors for malformed composition input', () => {
+    expect(validateComposition(pilotTemplateFixture, {})).toEqual({
+      valid: false,
+      errors: ['Invalid composition input.'],
+    })
   })
 })
