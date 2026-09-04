@@ -162,8 +162,8 @@ const commands = {
   },
   mark_ready: {
     roles: ['designer'], schema: markVersionReadyRequestSchema, eventType: 'ready', close: false,
-    payload: ({ input, actor, version, assetHashes }) => ({
-      ...input, readyActorId: actor.id, contentHash: version.contentHash, assetHashes: assetHashes.all,
+    payload: ({ input, actor, version }) => ({
+      ...input, readyActorId: actor.id, contentHash: version.contentHash,
     }),
   },
   reject: {
@@ -172,7 +172,7 @@ const commands = {
   },
   approve: {
     roles: ['marketer', 'admin'], schema: approveVersionRequestSchema, eventType: 'approved', close: true,
-    payload: ({ version, assetHashes }) => ({ contentHash: version.contentHash, assetHashes: assetHashes.all }),
+    payload: ({ version }) => ({ contentHash: version.contentHash }),
   },
 }
 

@@ -16,6 +16,10 @@ function mapVersion(row) {
 
 function mapEvent(row) {
   if (!row) return null
+  const payload = ['sent', 'ready', 'approved'].includes(row.event_type)
+    && Array.isArray(row.immutable_asset_hashes)
+    ? { ...row.payload, assetHashes: row.immutable_asset_hashes }
+    : row.payload
   return {
     id: row.id,
     campaignId: row.campaign_id,
@@ -23,7 +27,7 @@ function mapEvent(row) {
     actorId: row.actor_id,
     actorRole: row.actor_role,
     eventType: row.event_type,
-    payload: row.payload,
+    payload,
     createdAt: row.created_at,
   }
 }

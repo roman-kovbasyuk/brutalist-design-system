@@ -101,7 +101,7 @@ describe('review service', () => {
     expect(repository.appendAudit).toHaveBeenCalledOnce()
   })
 
-  test('designer mark-ready persists immutable Figma, checklist, actor, and content hash facts', async () => {
+  test('designer mark-ready sends the legacy payload while the repository owns immutable hash facts', async () => {
     const { service, repository } = harness()
     const result = await service.markReady({
       actor: { id: 'designer-1', role: 'designer' }, versionId: version.id,
@@ -114,7 +114,7 @@ describe('review service', () => {
       eventType: 'ready',
       payload: {
         figmaUrl: 'https://www.figma.com/design/file/review', checklistAnswers,
-        readyActorId: 'designer-1', contentHash: version.contentHash, assetHashes: immutableAssetHashes,
+        readyActorId: 'designer-1', contentHash: version.contentHash,
       },
     }))
   })
@@ -128,7 +128,7 @@ describe('review service', () => {
     expect(result.body).toMatchObject({ campaign: { status: 'changes_requested', openVersionId: null }, reviewStatus: 'changes_requested' })
   })
 
-  test('marketer approve targets the exact ready content hash and closes the round', async () => {
+  test('marketer approve sends the legacy content-hash payload and closes the round', async () => {
     const { service, repository } = harness({ campaign: { ...baseCampaign, status: 'ready' }, events: [sent(), ready()] })
     const result = await service.approve({
       actor: { id: 'marketer-2', role: 'marketer' }, versionId: version.id,
@@ -136,7 +136,7 @@ describe('review service', () => {
     })
     expect(result.body).toMatchObject({ campaign: { status: 'approved', openVersionId: null }, reviewStatus: 'approved' })
     expect(repository.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
-      eventType: 'approved', payload: { contentHash: version.contentHash, assetHashes: immutableAssetHashes },
+      eventType: 'approved', payload: { contentHash: version.contentHash },
     }))
   })
 
