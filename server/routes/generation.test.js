@@ -17,6 +17,26 @@ const blockedImageJob = {
   result: null,
   errorCode: 'provider_blocked',
 }
+const historicalImageResults = [
+  {
+    shape: 'legacy image metadata',
+    result: { image: { mimeType: 'image/png', width: 1200, height: 628, byteSize: 4096 } },
+  },
+  {
+    shape: 'interim asset-linked metadata',
+    result: { image: { assetId: 'asset-legacy-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 4096 } },
+  },
+]
+
+function successfulHistoricalImageJob(result) {
+  return {
+    ...pendingJob,
+    step: 'image',
+    reservedCostMicrounits: 250_000,
+    actualCostMicrounits: 1_000,
+    result,
+  }
+}
 const campaign = {
   id: 'campaign-1', title: 'Launch', brief: { product: 'Course', audience: 'Learners', objective: 'Signups', offer: '', locale: 'en', notes: '' },
   status: 'copy_ready', revision: 1, selectedCopyId: 'set-1', selectedDirectionId: null, compositionId: null,
@@ -84,6 +104,44 @@ describe('generation and selection routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({ id: 'job-1', step: 'image', requestId: response.headers['x-request-id'] })
     expect(response.body).not.toContain('bytes')
+    await app.close()
+  })
+
+  test.each(historicalImageResults)('replays a successful historical image job with $shape', async ({ result }) => {
+    const job = successfulHistoricalImageJob(result)
+    const { app } = makeApp({ generation: { generateImage: vi.fn(async () => ({ status: 201, body: { job } })) } })
+
+    const response = await app.inject({
+      method: 'POST', url: '/api/v1/campaigns/campaign-1/image-generations',
+      headers: { 'idempotency-key': 'historical-image-key' },
+      payload: { directionId: 'direction-1', width: 1200, height: 628 },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json().job.result).toEqual(result)
+    expect(response.body).not.toContain('bytes')
+    await app.close()
+  })
+
+  test.each(historicalImageResults)('reads a successful historical image job with $shape', async ({ result }) => {
+    const { app } = makeApp({ role: 'designer', generation: { getJob: vi.fn(async () => successfulHistoricalImageJob(result)) } })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/generation-jobs/job-1' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().result).toEqual(result)
+    expect(response.body).not.toContain('bytes')
+    await app.close()
+  })
+
+  test.each(historicalImageResults)('rejects arbitrary nested fields from $shape', async ({ result }) => {
+    const invalidResult = { image: { ...result.image, providerInternal: 'must-not-leak' } }
+    const { app } = makeApp({ role: 'designer', generation: { getJob: vi.fn(async () => successfulHistoricalImageJob(invalidResult)) } })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/generation-jobs/job-1' })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.body).not.toContain('must-not-leak')
     await app.close()
   })
 

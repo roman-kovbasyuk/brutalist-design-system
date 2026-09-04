@@ -1151,7 +1151,10 @@ describe('persisted generation control plane', () => {
     pools.delete(harness.pool)
   })
 
-  test('replays a stored image outcome before the unavailable gate and conflicts on changed input', async () => {
+  test.each([
+    { shape: 'legacy', result: { image: { mimeType: 'image/png', width: 1200, height: 628, byteSize: 4096 } } },
+    { shape: 'interim', result: { image: { assetId: 'asset-historical', mimeType: 'image/png', width: 1200, height: 628, byteSize: 4096 } } },
+  ])('replays a successful historical $shape image outcome before the unavailable gate', async ({ result }) => {
     const baseProvider = createMockProvider()
     const generateImage = vi.fn(baseProvider.generateImage)
     const provider = { ...baseProvider, generateImage }
@@ -1167,24 +1170,50 @@ describe('persisted generation control plane', () => {
       input: { directionId: 'direction-input', width: 1200, height: 628 }, jobId: 'legacy-image-job', ownerToken: 'legacy-owner',
       maxCostMicrounits: 250_000, startedAt: new Date('2026-09-04T10:00:00.000Z'), timeoutAt: new Date('2026-09-04T10:00:00.050Z'),
     })
-    await harness.controlPlane.markDispatched({ jobId: prepared.job.id, ownerToken: prepared.ownerToken, dispatchedAt: new Date('2026-09-04T10:00:00.001Z') })
-    const stored = await harness.controlPlane.completeProviderResult({
-      jobId: prepared.job.id, ownerToken: prepared.ownerToken, status: 'blocked', safety: { verdict: 'blocked', categories: ['mock_policy'] },
-      usage: { inputUnits: 1, outputUnits: 0 }, actualCostMicrounits: 0, resultMetadata: null,
-      errorCode: 'provider_blocked', completedAt: new Date('2026-09-04T10:00:00.002Z'),
-    })
+    const historicalJob = {
+      ...prepared.job,
+      status: 'succeeded', attempts: 1, safety: { verdict: 'safe', categories: [] }, usage: { inputUnits: 1, outputUnits: 1 },
+      actualCostMicrounits: 1_000, result, errorCode: null, updatedAt: '2026-09-04T10:00:00.002Z',
+    }
+    const stored = { status: 201, body: { job: historicalJob } }
+    await harness.pool.query(
+      `UPDATE generation_jobs
+       SET status = 'succeeded', dispatch_state = 'dispatched', dispatched_at = $2, attempts = 1,
+           safety = $3, usage = $4, actual_cost_microunits = 1000, result_metadata = $5,
+           completed_at = $6, updated_at = $6, response_status = 201, response_body = $7
+       WHERE id = $1`,
+      [prepared.job.id, new Date('2026-09-04T10:00:00.001Z'), historicalJob.safety, historicalJob.usage,
+        result, new Date(historicalJob.updatedAt), stored.body],
+    )
 
     await expect(harness.service.generateImage({
       actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'image-input',
       input: { directionId: 'direction-input', width: 1200, height: 628 },
     })).resolves.toEqual({ ...stored, replayed: true })
+    expect(generateImage).not.toHaveBeenCalled()
+    expect((await harness.pool.query("SELECT count(*)::int AS count FROM generation_jobs WHERE step = 'image'")).rows[0].count).toBe(1)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('conflicts when a historical image replay key is reused with changed input', async () => {
+    const harness = await generationHarness()
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('direction-input', $1, 'Clean focus', 'Soft daylight on a clean desk.', 'pending')`,
+      [harness.campaign.id],
+    )
+    await harness.controlPlane.prepareGeneration({
+      actor: harness.actor, campaignId: harness.campaign.id, step: 'image', idempotencyKey: 'image-conflict',
+      input: { directionId: 'direction-input', width: 1200, height: 628 }, jobId: 'legacy-conflict-job', ownerToken: 'legacy-owner',
+      maxCostMicrounits: 250_000, startedAt: new Date('2026-09-04T10:00:00.000Z'), timeoutAt: new Date('2026-09-04T10:00:00.050Z'),
+    })
+
     await expect(harness.service.generateImage({
-      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'image-input',
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'image-conflict',
       input: { directionId: 'direction-input', width: 1080, height: 1080 },
     })).rejects.toMatchObject({ code: 'idempotency_conflict' })
 
-    expect(generateImage).not.toHaveBeenCalled()
-    expect((await harness.pool.query("SELECT count(*)::int AS count FROM generation_jobs WHERE step = 'image'")).rows[0].count).toBe(1)
     await harness.pool.end()
     pools.delete(harness.pool)
   })
