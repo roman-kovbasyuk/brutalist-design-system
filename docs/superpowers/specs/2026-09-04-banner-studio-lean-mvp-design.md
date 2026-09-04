@@ -28,6 +28,7 @@ The MVP is not a frontend demo. Campaigns, generation jobs, versions, review eve
 4. **The server is authoritative.** Roles, transitions, limits, and export guards are enforced by the API.
 5. **AI integrations are honest.** The UI displays whether the active provider is `mock` or `gemini`.
 6. **Reviewable delivery.** Every engineering module produces a working, independently testable checkpoint.
+7. **The product structure is stable.** Visual design, components, and animations may change, but the sidebar information architecture and campaign-stage logic remain compatible with the existing app.
 
 ## 3. Scope
 
@@ -48,6 +49,8 @@ The MVP is not a frontend demo. Campaigns, generation jobs, versions, review eve
 - Audit events for every protected transition.
 - Incremental adoption of shadcn/ui for new and modified product surfaces.
 - Staging and production deployment to Google Cloud.
+- The existing application information architecture: three primary sidebar destinations and campaigns listed below them like ChatGPT conversations.
+- The existing seven-stage campaign flow: Brief, Copy, AI assets, Banners, designer Review, marketer Review, Assets ready.
 
 ### Excluded
 
@@ -59,6 +62,8 @@ The MVP is not a frontend demo. Campaigns, generation jobs, versions, review eve
 - Public self-service registration.
 - Freeform design editing inside Banner Studio.
 - A separate render service or general background-job platform.
+- Replacing the campaign workflow with a wizard, dashboard-only flow, modal sequence, or a different step order.
+- Moving campaigns out of the persistent left sidebar.
 
 ## 4. Users and permissions
 
@@ -71,6 +76,24 @@ The MVP is not a frontend demo. Campaigns, generation jobs, versions, review eve
 A user has one role in the MVP. The user who marks a version ready cannot approve that version.
 
 ## 5. Workflow and state machine
+
+### UX flow contract
+
+The backend state machine enriches the existing UX; it does not replace it. The visible campaign flow remains:
+
+| Visible stage | Existing purpose | New MVP capability added in place |
+| --- | --- | --- |
+| 1. Brief | Enter and analyse the campaign idea | Persist the brief, validate it, and run the real analysis request |
+| 2. Copy | Review copy and visual prompts | Load and save Gemini candidates, selections, edits, limits, and errors |
+| 3. AI assets | Generate and manage static/video assets | Run live supported providers, persist assets/jobs, show safety/cost states |
+| 4. Banners | Select banner drafts and templates | Persist composition, template version, validation, and selections |
+| 5. Review | Build and send the designer package | Create immutable version N and the stored review package |
+| 6. Review | Designer readiness followed by marketer confirmation | Enforce roles, request-changes/ready/approve/reject, and audit events |
+| 7. Assets ready | Filter and download final assets | Export only the approved version and verify hashes |
+
+Internal statuses may be more detailed than the seven visible stages. They must map into these stages without adding, removing, renaming, or reordering the user's process.
+
+The existing video branch remains inside `AI assets` and `Banners`. Because live video generation and MP4 delivery are outside this MVP, live mode shows that capability as unavailable rather than producing simulated files. Mock mode may continue to demonstrate the branch and must be visibly labelled.
 
 ```mermaid
 stateDiagram-v2
@@ -248,13 +271,32 @@ Database constraints enforce one active review version per campaign, one deliver
 
 ## 12. UI approach
 
-The current interface is retained and connected to real API state one workflow section at a time.
+The current information architecture and process are retained while real API state is connected one workflow section at a time. The visual system is not frozen: components, styling, responsive layouts, and animations may be redesigned in a later project as long as the structural contract remains intact.
 
-- Existing routes and visual language remain stable unless a module explicitly changes them.
-- New platform forms, dialogs, status badges, tables, and settings controls use shadcn/ui.
-- Tailwind is introduced for shadcn components; existing product CSS is not mechanically rewritten.
+- The desktop left sidebar keeps exactly three primary destinations: `Dashboard`, `Templates`, and `Design system`.
+- Campaigns appear below those destinations as a persistent conversation-style list, equivalent to chats in ChatGPT.
+- Selecting a campaign opens that campaign in the existing central workflow without introducing a separate Campaign menu item.
+- Documentation remains outside the product navigation and continues under `/docs/`.
+- The seven campaign stages, their order, step rail behaviour, progressive availability, and scroll/navigation logic remain compatible with the existing app.
+- Existing routes remain compatible: `/`, `/templates`, `/system`, and `/campaign/:id`.
+- New platform forms, dialogs, status badges, tables, and settings controls may use shadcn/ui, but must be styled to fit the current product until the future UI redesign begins.
+- Tailwind may be introduced for shadcn components; existing product CSS is not mechanically rewritten.
 - Canonical screen states are `loading`, `empty`, `success`, `error`, `retry`, `blocked`, `rejected`, `stale`, `over_budget`, and `provider_unavailable`.
 - Every module includes keyboard, focus, label, and responsive checks for the surfaces it changes.
+
+### UI regression contract
+
+Until a separately approved UI redesign starts, development must not:
+
+- add a fourth primary menu item;
+- move campaigns into Dashboard cards only;
+- replace the left sidebar with top navigation;
+- turn the campaign into a page-per-step wizard;
+- change the order or meaning of the seven campaign stages;
+- remove the ability to revisit an available earlier stage;
+- replace the two Review stages with a new standalone flow.
+
+Automated tests assert the three menu labels, the campaign conversation list, the route shape, the seven stage labels, and progressive step availability.
 
 ## 13. API boundary
 
@@ -315,11 +357,11 @@ Adds Figma URL handoff, request-changes/ready/approve/reject actions, self-appro
 
 **Review checkpoint:** complete both happy and rejection paths and inspect the audit/version history.
 
-### Module 6 — UI states and shadcn adoption
+### Module 6 — Existing UX integration and missing states
 
-Connects the existing workflow screens to the API, adds settings and identity surfaces, and ports only touched primitives to shadcn/ui.
+Connects the existing workflow screens to the API, adds settings and identity surfaces without changing the three-item sidebar or seven-stage flow, and ports only touched primitives to shadcn/ui.
 
-**Review checkpoint:** review every canonical screen state on desktop and mobile and complete keyboard checks.
+**Review checkpoint:** compare the structural UX contract against the existing app, review every canonical screen state on desktop and mobile, and complete keyboard checks.
 
 ### Module 7 — Cloud deployment and pilot hardening
 
@@ -359,6 +401,8 @@ The MVP is ready for a controlled pilot when:
 - the mock provider still supports deterministic tests and demos;
 - documentation identifies every integration as mock, live, or deferred;
 - one staging deployment, alert test, backup restore, and rollback rehearsal succeed.
+- the sidebar still has the three primary destinations and the campaign conversation list;
+- the seven-stage campaign flow retains its order, progressive availability, and revisit behaviour.
 
 ## 17. Post-MVP triggers
 
@@ -381,3 +425,4 @@ Add deferred infrastructure only when evidence justifies it:
 - Gemini is real in the MVP; the mock provider remains for tests and demos.
 - PNG ZIP is the only delivery format.
 - Development is reviewed module by module before the complete system is finished.
+- The stable UX contract is the three-item left sidebar, campaigns as conversation-like sidebar items, and the existing seven-stage campaign process. Future visual redesigns may replace components and animations without replacing this logic.
