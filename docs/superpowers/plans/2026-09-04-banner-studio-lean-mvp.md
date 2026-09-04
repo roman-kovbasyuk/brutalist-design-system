@@ -22,6 +22,8 @@
 - Every mutating API request uses an `Idempotency-Key`.
 - Each module ends at its review checkpoint; do not begin the next module until the user reviews the current one.
 - Use test-first development for every behaviour change.
+- This agent and any subagent it starts work only on backend and MVP functionality. They do not modify React screens, components, styles, responsive layout, or animation.
+- Module 6 belongs to the separate interface agent. This plan defines its handoff contract but this workstream does not execute it.
 
 ---
 
@@ -437,6 +439,8 @@ git commit -m "feat: validate versioned banner templates"
 ---
 
 ## Module 6 — Existing UX Integration and Missing States
+
+**Owner:** Separate interface agent. The backend/MVP workstream stops at the documented API and fixture handoff and does not execute Tasks 15–17.
 
 ### Task 15: Freeze the structural UX contract in tests
 

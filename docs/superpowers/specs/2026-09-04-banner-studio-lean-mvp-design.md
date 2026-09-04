@@ -321,6 +321,13 @@ Mutating requests include an `Idempotency-Key`. Error responses use `{ code, mes
 
 Each module is a separate commit series and review checkpoint. Work does not proceed to the next module until its tests and acceptance check are visible.
 
+### Workstream ownership
+
+- **Backend/MVP agent (this workstream):** Modules 0–5 and 7 — contracts, rules, API, PostgreSQL, authentication, Gemini, storage, rendering, review, delivery, deployment, and operations.
+- **Interface agent (separate workstream):** Module 6 — React integration, components, visual states, shadcn/ui, responsive behaviour, and animation.
+- The backend workstream does not edit `src/screens/`, `src/components/`, or product CSS. It publishes versioned contracts, fixtures, and API behaviour for the interface agent.
+- Structural UX regression tests owned by the interface agent enforce the three-item sidebar, campaign conversation list, and seven-stage flow.
+
 ### Module 0 — Contracts and rules
 
 Produces Zod schemas, the status enum, transition guards, canonical hashing, a pilot fixture, and contract tests. No backend or UI behavior changes.
@@ -362,6 +369,8 @@ Adds Figma URL handoff, request-changes/ready/approve/reject actions, self-appro
 Connects the existing workflow screens to the API, adds settings and identity surfaces without changing the three-item sidebar or seven-stage flow, and ports only touched primitives to shadcn/ui.
 
 **Review checkpoint:** compare the structural UX contract against the existing app, review every canonical screen state on desktop and mobile, and complete keyboard checks.
+
+**Owner:** Separate interface agent. This module is outside the backend/MVP agent's implementation scope.
 
 ### Module 7 — Cloud deployment and pilot hardening
 
