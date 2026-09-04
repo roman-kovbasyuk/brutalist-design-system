@@ -76,14 +76,57 @@ function strictEvents(events, version) {
   return orderReviewEvents(values)
 }
 
-function verifiedStatus(events, version) {
+function canonicalHashes(values) {
+  if (!Array.isArray(values) || values.some((value) => !/^[a-f0-9]{64}$/.test(value))) {
+    fail(409, 'invalid_review_history', 'Review asset history is invalid')
+  }
+  return [...new Set(values)].sort()
+}
+
+function sameHashes(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function trustedVersionAssetHashes(records, version) {
+  if (!records || !Array.isArray(records.source) || !Array.isArray(records.review)) {
+    throw new Error('Persistence returned invalid immutable asset hashes')
+  }
+  const source = canonicalHashes(records.source)
+  const review = canonicalHashes(records.review)
+  const snapshotSourceReferences = version.snapshot.assets
+    .filter((asset) => ['direction', 'final_image'].includes(asset.kind))
+  const snapshotReviewReferences = version.snapshot.assets
+    .filter((asset) => ['review_png', 'manifest'].includes(asset.kind))
+  const snapshotSource = canonicalHashes(snapshotSourceReferences.map((asset) => asset.sha256))
+  const snapshotReview = canonicalHashes(snapshotReviewReferences.map((asset) => asset.sha256))
+  if (!sameHashes(source, snapshotSource)
+    || !sameHashes(review, snapshotReview)
+    || !snapshotReviewReferences.some((asset) => asset.kind === 'review_png')
+    || snapshotReviewReferences.filter((asset) => asset.kind === 'manifest').length !== 1) {
+    fail(409, 'invalid_review_history', 'Review assets do not match the immutable version')
+  }
+  return { review, all: canonicalHashes([...source, ...review]) }
+}
+
+function verifiedStatus(events, version, assetHashes) {
   const sent = events[0]
-  if (sent?.eventType !== 'sent' || sent.payload.contentHash !== version.contentHash) {
+  if (sent?.eventType !== 'sent'
+    || sent.payload.contentHash !== version.contentHash
+    || !sameHashes(canonicalHashes(sent.payload.assetHashes), assetHashes.review)) {
     fail(409, 'invalid_review_history', 'Review history does not match the immutable version')
   }
   const ready = events.find((event) => event.eventType === 'ready')
-  if (ready && (ready.payload.contentHash !== version.contentHash || ready.payload.readyActorId !== ready.actorId)) {
+  if (ready && (ready.payload.contentHash !== version.contentHash
+    || ready.payload.readyActorId !== ready.actorId
+    || (ready.payload.assetHashes
+      && !sameHashes(canonicalHashes(ready.payload.assetHashes), assetHashes.all)))) {
     fail(409, 'invalid_review_history', 'Ready history does not match the immutable version')
+  }
+  const approved = events.find((event) => event.eventType === 'approved')
+  if (approved && (approved.payload.contentHash !== version.contentHash
+    || (approved.payload.assetHashes
+      && !sameHashes(canonicalHashes(approved.payload.assetHashes), assetHashes.all)))) {
+    fail(409, 'invalid_review_history', 'Approval history does not match the immutable version')
   }
   try {
     return deriveReviewStatus(events)
@@ -119,7 +162,9 @@ const commands = {
   },
   mark_ready: {
     roles: ['designer'], schema: markVersionReadyRequestSchema, eventType: 'ready', close: false,
-    payload: ({ input, actor, version }) => ({ ...input, readyActorId: actor.id, contentHash: version.contentHash }),
+    payload: ({ input, actor, version, assetHashes }) => ({
+      ...input, readyActorId: actor.id, contentHash: version.contentHash, assetHashes: assetHashes.all,
+    }),
   },
   reject: {
     roles: ['marketer', 'admin'], schema: rejectVersionRequestSchema, eventType: 'rejected', close: true,
@@ -127,7 +172,7 @@ const commands = {
   },
   approve: {
     roles: ['marketer', 'admin'], schema: approveVersionRequestSchema, eventType: 'approved', close: true,
-    payload: ({ version }) => ({ contentHash: version.contentHash }),
+    payload: ({ version, assetHashes }) => ({ contentHash: version.contentHash, assetHashes: assetHashes.all }),
   },
 }
 
@@ -166,7 +211,8 @@ export function createReviewService({
           fail(409, 'version_not_current', 'Review commands require the exact current open version')
         }
         const events = strictEvents(await repository.listEvents(version.id, { forUpdate: true }), version)
-        const status = verifiedStatus(events, version)
+        const assetHashes = trustedVersionAssetHashes(await repository.listVersionAssetHashes(version.id), version)
+        const status = verifiedStatus(events, version, assetHashes)
         if (status !== campaign.status) fail(409, 'invalid_review_history', 'Campaign status does not match review history')
 
         const transition = transitionCampaign({
@@ -185,7 +231,7 @@ export function createReviewService({
           actorId: actor.id,
           actorRole: actor.role,
           eventType: command.eventType,
-          payload: command.payload({ input: parsedInput, actor, version }),
+          payload: command.payload({ input: parsedInput, actor, version, assetHashes }),
           createdAt,
         }))
         const updated = strictCampaign(await repository.updateCampaignReviewState({
@@ -197,7 +243,7 @@ export function createReviewService({
           id: idGenerator(), actorId: actor.id, actorRole: actor.role,
           action: `campaign.${action}`, entityType: 'campaign', entityId: campaign.id,
           beforeStatus: campaign.status, afterStatus: updated.status, versionId: version.id,
-          payload: { reviewEventId: event.id, contentHash: version.contentHash }, createdAt,
+          payload: { reviewEventId: event.id, contentHash: version.contentHash, assetHashes: assetHashes.all }, createdAt,
         })
         return {
           status: 200,
@@ -230,7 +276,8 @@ export function createReviewService({
           const version = strictVersion(await repository.findCurrentVersion(campaign.id, campaign.currentVersionNumber)
             ?? fail(409, 'version_not_current', 'Current review version was not found'))
           const events = strictEvents(await repository.listEvents(version.id, { forUpdate: true }), version)
-          const status = verifiedStatus(events, version)
+          const assetHashes = trustedVersionAssetHashes(await repository.listVersionAssetHashes(version.id), version)
+          const status = verifiedStatus(events, version, assetHashes)
           if (campaign.status !== 'changes_requested' || status !== 'changes_requested') {
             fail(409, 'invalid_review_history', 'Only a closed changes-requested review can be reopened')
           }
@@ -259,7 +306,8 @@ export function createReviewService({
       const repository = repositoryFactory(pool)
       const version = strictVersion(await repository.findVersionById(versionId) ?? fail(404, 'not_found', 'Version was not found'))
       const events = strictEvents(await repository.listEvents(version.id), version)
-      return { version, status: verifiedStatus(events, version), events }
+      const assetHashes = trustedVersionAssetHashes(await repository.listVersionAssetHashes(version.id), version)
+      return { version, status: verifiedStatus(events, version, assetHashes), events }
     },
   }
 }

@@ -33,6 +33,12 @@ describe('review command contracts', () => {
     ['http://www.figma.com/design/file/review', checklistAnswers],
     ['https://figma.com.evil.test/design/file/review', checklistAnswers],
     ['https://user@figma.com/design/file/review', checklistAnswers],
+    ['https://figma.com:0443/design/file/review', checklistAnswers],
+    ['https://-bad.figma.com/design/file/review', checklistAnswers],
+    ['https://bad-.figma.com/design/file/review', checklistAnswers],
+    [`https://${'a'.repeat(64)}.figma.com/design/file/review`, checklistAnswers],
+    [`https://${`${'a'.repeat(63)}.`.repeat(4)}figma.com/design/file/review`, checklistAnswers],
+    ['https://tést.figma.com/design/file/review', checklistAnswers],
     ['https://www.figma.com/design/file/review', { ...checklistAnswers, layoutQuality: false }],
     ['https://www.figma.com/design/file/review', { copyAccuracy: true, layoutQuality: true }],
     ['https://www.figma.com/design/file/review', { ...checklistAnswers, extra: true }],
@@ -44,9 +50,27 @@ describe('review command contracts', () => {
     const event = {
       id: 'event-1', campaignId: 'campaign-1', versionId: 'version-1', actorId: 'designer-1', actorRole: 'designer',
       eventType: 'ready', createdAt: '2026-09-04T10:00:00.000Z',
-      payload: { figmaUrl: 'https://figma.com/design/file/review', checklistAnswers, readyActorId: 'designer-1', contentHash: 'a'.repeat(64) },
+      payload: {
+        figmaUrl: 'https://figma.com/design/file/review', checklistAnswers,
+        readyActorId: 'designer-1', contentHash: 'a'.repeat(64), assetHashes: ['b'.repeat(64)],
+      },
     }
     expect(reviewEventRecordSchema.safeParse(event).success).toBe(true)
     expect(reviewEventRecordSchema.safeParse({ ...event, payload: { ...event.payload, secret: true } }).success).toBe(false)
+  })
+
+  test('persists the exact immutable asset hash set in ready and approved facts', () => {
+    const base = {
+      id: 'event-1', campaignId: 'campaign-1', versionId: 'version-1', actorId: 'marketer-1',
+      actorRole: 'marketer', createdAt: '2026-09-04T10:00:00.000Z',
+    }
+    const approved = {
+      ...base, eventType: 'approved',
+      payload: { contentHash: 'a'.repeat(64), assetHashes: ['b'.repeat(64), 'c'.repeat(64)] },
+    }
+    expect(reviewEventRecordSchema.safeParse(approved).success).toBe(true)
+    expect(reviewEventRecordSchema.safeParse({
+      ...approved, payload: { ...approved.payload, assetHashes: [...approved.payload.assetHashes, 'not-a-hash'] },
+    }).success).toBe(false)
   })
 })

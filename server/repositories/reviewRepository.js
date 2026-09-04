@@ -80,6 +80,24 @@ export function createReviewRepository(client) {
       return result.rows.map(mapEvent)
     },
 
+    async listVersionAssetHashes(versionId) {
+      const result = await client.query(
+        `SELECT 'source' AS asset_class, source.asset_sha256 AS sha256
+         FROM campaign_version_source_assets source
+         WHERE source.version_id = $1
+         UNION ALL
+         SELECT 'review' AS asset_class, asset.sha256
+         FROM assets asset
+         WHERE asset.version_id = $1 AND asset.kind IN ('review_png', 'manifest')
+         ORDER BY asset_class, sha256`,
+        [versionId],
+      )
+      return {
+        source: result.rows.filter((row) => row.asset_class === 'source').map((row) => row.sha256),
+        review: result.rows.filter((row) => row.asset_class === 'review').map((row) => row.sha256),
+      }
+    },
+
     async appendEvent(event) {
       const result = await client.query(
         `INSERT INTO review_events

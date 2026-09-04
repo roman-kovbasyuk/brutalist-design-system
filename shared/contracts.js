@@ -297,12 +297,21 @@ const reviewCommentSchema = z.string().trim().min(1).max(2_000)
 
 function isFigmaHttpsUrl(value) {
   try {
+    const authority = /^https:\/\/([^/?#]*)(?:[/?#]|$)/i.exec(value)?.[1]
+    if (!authority || !/^[\x00-\x7f]+$/.test(authority) || authority.includes('@')) return false
+    const rawHostname = authority.toLowerCase().endsWith(':443') ? authority.slice(0, -4) : authority
+    if (rawHostname.includes(':')) return false
     const url = new URL(value)
+    const hostname = url.hostname.toLowerCase()
+    const labels = hostname.split('.')
     return url.protocol === 'https:'
       && url.username === ''
       && url.password === ''
       && (url.port === '' || url.port === '443')
-      && (url.hostname === 'figma.com' || url.hostname.endsWith('.figma.com'))
+      && rawHostname.toLowerCase() === hostname
+      && hostname.length <= 253
+      && labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))
+      && (hostname === 'figma.com' || hostname.endsWith('.figma.com'))
   } catch {
     return false
   }
@@ -352,6 +361,7 @@ const readyReviewEventSchema = z.strictObject({
     checklistAnswers: reviewChecklistSchema,
     readyActorId: nonEmptyString,
     contentHash: assetHashSchema,
+    assetHashes: z.array(assetHashSchema).optional(),
   }),
 })
 const rejectedReviewEventSchema = z.strictObject({
@@ -364,7 +374,7 @@ const approvedReviewEventSchema = z.strictObject({
   ...reviewEventBase,
   actorRole: z.enum(['marketer', 'admin']),
   eventType: z.literal('approved'),
-  payload: z.strictObject({ contentHash: assetHashSchema }),
+  payload: z.strictObject({ contentHash: assetHashSchema, assetHashes: z.array(assetHashSchema).optional() }),
 })
 const deliveredReviewEventSchema = z.strictObject({
   ...reviewEventBase,

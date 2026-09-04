@@ -25,6 +25,8 @@ const version = {
   id: 'version-1', campaignId: 'campaign-1', versionNumber: 1, snapshot,
   contentHash: hashCanonical(snapshot), createdBy: 'marketer-1', createdAt: now,
 }
+const reviewAssetHashes = ['b'.repeat(64), 'c'.repeat(64)]
+const immutableAssetHashes = ['a'.repeat(64), ...reviewAssetHashes]
 const baseCampaign = {
   id: 'campaign-1', title: 'Launch', brief: pilotCampaignFixture.brief, status: 'in_review', revision: 4,
   selectedCopyId: 'copy-set-1', selectedDirectionId: 'direction-1', compositionId: 'composition-1',
@@ -50,7 +52,7 @@ function sent() {
 function ready(actorId = 'designer-1') {
   return reviewEvent('event-ready', 'ready', actorId, 'designer', {
     figmaUrl: 'https://www.figma.com/design/file/review', checklistAnswers,
-    readyActorId: actorId, contentHash: version.contentHash,
+    readyActorId: actorId, contentHash: version.contentHash, assetHashes: immutableAssetHashes,
   })
 }
 
@@ -62,6 +64,9 @@ function harness({ campaign = baseCampaign, events = [sent()] } = {}) {
     findCurrentVersion: vi.fn(async () => version),
     lockCampaign: vi.fn(async () => currentCampaign),
     listEvents: vi.fn(async () => currentEvents),
+    listVersionAssetHashes: vi.fn(async () => ({
+      source: [immutableAssetHashes[0]], review: reviewAssetHashes,
+    })),
     appendEvent: vi.fn(async (event) => { currentEvents.push(event); return event }),
     updateCampaignReviewState: vi.fn(async ({ status, openVersionId }) => {
       currentCampaign = { ...currentCampaign, status, openVersionId, revision: currentCampaign.revision + 1, updatedAt: now }
@@ -107,7 +112,10 @@ describe('review service', () => {
     expect(result.body).toMatchObject({ campaign: { status: 'ready', openVersionId: version.id }, reviewStatus: 'ready' })
     expect(repository.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventType: 'ready',
-      payload: { figmaUrl: 'https://www.figma.com/design/file/review', checklistAnswers, readyActorId: 'designer-1', contentHash: version.contentHash },
+      payload: {
+        figmaUrl: 'https://www.figma.com/design/file/review', checklistAnswers,
+        readyActorId: 'designer-1', contentHash: version.contentHash, assetHashes: immutableAssetHashes,
+      },
     }))
   })
 
@@ -127,7 +135,25 @@ describe('review service', () => {
       expectedRevision: 4, idempotencyKey: 'approve-1', input: {},
     })
     expect(result.body).toMatchObject({ campaign: { status: 'approved', openVersionId: null }, reviewStatus: 'approved' })
-    expect(repository.appendEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'approved', payload: { contentHash: version.contentHash } }))
+    expect(repository.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'approved', payload: { contentHash: version.contentHash, assetHashes: immutableAssetHashes },
+    }))
+  })
+
+  test('rejects a review whose sent hash set differs from trusted immutable review assets', async () => {
+    const unexpectedHash = 'd'.repeat(64)
+    const { service, repository } = harness({
+      events: [reviewEvent('event-sent', 'sent', 'marketer-1', 'marketer', {
+        contentHash: version.contentHash,
+        assetHashes: [reviewAssetHashes[0], unexpectedHash],
+      })],
+    })
+    await expect(service.markReady({
+      actor: { id: 'designer-1', role: 'designer' }, versionId: version.id,
+      expectedRevision: 4, idempotencyKey: 'untrusted-assets',
+      input: { figmaUrl: 'https://figma.com/design/file/review', checklistAnswers },
+    })).rejects.toMatchObject({ statusCode: 409, code: 'invalid_review_history' })
+    expect(repository.appendEvent).not.toHaveBeenCalled()
   })
 
   test('persisted ready actor cannot approve after changing role', async () => {

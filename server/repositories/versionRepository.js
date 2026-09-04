@@ -407,16 +407,17 @@ export function createVersionRepository(client) {
             asset.width, asset.height, asset.sha256, build.versionId, createdAt],
         )
       }
+      const updated = await campaigns.updateState(campaignUpdateInput(campaign, {
+        status: 'in_review', currentVersionNumber: build.versionNumber, openVersionId: build.versionId,
+      }))
+      const reviewAssetHashes = [...new Set(assets.map((asset) => asset.sha256))].sort()
       await client.query(
         `INSERT INTO review_events
            (id, campaign_id, version_id, actor_id, actor_role, event_type, payload, created_at)
          VALUES ($1, $2, $3, $4, $5, 'sent', $6, $7)`,
         [reviewEventId, campaign.id, build.versionId, actor.id, actor.role,
-          { contentHash, assetHashes: assets.map((asset) => asset.sha256) }, createdAt],
+          { contentHash, assetHashes: reviewAssetHashes }, createdAt],
       )
-      const updated = await campaigns.updateState(campaignUpdateInput(campaign, {
-        status: 'in_review', currentVersionNumber: build.versionNumber, openVersionId: build.versionId,
-      }))
       await createAuditRepository(client).append({
         id: auditId,
         actorId: actor.id,
@@ -427,7 +428,7 @@ export function createVersionRepository(client) {
         beforeStatus: campaign.status,
         afterStatus: updated.status,
         versionId: build.versionId,
-        payload: { versionNumber: build.versionNumber, contentHash },
+        payload: { reviewEventId, versionNumber: build.versionNumber, contentHash, assetHashes: reviewAssetHashes },
         createdAt,
       })
       await client.query(
