@@ -26,9 +26,9 @@ The existing application outside `/mvp` remains visually and technically unchang
 - Generate three copy variants per round.
 - Display columns in this order: **Select**, **Headline**, **Body**, **Offer**, **CTA**.
 - Use controlled `Input` and `Textarea` components in cells. Do not use `contentEditable`.
-- Selecting a row makes it the campaign's active copy and advances the workflow to `copy_ready`.
+- Selecting a row atomically saves that row's current controlled values, makes it the campaign's active copy, and advances the workflow to `copy_ready`.
 - Editing the selected row and saving returns later work to the `copy_ready` boundary.
-- Use one explicit **Save copy changes** action for the selected row. Unselected rows remain editable locally but must be selected before their changes become workflow input.
+- Use one explicit **Save copy changes** action for the selected row. Unselected rows remain editable locally; their current values are persisted when that row is selected.
 - Keep **Generate 3 options** available and label the provider as mock.
 
 ### Responsive behavior
