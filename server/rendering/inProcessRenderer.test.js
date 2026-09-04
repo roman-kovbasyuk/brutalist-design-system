@@ -145,6 +145,19 @@ describe('deterministic in-process banner renderer', () => {
   })
 
   test.each([
+    ['descenders', 'gypq'],
+    ['stacked diacritics', 'Ǻ'],
+  ])('rejects actual %s glyph outlines outside the text placement', async (_name, value) => {
+    const input = await validInput()
+    input.slots.headline = value
+    Object.assign(input.manifest.slots[0], { fontWeight: 400, fontSize: 100, minFontSize: 100, maxLines: 1 })
+    input.manifest.slots[0].placements.square.height = 120
+
+    await expect(createInProcessRenderer().renderComposition(input))
+      .rejects.toMatchObject({ code: 'outline_overflow' })
+  })
+
+  test.each([
     ['unknown ratio', (input) => { input.ratio = 'portrait' }, 'unsupported_ratio'],
     ['unknown slot', (input) => { input.slots.extra = 'nope' }, 'unknown_slot'],
     ['missing required slot', (input) => { delete input.slots.cta }, 'missing_slot'],

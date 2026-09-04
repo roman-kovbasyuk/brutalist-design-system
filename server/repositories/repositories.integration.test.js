@@ -253,12 +253,21 @@ describe('migration runner', () => {
        VALUES ('new-invalid-generated', $1, 'direction', 'new/invalid.png', 'image/png', 12, $2, 'generation')`,
       [legacyCampaign.id, '7'.repeat(64)],
     )).rejects.toMatchObject({ code: '23514' })
+    await expect(pool.query(
+      `INSERT INTO assets
+         (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id, integrity_version)
+       VALUES ('new-bypass-generated', $1, 'direction', 'new/bypass.png', 'image/png', 12, 1, 1, $2, 'generation', 'legacy-generation-job', 0)`,
+      [legacyCampaign.id, 'b'.repeat(64)],
+    )).rejects.toMatchObject({ code: '23514' })
     await pool.query(
       `INSERT INTO assets
          (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id)
        VALUES ('new-generated-1', $1, 'direction', 'new/generated-1.png', 'image/png', 13, 1, 1, $2, 'generation', 'legacy-generation-job')`,
       [legacyCampaign.id, '8'.repeat(64)],
     )
+    await expect(pool.query(
+      `UPDATE assets SET integrity_version = 0 WHERE id = 'new-generated-1'`,
+    )).rejects.toMatchObject({ code: '23514' })
     await expect(pool.query(
       `INSERT INTO assets
          (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id)
@@ -1240,7 +1249,7 @@ describe('persisted generation control plane', () => {
     const controlPlane = createGenerationControlPlane({ pool, clock: () => currentTime, providerRegistry, ...waitOptions, ...controlPlaneOptions })
     const advanceClock = (duration) => { currentTime = new Date(currentTime.getTime() + duration) }
     const service = createGenerationService({
-      pool, controlPlane: decorateControlPlane(controlPlane, { advanceClock }), providers: { [providerName]: provider }, timeoutMs, clock: () => currentTime,
+      pool, controlPlane: decorateControlPlane(controlPlane, { advanceClock, pool }), providers: { [providerName]: provider }, timeoutMs, clock: () => currentTime,
       ...(assetStore ? { assetStore } : {}),
     })
     return {
@@ -1312,7 +1321,7 @@ describe('persisted generation control plane', () => {
     const baseProvider = createMockProvider()
     const generateImage = vi.fn(baseProvider.generateImage)
     const assetStore = createMemoryAssetStore()
-    const harness = await generationHarness({ provider: { ...baseProvider, generateImage }, assetStore, timeoutMs: 500 })
+    const harness = await generationHarness({ provider: { ...baseProvider, generateImage }, assetStore, timeoutMs: 500, now: new Date() })
     await harness.pool.query(
       `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
        VALUES ('durable-direction', $1, 'Clean focus', 'Soft daylight on a clean desk.', 'pending')`,
@@ -1348,6 +1357,7 @@ describe('persisted generation control plane', () => {
     const harness = await generationHarness({
       assetStore,
       timeoutMs: 500,
+      now: new Date(),
       decorateControlPlane: (controlPlane) => ({
         ...controlPlane,
         async completeGeneratedImage(input) {
@@ -1379,6 +1389,7 @@ describe('persisted generation control plane', () => {
     const harness = await generationHarness({
       assetStore,
       timeoutMs: 500,
+      now: new Date(),
       decorateControlPlane: (controlPlane, { advanceClock }) => ({
         ...controlPlane,
         completeGeneratedImage(input) {
@@ -1400,6 +1411,65 @@ describe('persisted generation control plane', () => {
 
     expect(result).toMatchObject({ status: 202, body: { job: { status: 'unknown' } } })
     expect((await harness.pool.query('SELECT count(*)::int AS count FROM assets')).rows[0].count).toBe(0)
+    expect((await harness.pool.query(
+      'SELECT status, unknown_reason FROM generation_jobs WHERE id = $1',
+      [result.body.job.id],
+    )).rows[0]).toEqual({ status: 'unknown', unknown_reason: 'asset_persistence_timeout' })
+    const orphans = await harness.pool.query(
+      `SELECT o.object_key FROM orphaned_uploads o
+       WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.object_key = o.object_key)`,
+    )
+    expect(orphans.rowCount).toBe(1)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('cannot commit generated image success after its database row lock outlives the persisted deadline', async () => {
+    const assetStore = createMemoryAssetStore()
+    const harness = await generationHarness({
+      assetStore,
+      timeoutMs: 80,
+      now: new Date(),
+      decorateControlPlane: (controlPlane, { pool }) => ({
+        ...controlPlane,
+        async completeGeneratedImage(input) {
+          const blocker = await pool.connect()
+          let released = false
+          const release = async () => {
+            if (released) return
+            released = true
+            await blocker.query('ROLLBACK').catch(() => {})
+            blocker.release()
+          }
+          await blocker.query('BEGIN')
+          await blocker.query('SELECT id FROM generation_jobs WHERE id = $1 FOR UPDATE', [input.jobId])
+          const timer = setTimeout(() => { void release() }, 160)
+          try {
+            return await controlPlane.completeGeneratedImage(input)
+          } finally {
+            clearTimeout(timer)
+            await release()
+          }
+        },
+      }),
+    })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('deadline-lock-direction', $1, 'Clean focus', 'Soft daylight.', 'pending')`,
+      [harness.campaign.id],
+    )
+
+    const result = await harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'deadline-lock-image',
+      input: { directionId: 'deadline-lock-direction', width: 800, height: 800 },
+    })
+
+    expect(result).toMatchObject({ status: 202, body: { job: { status: 'unknown' } } })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM assets')).rows[0].count).toBe(0)
+    expect((await harness.pool.query(
+      'SELECT status, unknown_reason FROM generation_jobs WHERE id = $1',
+      [result.body.job.id],
+    )).rows[0]).toEqual({ status: 'unknown', unknown_reason: 'asset_persistence_timeout' })
     const orphans = await harness.pool.query(
       `SELECT o.object_key FROM orphaned_uploads o
        WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.object_key = o.object_key)`,

@@ -63,24 +63,30 @@ function loadFonts(paths) {
 }
 
 function shapeLine(font, value, fontSize) {
-  if (value.length === 0) return { width: 0, glyphs: [] }
+  if (value.length === 0) return { width: 0, minY: 0, maxY: 0, glyphs: [] }
   const scale = fontSize / font.unitsPerEm
   const run = font.layout(value)
   let cursor = 0
   let minX = Number.POSITIVE_INFINITY
   let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
   const positioned = run.glyphs.map((glyph, index) => {
     const position = run.positions[index]
     const x = cursor + position.xOffset
     const box = glyph.bbox
     minX = Math.min(minX, x + box.minX)
     maxX = Math.max(maxX, x + box.maxX)
+    minY = Math.min(minY, position.yOffset + box.minY)
+    maxY = Math.max(maxY, position.yOffset + box.maxY)
     cursor += position.xAdvance
     return { path: glyph.path.toSVG(), x, yOffset: position.yOffset }
   })
-  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return { width: 0, glyphs: [] }
+  if (![minX, maxX, minY, maxY].every(Number.isFinite)) return { width: 0, minY: 0, maxY: 0, glyphs: [] }
   return {
     width: (maxX - minX) * scale,
+    minY: minY * scale,
+    maxY: maxY * scale,
     glyphs: positioned.map((glyph) => ({
       path: glyph.path,
       x: (glyph.x - minX) * scale,
@@ -145,6 +151,14 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
     if (lines.length > slot.maxLines) fail('line_overflow', `Slot ${slot.id} exceeds its line limit`)
     if (lines.length * Math.ceil(slot.fontSize * 1.2) > placement.height) {
       fail('line_overflow', `Slot ${slot.id} text exceeds its placement height`)
+    }
+    const lineHeight = Math.ceil(slot.fontSize * 1.2)
+    for (const [index, line] of lines.entries()) {
+      const shaped = shapeLine(fonts[slot.fontWeight], line, slot.fontSize)
+      const baseline = slot.fontSize + index * lineHeight
+      if (baseline - shaped.maxY < 0 || baseline - shaped.minY > placement.height) {
+        fail('outline_overflow', `Slot ${slot.id} glyph outline exceeds its placement height`)
+      }
     }
     return lines
   }

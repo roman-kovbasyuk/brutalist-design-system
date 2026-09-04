@@ -114,6 +114,7 @@ describe('generation service external-call recovery', () => {
     expect(Buffer.isBuffer(assetStore.put.mock.calls[0][0].bytes)).toBe(true)
     expect(assetStore.put.mock.invocationCallOrder[0]).toBeLessThan(assetStore.get.mock.invocationCallOrder[0])
     expect(assetStore.get.mock.invocationCallOrder[0]).toBeLessThan(controlPlane.completeGeneratedImage.mock.invocationCallOrder[0])
+    expect(assetStore.get).toHaveBeenCalledWith(expect.objectContaining({ maxBytes: imageBytes.length }))
     expect(controlPlane.completeGeneratedImage).toHaveBeenCalledWith(expect.objectContaining({
       jobId: 'job-1', ownerToken: 'owner-1', directionId: 'direction-1',
       asset: expect.objectContaining({ id: 'asset-1', source: 'generation', kind: 'direction', width: 1200, height: 628, byteSize: imageBytes.length }),

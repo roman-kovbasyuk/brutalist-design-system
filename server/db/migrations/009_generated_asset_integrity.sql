@@ -19,6 +19,23 @@ ALTER TABLE assets
     )
   ) NOT VALID;
 
+CREATE FUNCTION enforce_current_asset_integrity_version() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' AND NEW.integrity_version <> 1 THEN
+    RAISE EXCEPTION 'new assets require current integrity checks' USING ERRCODE = '23514';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.integrity_version = 1 AND NEW.integrity_version <> 1 THEN
+    RAISE EXCEPTION 'current asset integrity cannot be downgraded' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER assets_enforce_current_integrity_version
+  BEFORE INSERT OR UPDATE OF integrity_version ON assets
+  FOR EACH ROW EXECUTE FUNCTION enforce_current_asset_integrity_version();
+
 CREATE UNIQUE INDEX assets_generation_job_unique_idx
   ON assets (generation_job_id)
   WHERE source = 'generation' AND integrity_version = 1;

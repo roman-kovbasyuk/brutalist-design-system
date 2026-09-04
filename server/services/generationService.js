@@ -93,6 +93,10 @@ function generatedObjectKey({ campaignId, jobId, assetId, mimeType }) {
   return `campaigns/${hashedPathSegment(campaignId)}/generation-jobs/${hashedPathSegment(jobId)}/generated/${assetId}.${extension}`
 }
 
+function persistenceTimedOut(error) {
+  return ['55P03', '57014', 'generation_persistence_timeout'].includes(error?.code)
+}
+
 async function beforeDeadline(operation, timeoutAt, clock, code) {
   const remaining = safeInstant(timeoutAt, 'Generation timeout').getTime() - safeInstant(clock(), 'Generation clock').getTime()
   if (remaining <= 0) {
@@ -300,7 +304,7 @@ export function createGenerationService({
       }
       try {
         const readback = await beforeDeadline(
-          (remaining) => assetStore.get({ objectKey, timeoutMs: remaining }),
+          (remaining) => assetStore.get({ objectKey, timeoutMs: remaining, maxBytes: asset.byteSize }),
           prepared.job.timeoutAt,
           clock,
           'asset_readback_timeout',
@@ -334,12 +338,17 @@ export function createGenerationService({
           objectKey, campaignId, reason: 'generation_image_persistence_declined',
         }).catch(() => {})
         return completion
-      } catch {
+      } catch (error) {
+        const timedOut = persistenceTimedOut(error)
         await controlPlane.registerOrphanUpload({
-          objectKey, campaignId, reason: 'generation_image_persistence_failed',
+          objectKey, campaignId, reason: timedOut
+            ? 'generation_image_persistence_timeout'
+            : 'generation_image_persistence_failed',
         }).catch(() => {})
         return controlPlane.markUnknown({
-          jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_persistence_ambiguous',
+          jobId: prepared.job.id,
+          ownerToken: prepared.ownerToken,
+          reason: timedOut ? 'asset_persistence_timeout' : 'asset_persistence_ambiguous',
         })
       }
     }

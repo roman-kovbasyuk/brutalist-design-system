@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
+import { PassThrough, Readable } from 'node:stream'
 import { AssetStoreError, assertSafeObjectKey } from './assetStore.js'
 import { createMemoryAssetStore } from './memoryAssetStore.js'
 import { createGcsAssetStore } from './gcsAssetStore.js'
@@ -35,8 +36,9 @@ describe('private immutable asset stores', () => {
   test('GCS uses a private create-only write and has memory-equivalent read/delete semantics', async () => {
     const save = vi.fn(async () => {})
     const download = vi.fn(async () => [Buffer.from('stored')])
+    const createReadStream = vi.fn(() => Readable.from([Buffer.from('stored')]))
     const remove = vi.fn(async () => [{}])
-    const file = vi.fn(() => ({ save, download, delete: remove }))
+    const file = vi.fn(() => ({ save, download, createReadStream, delete: remove }))
     const bucket = vi.fn(() => ({ file }))
     const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket } })
 
@@ -51,7 +53,43 @@ describe('private immutable asset stores', () => {
     })
     expect(save.mock.calls[0][1]).not.toHaveProperty('predefinedAcl')
     await expect(store.get({ objectKey })).resolves.toEqual(Buffer.from('stored'))
+    expect(createReadStream).toHaveBeenCalledWith({ validation: 'crc32c' })
+    expect(download).not.toHaveBeenCalled()
     await expect(store.delete({ objectKey })).resolves.toEqual({ deleted: true })
+  })
+
+  test('destroys a stalled GCS read stream at its request deadline and cleans listeners', async () => {
+    const stream = new PassThrough()
+    const destroy = vi.spyOn(stream, 'destroy')
+    const file = vi.fn(() => ({
+      createReadStream: vi.fn(() => stream),
+      download: vi.fn(() => new Promise(() => {})),
+    }))
+    const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
+
+    const outcome = await Promise.race([
+      store.get({ objectKey, timeoutMs: 10 }).catch((error) => error),
+      new Promise((resolve) => setTimeout(() => resolve({ code: 'deadline_ignored' }), 50)),
+    ])
+    expect(outcome).toMatchObject({ code: 'storage_timeout' })
+    expect(destroy).toHaveBeenCalledOnce()
+    expect(stream.listenerCount('data')).toBe(0)
+    expect(stream.listenerCount('end')).toBe(0)
+    expect(stream.listenerCount('error')).toBe(0)
+  })
+
+  test('destroys GCS reads that exceed the caller byte limit', async () => {
+    const stream = Readable.from([Buffer.from('abc'), Buffer.from('def')])
+    const destroy = vi.spyOn(stream, 'destroy')
+    const file = vi.fn(() => ({
+      createReadStream: vi.fn(() => stream),
+      download: vi.fn(async () => [Buffer.from('abcdef')]),
+    }))
+    const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
+
+    await expect(store.get({ objectKey, maxBytes: 4 }))
+      .rejects.toMatchObject({ code: 'asset_too_large' })
+    expect(destroy).toHaveBeenCalled()
   })
 
   test('GCS maps precondition and missing-object responses without exposing provider details', async () => {
@@ -60,6 +98,11 @@ describe('private immutable asset stores', () => {
     const file = vi.fn(() => ({
       save: vi.fn(async () => { throw providerFailure }),
       download: vi.fn(async () => { throw missing }),
+      createReadStream: vi.fn(() => {
+        const stream = new PassThrough()
+        queueMicrotask(() => stream.destroy(missing))
+        return stream
+      }),
       delete: vi.fn(async () => { throw missing }),
     }))
     const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })

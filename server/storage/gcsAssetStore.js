@@ -10,6 +10,51 @@ function storageFailure(code, message) {
   return new AssetStoreError(code, message)
 }
 
+function readObjectStream(file, { timeoutMs, maxBytes }) {
+  return new Promise((resolve, reject) => {
+    const stream = file.createReadStream({ validation: 'crc32c' })
+    const chunks = []
+    let byteSize = 0
+    let timer
+    let settled = false
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      stream.removeListener('data', onData)
+      stream.removeListener('end', onEnd)
+      stream.removeListener('error', onError)
+    }
+    const finish = (error, bytes, destroy = false) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (destroy && !stream.destroyed) stream.destroy()
+      if (error) reject(error)
+      else resolve(bytes)
+    }
+    const onData = (chunk) => {
+      const bytes = Buffer.from(chunk)
+      byteSize += bytes.length
+      if (Number.isSafeInteger(maxBytes) && maxBytes >= 0 && byteSize > maxBytes) {
+        finish(storageFailure('asset_too_large', 'Stored asset exceeds the allowed byte length'), undefined, true)
+        return
+      }
+      chunks.push(bytes)
+    }
+    const onEnd = () => finish(undefined, Buffer.concat(chunks, byteSize))
+    const onError = (error) => finish(error)
+
+    stream.on('data', onData)
+    stream.once('end', onEnd)
+    stream.once('error', onError)
+    if (Number.isSafeInteger(timeoutMs) && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        finish(storageFailure('storage_timeout', 'Private asset storage read timed out'), undefined, true)
+      }, timeoutMs)
+    }
+  })
+}
+
 export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
   if (typeof bucketName !== 'string' || bucketName.trim().length === 0) throw new TypeError('A GCS asset bucket is required')
   const client = storage ?? new Storage({ projectId })
@@ -35,13 +80,13 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
       }
       return { objectKey, byteSize: source.length }
     },
-    async get({ objectKey }) {
+    async get({ objectKey, timeoutMs, maxBytes }) {
       assertSafeObjectKey(objectKey)
       try {
-        const [bytes] = await bucket.file(objectKey).download({ validation: 'crc32c' })
-        return Buffer.from(bytes)
+        return await readObjectStream(bucket.file(objectKey), { timeoutMs, maxBytes })
       } catch (error) {
         if (statusCode(error) === 404) return null
+        if (error instanceof AssetStoreError) throw error
         throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
       }
     },

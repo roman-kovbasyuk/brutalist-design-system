@@ -6,6 +6,7 @@ Task 11 is complete. Generated image jobs now cross a private, immutable storage
 
 - Feature commit: `feat: store and render review assets` (this commit)
 - Review hardening commit: `fix: harden asset durability and rendering` (this commit)
+- Review round-two commit: `fix: enforce renderer and storage deadlines` (this commit)
 - Exact storage SDK: `@google-cloud/storage@8.0.1`
 - Exact image dependency: `sharp@0.35.4`
 - Exact shaping dependency: `fontkit@2.0.4`
@@ -24,7 +25,7 @@ The pinned faces are `InterDisplay-Regular.woff2` for weight 400, `InterDisplay-
 - Headline wrap: `Learn Norwegian` / `with confidence`
 - Body wrap: `Short, focused lessons built for` / `busy adults.`
 - CTA wrap: one line
-- Line breaking: preserve explicit newlines, then greedily add whole whitespace-delimited words. Fontkit shapes each candidate with the same glyph advances used to position output paths; exact outline bounds determine placement containment. Reject an unbreakable token or a result beyond `maxLines`; use `ceil(fontSize * 1.2)` line height.
+- Line breaking: preserve explicit newlines, then greedily add whole whitespace-delimited words. Fontkit shapes each candidate with the same glyph advances used to position output paths; exact outline bounds determine placement containment. The layout carries Fontkit's actual glyph `minY`/`maxY` through the SVG-coordinate baseline transform, so descenders and stacked diacritics that cross a placement edge are rejected even when the estimated line box fits. Reject an unbreakable token or a result beyond `maxLines`; use `ceil(fontSize * 1.2)` line height.
 - Safe-area rule: every text placement rectangle must be fully contained in the selected ratio's parsed safe area before rendering. Text is also clipped to its declared placement.
 - Image rule: decode and validate the private source bytes, then apply a deterministic centered cover crop without distortion. For the 1000 by 1000 spike source into the 504 by 1080 placement, the source crop was `x=266.666667, y=0, width=466.666667, height=1000`.
 
@@ -36,6 +37,7 @@ The implemented renderer keeps those rules and returns a normalized, timestamp-f
 
 - `MemoryAssetStore` and `GcsAssetStore` share strict create-only put, byte-read, and cleanup-delete semantics and validate object keys, bytes, and MIME at their boundary.
 - GCS uploads are non-resumable, CRC32C-validated, private, cacheable as immutable private content, and protected by `ifGenerationMatch: 0`. No public ACL or public URL is created.
+- GCS reads use a CRC32C-validating stream. The caller's remaining deadline arms a timer that destroys a stalled stream, and the caller's expected byte length is enforced while streaming; success, timeout, oversize, provider error, and not-found paths all remove listeners and clear timers.
 - Existing keys cannot be overwritten. GCS 409/412 responses normalize to `object_exists`; reads and cleanup normalize not-found without leaking provider detail.
 - Test and development default to memory storage. Production requires explicit GCS storage plus project and bucket configuration. Bootstrap owns and idempotently closes the injected store.
 
@@ -45,9 +47,9 @@ The implemented renderer keeps those rules and returns a normalized, timestamp-f
 - Server-generated keys are rooted under SHA-256 campaign and generation-job namespaces, include the server asset ID, and use only the extension derived from the verified MIME.
 - Upload completes before database success. One locked transaction verifies the campaign owner and snapshotted visual direction/job relationship, inserts the generated asset, links the direction preview and marks it ready, and stores the final byte-free idempotent response while marking the job succeeded.
 - Upload is started only while the persisted deadline still has time remaining and passes the remaining timeout to GCS. After create-only put, the service privately reads the object back and verifies its exact byte length and SHA-256 before attempting persistence. `object_exists` fails closed without registering another owner's object as an orphan.
-- Database completion is never raced against a local timer. The transaction locks the job and makes the authoritative success-or-unknown deadline decision. Asset insertion and orphan registration share an object-key advisory lock; registration also rechecks `NOT EXISTS assets(object_key)`, so an ambiguously acknowledged commit cannot produce both a referenced asset and a cleanup-eligible orphan.
+- Database completion is never raced against a local timer. Before contended locks, the transaction derives the remaining duration from persisted `timeout_at` and PostgreSQL `clock_timestamp()`, then sets transaction-local `lock_timeout` and `statement_timeout`. It rechecks the database clock after the job and dependent locks, refreshes those limits immediately before writes, and guards the final success update with `clock_timestamp() < timeout_at`; an elapsed or lock deadline becomes durable `unknown`, never late success. Asset insertion and orphan registration share an object-key advisory lock; registration also rechecks `NOT EXISTS assets(object_key)`, so an ambiguously acknowledged commit cannot produce both a referenced asset and a cleanup-eligible orphan.
 - Future orphan cleanup holds the same object lock, rechecks asset references inside its transaction before calling delete, and refuses to delete referenced bytes.
-- Migration 009 adds `integrity_version`. Existing pre-009 rows are explicitly backfilled to legacy version 0; new rows default to version 1. A staged `NOT VALID` shape constraint and a version-1-only unique generation-job index preserve previously valid legacy duplicates/incomplete generated rows while rejecting new invalid or duplicate rows. Image bytes are never written to PostgreSQL or JSON.
+- Migration 009 adds `integrity_version`. Existing pre-009 rows are explicitly backfilled to legacy version 0; new rows default to version 1. A staged `NOT VALID` shape constraint and a version-1-only unique generation-job index preserve previously valid legacy duplicates/incomplete generated rows while rejecting new invalid or duplicate rows. A trigger prevents post-migration inserts from explicitly opting into legacy version 0 and forbids version 1 rows from being downgraded; legacy rows may remain 0 or be upgraded to 1. Image bytes are never written to PostgreSQL or JSON.
 
 ### Authorized reads and renderer
 
@@ -66,7 +68,9 @@ The implemented renderer keeps those rules and returns a normalized, timestamp-f
 - Focused PostgreSQL migration and durable image commit GREEN: 3 tests passed (68 excluded by the focus filter).
 - Review hardening RED proved ignored/invalid fonts, identical weight output, corrupt storage readback acceptance, orphan registration for `object_exists`, post-deadline upload start, success-plus-orphan on ambiguous commit acknowledgement, expired transaction success, unsafe MIME streaming, and migration failure on valid legacy rows.
 - Review hardening focused GREEN: renderer/storage/asset/generation — 5 files, 61 tests passed; PostgreSQL legacy upgrade/race/cleanup — 5 tests passed (69 excluded by the focus filter).
-- Required PostgreSQL suite: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared` — 25 files, 367 tests passed.
+- Review round-two RED proved that real descender/diacritic outlines could cross vertical placement bounds, new rows could explicitly set `integrity_version = 0`, GCS reads ignored caller deadlines and byte caps, and a generated-image transaction could wait on a row lock past `timeout_at` then commit success.
+- Review round-two focused GREEN: renderer/storage/asset/generation — 4 files, 59 tests passed; full PostgreSQL repository integration — 75 tests passed.
+- Required PostgreSQL suite: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared` — 25 files, 372 tests passed.
 - Production build: `npm run build` — application and VitePress builds completed successfully; the existing VitePress large-chunk warning remains.
 - Dependency/runtime check: `npm ls @google-cloud/storage sharp inter-ui --depth=0` confirmed 8.0.1, 0.35.4, and 4.1.1 respectively. The verification host was Node 25.1.0; Node 22 compatibility is expressed by the `>=22` engine and the build uses no newer runtime feature.
 

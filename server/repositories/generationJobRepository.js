@@ -92,6 +92,32 @@ async function lockAssetObjectKey(client, objectKey) {
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
 }
 
+function remainingDeadlineMilliseconds(timeoutAt, observedAt) {
+  const remaining = timeoutAt.getTime() - observedAt.getTime()
+  if (!Number.isFinite(remaining)) throw new TypeError('Generation persistence deadline is invalid')
+  return Math.max(1, Math.min(2_147_483_647, Math.ceil(remaining)))
+}
+
+async function setTransactionDeadline(client, timeoutAt, observedAt) {
+  const setting = `${remainingDeadlineMilliseconds(timeoutAt, observedAt)}ms`
+  await client.query(
+    `SELECT set_config('lock_timeout', $1, true),
+            set_config('statement_timeout', $1, true)`,
+    [setting],
+  )
+}
+
+async function databaseClock(client) {
+  const result = await client.query('SELECT clock_timestamp() AS observed_at')
+  return result.rows[0].observed_at
+}
+
+function persistenceDeadlineError() {
+  const error = new Error('Generated image persistence exceeded its deadline')
+  error.code = 'generation_persistence_timeout'
+  return error
+}
+
 function providerContextError(step) {
   const requirements = {
     copy: ['brief_analysis_required', 'Analyse the campaign brief before generating copy'],
@@ -382,6 +408,15 @@ export function createGenerationControlPlane({
     async completeGeneratedImage({ jobId, ownerToken, directionId, asset, safety, usage, actualCostMicrounits, completedAt }) {
       safeMicrounits(actualCostMicrounits, 'actualCostMicrounits')
       return transaction(pool, async (client) => {
+        const deadlineResult = await client.query(
+          `SELECT timeout_at, clock_timestamp() AS observed_at
+           FROM generation_jobs WHERE id = $1`,
+          [jobId],
+        )
+        const deadline = deadlineResult.rows[0]
+        if (!deadline) conflict('generation_owner_lost', 'Generation result ownership was lost')
+        await setTransactionDeadline(client, deadline.timeout_at, deadline.observed_at)
+
         const locked = await client.query('SELECT * FROM generation_jobs WHERE id = $1 FOR UPDATE', [jobId])
         const current = locked.rows[0]
         if (!current || current.owner_token !== ownerToken || current.status !== 'pending' || current.dispatch_state !== 'dispatched') {
@@ -399,8 +434,8 @@ export function createGenerationControlPlane({
         if (BigInt(actualCostMicrounits) > BigInt(current.reserved_cost_microunits)) {
           conflict('generation_cost_exceeded_reservation', 'Provider cost exceeded its reservation')
         }
-        const observedAt = clock()
-        if (current.timeout_at <= observedAt) {
+        let observedAt = await databaseClock(client)
+        if (current.timeout_at <= observedAt || current.timeout_at <= clock()) {
           const expired = await client.query(
             `UPDATE generation_jobs
              SET status = 'unknown', unknown_reason = 'asset_persistence_timeout', updated_at = $2
@@ -410,6 +445,7 @@ export function createGenerationControlPlane({
           )
           return storeResponse(client, expired.rows[0], 202)
         }
+        await setTransactionDeadline(client, current.timeout_at, observedAt)
         const campaign = await client.query('SELECT id FROM campaigns WHERE id = $1 FOR UPDATE', [current.campaign_id])
         if (campaign.rowCount !== 1) conflict('not_found', 'Campaign was not found', 404)
         const direction = await client.query(
@@ -420,6 +456,18 @@ export function createGenerationControlPlane({
         )
         if (direction.rowCount !== 1) conflict('generation_direction_mismatch', 'Generated image direction is not pending for this campaign')
         await lockAssetObjectKey(client, asset.objectKey)
+        observedAt = await databaseClock(client)
+        if (current.timeout_at <= observedAt || current.timeout_at <= clock()) {
+          const expired = await client.query(
+            `UPDATE generation_jobs
+             SET status = 'unknown', unknown_reason = 'asset_persistence_timeout', updated_at = $2
+             WHERE id = $1 AND owner_token = $3 AND status = 'pending' AND dispatch_state = 'dispatched'
+             RETURNING *`,
+            [jobId, observedAt, ownerToken],
+          )
+          return storeResponse(client, expired.rows[0], 202)
+        }
+        await setTransactionDeadline(client, current.timeout_at, observedAt)
         await client.query(
           `INSERT INTO assets
              (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id, version_id, created_at)
@@ -439,14 +487,18 @@ export function createGenerationControlPlane({
             byteSize: asset.byteSize,
           },
         }
+        observedAt = await databaseClock(client)
+        if (current.timeout_at <= observedAt || current.timeout_at <= clock()) throw persistenceDeadlineError()
+        await setTransactionDeadline(client, current.timeout_at, observedAt)
         const updated = await client.query(
           `UPDATE generation_jobs
            SET status = 'succeeded', safety = $3, usage = $4, actual_cost_microunits = $5,
                result_metadata = $6, error_code = NULL, completed_at = $7, updated_at = $7
-           WHERE id = $1 AND owner_token = $2
+           WHERE id = $1 AND owner_token = $2 AND clock_timestamp() < timeout_at
            RETURNING *`,
           [jobId, ownerToken, safety, usage, actualCostMicrounits, persistedResult, completedAt],
         )
+        if (updated.rowCount !== 1) throw persistenceDeadlineError()
         return storeResponse(client, updated.rows[0], 201)
       })
     },

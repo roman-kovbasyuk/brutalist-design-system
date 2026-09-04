@@ -47,7 +47,7 @@ export function createAssetService({ pool, assetStore, repositoryFactory = creat
       } catch {
         throw new AssetServiceError(502, 'unsafe_object_key', 'Stored asset metadata is invalid')
       }
-      const stored = await assetStore.get({ objectKey: record.objectKey })
+      const stored = await assetStore.get({ objectKey: record.objectKey, maxBytes: record.byteSize })
       if (stored == null) throw new AssetServiceError(502, 'asset_bytes_missing', 'Stored asset bytes are unavailable')
       const bytes = Buffer.from(stored.buffer, stored.byteOffset, stored.byteLength)
       const sha256 = createHash('sha256').update(bytes).digest('hex')
