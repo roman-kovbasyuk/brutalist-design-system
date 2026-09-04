@@ -39,36 +39,7 @@ SELECT 'migration-013-image-fence:' || fenced.job_id,
        'migration.legacy_image_provenance_fenced',
        'campaign',
        fenced.campaign_id,
-       CASE
-         WHEN fenced.campaign_status IN ('draft', 'copy_ready')
-          AND EXISTS (
-            SELECT 1
-            FROM compositions composition
-            JOIN audit_events saved
-              ON saved.action = 'campaign.composition_saved'
-             AND saved.entity_type = 'campaign'
-             AND saved.entity_id = fenced.campaign_id
-             AND saved.payload->>'compositionId' = composition.id
-            WHERE composition.campaign_id = fenced.campaign_id
-              AND composition.stale = true
-              AND EXISTS (
-                SELECT 1 FROM visual_directions direction
-                WHERE direction.campaign_id = fenced.campaign_id
-                  AND direction.id = fenced.direction_id
-                  AND direction.stale = true
-              )
-          )
-         THEN 'composed'
-         WHEN fenced.campaign_status = 'copy_ready'
-          AND EXISTS (
-            SELECT 1 FROM visual_directions direction
-            WHERE direction.campaign_id = fenced.campaign_id
-              AND direction.id = fenced.direction_id
-              AND direction.stale = true
-          )
-         THEN 'direction_selected'
-         ELSE NULL
-       END,
+       NULL,
        fenced.campaign_status,
        jsonb_build_object(
          'jobId', fenced.job_id,
@@ -221,165 +192,6 @@ SET response_body = jsonb_build_object(
 FROM provable_legacy_final_images proven
 WHERE job.id = proven.job_id;
 
-CREATE TEMP TABLE legacy_campaign_restore_options ON COMMIT DROP AS
-SELECT DISTINCT campaign.id AS campaign_id,
-       direction.id AS direction_id,
-       composition.id AS composition_id
-FROM campaigns campaign
-JOIN copy_sets copy_set
-  ON copy_set.campaign_id = campaign.id
- AND copy_set.id = campaign.selected_copy_id
- AND copy_set.stale = false
-JOIN generation_jobs copy_job
-  ON copy_job.id = copy_set.generation_job_id
- AND copy_job.campaign_id = copy_set.campaign_id
- AND copy_job.step = 'copy'
- AND copy_job.status = 'succeeded'
- AND copy_job.safety->>'verdict' = 'safe'
-JOIN provable_legacy_final_images proven ON proven.campaign_id = campaign.id
-JOIN visual_directions direction
-  ON direction.campaign_id = campaign.id
- AND direction.id = proven.direction_id
- AND direction.status = 'ready'
- AND direction.stale = true
-JOIN generation_jobs direction_job
-  ON direction_job.id = direction.generation_job_id
- AND direction_job.campaign_id = direction.campaign_id
- AND direction_job.step = 'directions'
- AND direction_job.status = 'succeeded'
- AND direction_job.safety->>'verdict' = 'safe'
-JOIN assets preview_asset
-  ON preview_asset.campaign_id = campaign.id
- AND preview_asset.id = direction.preview_asset_id
- AND preview_asset.kind = 'direction'
- AND preview_asset.source = 'generation'
- AND preview_asset.integrity_version = 1
-JOIN generation_jobs preview_job
-  ON preview_job.id = preview_asset.generation_job_id
- AND preview_job.campaign_id = campaign.id
- AND preview_job.step = 'image'
- AND preview_job.status = 'succeeded'
- AND preview_job.safety->>'verdict' = 'safe'
-JOIN compositions composition
-  ON composition.campaign_id = campaign.id
- AND composition.stale = true
- AND composition.validation->>'valid' = 'true'
-JOIN templates template
-  ON template.id = composition.template_id
- AND template.version = composition.template_version
-WHERE campaign.status = 'copy_ready'
-  AND campaign.selected_copy_id IS NOT NULL
-  AND campaign.selected_direction_id IS NULL
-  AND campaign.composition_id IS NULL
-  AND campaign.open_version_id IS NULL
-  AND campaign.current_version_number = 0
-  AND direction_job.input_snapshot = jsonb_build_object(
-    'brief', campaign.brief,
-    'copy', (
-      SELECT candidate
-      FROM jsonb_array_elements(copy_set.candidates) candidate
-      WHERE candidate->>'id' = copy_set.selected_candidate_id
-      LIMIT 1
-    )
-  )
-  AND EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements(
-      CASE WHEN jsonb_typeof(direction_job.result_metadata->'directions') = 'array'
-        THEN direction_job.result_metadata->'directions' ELSE '[]'::jsonb END
-    ) generated_direction
-    WHERE generated_direction = jsonb_build_object(
-      'id', direction.id,
-      'title', direction.title,
-      'prompt', direction.prompt,
-      'status', 'pending',
-      'previewAssetId', NULL
-    )
-  )
-  AND EXISTS (
-    SELECT 1 FROM jsonb_each_text(composition.slot_values) slot_value
-    WHERE slot_value.value = proven.asset_id
-  )
-  AND EXISTS (
-    SELECT 1 FROM audit_events saved
-    WHERE saved.action = 'campaign.composition_saved'
-      AND saved.entity_type = 'campaign'
-      AND saved.entity_id = campaign.id
-      AND saved.payload->>'compositionId' = composition.id
-  )
-  AND jsonb_typeof(preview_job.input_snapshot) = 'object'
-  AND preview_job.input_snapshot ?& ARRAY['direction', 'width', 'height']
-  AND preview_job.input_snapshot = jsonb_build_object(
-    'direction', preview_job.input_snapshot->'direction',
-    'width', preview_job.input_snapshot->'width',
-    'height', preview_job.input_snapshot->'height'
-  )
-  AND preview_job.input_snapshot->'direction' = jsonb_build_object(
-    'id', direction.id,
-    'title', direction.title,
-    'prompt', direction.prompt,
-    'status', 'pending',
-    'previewAssetId', NULL
-  )
-  AND (preview_job.input_snapshot->>'width')::numeric = preview_asset.width
-  AND (preview_job.input_snapshot->>'height')::numeric = preview_asset.height
-  AND preview_job.request_fingerprint = encode(sha256(convert_to(format(
-    '{"input":{"directionId":%s,"height":%s,"width":%s},"step":"image"}',
-    to_json(direction.id)::text, preview_asset.height, preview_asset.width
-  ), 'UTF8')), 'hex')
-  AND preview_job.result_metadata = jsonb_build_object(
-    'image', jsonb_build_object(
-      'asset', jsonb_build_object('id', preview_asset.id, 'kind', 'direction', 'sha256', preview_asset.sha256),
-      'mimeType', preview_asset.mime_type,
-      'width', preview_asset.width,
-      'height', preview_asset.height,
-      'byteSize', preview_asset.byte_size
-    )
-  );
-
-CREATE TEMP TABLE legacy_campaign_restores ON COMMIT DROP AS
-SELECT campaign_id,
-       min(direction_id) AS direction_id,
-       min(composition_id) AS source_composition_id,
-       'migration-014-composition:' || encode(sha256(convert_to(min(composition_id), 'UTF8')), 'hex') AS composition_id
-FROM legacy_campaign_restore_options
-GROUP BY campaign_id
-HAVING count(*) = 1;
-
-INSERT INTO compositions
-  (id, campaign_id, template_id, template_version, ratio_ids, slot_values,
-   validation, stale, created_at)
-SELECT restore.composition_id,
-       source.campaign_id,
-       source.template_id,
-       source.template_version,
-       source.ratio_ids,
-       source.slot_values,
-       source.validation,
-       false,
-       clock_timestamp()
-FROM legacy_campaign_restores restore
-JOIN compositions source
-  ON source.campaign_id = restore.campaign_id
- AND source.id = restore.source_composition_id
-ON CONFLICT (id) DO NOTHING;
-
-UPDATE visual_directions direction
-SET stale = false
-FROM legacy_campaign_restores restore
-WHERE direction.campaign_id = restore.campaign_id
-  AND direction.id = restore.direction_id
-  AND direction.stale = true;
-
-UPDATE campaigns campaign
-SET status = 'composed',
-    selected_direction_id = restore.direction_id,
-    composition_id = restore.composition_id,
-    revision = campaign.revision + 1,
-    updated_at = clock_timestamp()
-FROM legacy_campaign_restores restore
-WHERE campaign.id = restore.campaign_id;
-
 INSERT INTO audit_events
   (id, actor_id, actor_role, action, entity_type, entity_id,
    before_status, after_status, payload, created_at)
@@ -396,8 +208,7 @@ SELECT 'migration-014-image-restore:' || proven.job_id,
          'campaignId', proven.campaign_id,
          'assetId', proven.asset_id,
          'directionId', proven.direction_id,
-         'compositionId', restore.composition_id,
-         'sourceCompositionId', restore.source_composition_id,
+         'compositionId', NULL,
          'reason', 'provable_legacy_final_image',
          'jobStatus', 'succeeded',
          'responseStatus', job.response_status,
@@ -409,5 +220,4 @@ FROM provable_legacy_final_images proven
 JOIN generation_jobs job ON job.id = proven.job_id
 JOIN campaigns campaign ON campaign.id = proven.campaign_id
 JOIN users actor ON actor.id = COALESCE(job.actor_id, campaign.created_by)
-LEFT JOIN legacy_campaign_restores restore ON restore.campaign_id = proven.campaign_id
 ON CONFLICT (id) DO NOTHING;
