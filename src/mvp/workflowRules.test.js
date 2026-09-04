@@ -85,6 +85,30 @@ describe('MVP workflow rules', () => {
     expect(getAvailableActions(generated, marketer)).toContain('select_copy')
   })
 
+  test('editing selected copy returns later work to the copy-ready boundary', () => {
+    const copySet = {
+      id: 'copy-set-1',
+      candidates: [{ id: 'copy-1', headline: 'Speak sooner', body: 'Practical Norwegian', offer: '15% off', cta: 'Start learning' }],
+      createdAt: '2026-09-04T08:05:00.000Z',
+    }
+    const selected = createCampaign({
+      status: 'direction_selected',
+      copySets: [copySet],
+      selectedCopyId: 'copy-1',
+      directions: [{ id: 'direction-1', title: 'Arrival', prompt: 'Editorial portrait', status: 'ready', assetId: 'asset-1', sha256: 'a'.repeat(64) }],
+      selectedDirectionId: 'direction-1',
+    })
+
+    const edited = transitionCampaign(selected, 'edit_copy', marketer, {
+      copyId: 'copy-1',
+      copy: { headline: 'Speak before you move', body: 'Practical Norwegian from day one', offer: '15% off', cta: 'Start now' },
+    })
+
+    expect(edited.status).toBe('copy_ready')
+    expect(edited.selectedDirectionId).toBeNull()
+    expect(edited.copySets[0].candidates[0].headline).toBe('Speak before you move')
+  })
+
   test('prevents a designer from approving a ready version', () => {
     expect(() => transitionCampaign(createReadyCampaign(), 'approve', designer, {})).toThrow('forbidden')
   })

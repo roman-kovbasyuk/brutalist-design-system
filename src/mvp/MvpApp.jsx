@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { mockActors } from './fixtures.js'
+import { createMockCopySet, mockActors } from './fixtures.js'
 import { createMockCampaignGateway } from './mockCampaignGateway.js'
 import { MvpShell } from './MvpShell.jsx'
+import { BriefStage } from './stages/BriefStage.jsx'
+import { CopyStage } from './stages/CopyStage.jsx'
 import './mvp.css'
 
 const stageHeading = {
@@ -24,6 +26,7 @@ export function MvpApp({ gateway: providedGateway }) {
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [campaignName, setCampaignName] = useState('')
+  const [pendingAction, setPendingAction] = useState('')
   const actor = mockActors.marketer
   const activeCampaign = campaigns.find((campaign) => campaign.id === activeCampaignId) ?? campaigns[0] ?? null
 
@@ -63,6 +66,27 @@ export function MvpApp({ gateway: providedGateway }) {
     }
   }
 
+  async function performAction(action, input) {
+    if (!activeCampaign || pendingAction) return
+    setError('')
+    setPendingAction(action)
+    try {
+      const updated = await gateway.performAction(activeCampaign.id, action, input, {
+        actor,
+        idempotencyKey: `${action.replaceAll('_', '-')}-${randomId()}`,
+      })
+      setCampaigns((items) => items.map((campaign) => campaign.id === updated.id ? updated : campaign))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'campaign_action_failed')
+    } finally {
+      setPendingAction('')
+    }
+  }
+
+  const briefComplete = activeCampaign
+    ? ['product', 'audience', 'goal'].every((field) => activeCampaign.brief[field].trim())
+    : false
+
   if (loading) return <div className="mvp-loading" role="status">Loading campaigns…</div>
 
   return (
@@ -85,10 +109,26 @@ export function MvpApp({ gateway: providedGateway }) {
         </form>
       )}
       {!showCreate && activeCampaign && (
-        <div className="mvp-stage-intro">
-          <p className="mvp-eyebrow">{activeCampaign.name}</p>
-          <h2>{stageHeading[activeCampaign.status]}</h2>
-          <p>This review build exposes the workflow decisions first. Brief and generation controls arrive in the next review slice.</p>
+        <div className="mvp-stage-stack">
+          <div className="mvp-stage-intro">
+            <p className="mvp-eyebrow">{activeCampaign.name}</p>
+            <h2>{stageHeading[activeCampaign.status]}</h2>
+            <p>Decide the brief and message first. Later steps stay locked until their inputs are ready.</p>
+          </div>
+          <BriefStage
+            campaign={activeCampaign}
+            pendingAction={pendingAction}
+            onSave={(brief) => performAction('save_brief', { brief })}
+          />
+          {briefComplete && (
+            <CopyStage
+              campaign={activeCampaign}
+              pendingAction={pendingAction}
+              onGenerate={() => performAction('generate_copy', { copySet: createMockCopySet({ campaign: activeCampaign }) })}
+              onSelect={(copyId) => performAction('select_copy', { copyId })}
+              onEdit={(copyId, copy) => performAction('edit_copy', { copyId, copy })}
+            />
+          )}
         </div>
       )}
       {!showCreate && !activeCampaign && (
@@ -100,4 +140,8 @@ export function MvpApp({ gateway: providedGateway }) {
       )}
     </MvpShell>
   )
+}
+
+function randomId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }

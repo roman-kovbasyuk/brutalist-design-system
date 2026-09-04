@@ -1,10 +1,10 @@
-import { actorSchema, campaignSchema, campaignVersionSchema } from './contracts.js'
+import { actorSchema, campaignSchema, campaignVersionSchema, copyCandidateSchema } from './contracts.js'
 
 const marketerActions = {
   draft: ['save_brief', 'generate_copy'],
-  copy_ready: ['save_brief', 'generate_copy', 'select_copy', 'generate_directions'],
-  direction_selected: ['save_brief', 'generate_copy', 'generate_directions', 'select_direction', 'save_composition'],
-  composed: ['save_brief', 'generate_copy', 'generate_directions', 'select_direction', 'save_composition', 'send_for_review'],
+  copy_ready: ['save_brief', 'generate_copy', 'select_copy', 'edit_copy', 'generate_directions'],
+  direction_selected: ['save_brief', 'generate_copy', 'edit_copy', 'generate_directions', 'select_direction', 'save_composition'],
+  composed: ['save_brief', 'generate_copy', 'edit_copy', 'generate_directions', 'select_direction', 'save_composition', 'send_for_review'],
   in_review: [],
   changes_requested: ['reopen'],
   ready: ['reject', 'approve'],
@@ -60,6 +60,16 @@ export function transitionCampaign(campaignInput, action, actorInput, input = {}
     next.status = 'copy_ready'
     next.selectedDirectionId = null
     next.composition = null
+  }
+
+  if (action === 'edit_copy') {
+    const candidate = findCopy(next, input.copyId)
+    if (!candidate) throw new Error('copy_not_found')
+    Object.assign(candidate, copyCandidateSchema.parse({ ...candidate, ...input.copy, id: candidate.id }))
+    next.selectedCopyId = candidate.id
+    next.selectedDirectionId = null
+    next.composition = null
+    next.status = 'copy_ready'
   }
 
   if (action === 'generate_directions') {

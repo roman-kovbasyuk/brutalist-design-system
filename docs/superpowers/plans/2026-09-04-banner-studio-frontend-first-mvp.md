@@ -243,26 +243,26 @@ git commit -m "feat: add reviewable MVP workspace"
 
 **Interfaces:**
 - Brief emits `save_brief` with `{ brief }`.
-- Copy emits `generate_copy` and `select_copy`.
+- Copy emits `generate_copy`, `select_copy`, and `edit_copy`.
 - Both consume `pendingAction` and render disabled/loading/error states.
 
-- [ ] **Step 1: Write failing brief tests**
+- [x] **Step 1: Write failing brief tests**
 
 Test required fields, saved persistence, and downstream stale warning after an approved selection changes.
 
-- [ ] **Step 2: Implement BriefStage and verify GREEN**
+- [x] **Step 2: Implement BriefStage and verify GREEN**
 
 Run: `npm test -- --run src/mvp/stages/BriefStage.test.jsx`
 
-- [ ] **Step 3: Write failing copy tests**
+- [x] **Step 3: Write failing copy tests**
 
 Test three mock candidates, editable selected copy, generation cap label, and selection advancing to `copy_ready`.
 
-- [ ] **Step 4: Implement CopyStage and verify GREEN**
+- [x] **Step 4: Implement CopyStage and verify GREEN**
 
 Run: `npm test -- --run src/mvp/stages/CopyStage.test.jsx`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/mvp/MvpApp.jsx src/mvp/stages/BriefStage.jsx src/mvp/stages/BriefStage.test.jsx src/mvp/stages/CopyStage.jsx src/mvp/stages/CopyStage.test.jsx
