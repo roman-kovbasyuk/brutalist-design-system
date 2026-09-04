@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest'
+import { createMockCopySet } from './fixtures.js'
 import { createMockCampaignGateway } from './mockCampaignGateway.js'
 
 const marketerMeta = { actor: { id: 'maya', role: 'marketer' }, idempotencyKey: 'request-1' }
@@ -37,6 +38,26 @@ describe('mock campaign gateway', () => {
 
     expect(await second.getCampaign(created.id)).toEqual(created)
     expect(await second.listCampaigns()).toEqual([created])
+  })
+
+  test('mock copy generation uses the free-form brief', () => {
+    let nextId = 0
+    const copySet = createMockCopySet({
+      campaign: {
+        brief: {
+          text: 'Launch a practical Norwegian course in Oslo for new arrivals.',
+          product: '',
+          audience: '',
+          goal: '',
+          offer: '',
+        },
+      },
+      now: () => '2026-09-04T12:00:00.000Z',
+      id: () => `copy-${++nextId}`,
+    })
+
+    expect(copySet.candidates).toHaveLength(3)
+    expect(copySet.candidates[0].body).toContain('Oslo')
   })
 
   test('returns the first result for a repeated idempotency key', async () => {

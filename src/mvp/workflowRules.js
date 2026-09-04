@@ -56,6 +56,9 @@ export function transitionCampaign(campaignInput, action, actorInput, input = {}
   if (action === 'select_copy') {
     const candidate = findCopy(next, input.copyId)
     if (!candidate) throw new Error('copy_not_found')
+    if (input.copy) {
+      Object.assign(candidate, copyCandidateSchema.parse({ ...candidate, ...input.copy, id: candidate.id }))
+    }
     next.selectedCopyId = candidate.id
     next.status = 'copy_ready'
     next.selectedDirectionId = null

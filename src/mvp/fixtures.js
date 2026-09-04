@@ -10,11 +10,11 @@ export function createDraftCampaignFixture({ id, name, now }) {
     name,
     status: 'draft',
     brief: {
+      text: '',
       product: '',
       audience: '',
       goal: '',
       offer: '',
-      notes: '',
     },
     copySets: [],
     selectedCopyId: null,
@@ -30,9 +30,8 @@ export function createDraftCampaignFixture({ id, name, now }) {
 }
 
 export function createMockCopySet({ campaign, now = () => new Date().toISOString(), id = randomId }) {
+  const brief = excerptFromBrief(campaign.brief.text)
   const offer = campaign.brief.offer.trim()
-  const product = campaign.brief.product.trim()
-  const audience = campaign.brief.audience.trim()
 
   return {
     id: `copy-set-${id()}`,
@@ -41,26 +40,33 @@ export function createMockCopySet({ campaign, now = () => new Date().toISOString
       {
         id: `copy-${id()}`,
         headline: 'Speak sooner',
-        body: `${product} made practical for ${audience.toLowerCase()}.`,
+        body: brief,
         offer,
         cta: 'Start learning',
       },
       {
         id: `copy-${id()}`,
         headline: 'Feel at home',
-        body: `Build useful language habits for everyday life.`,
+        body: brief,
         offer,
         cta: 'Try it today',
       },
       {
         id: `copy-${id()}`,
         headline: 'Make every day easier',
-        body: `Short, focused lessons built around your goal: ${campaign.brief.goal.trim().toLowerCase()}.`,
+        body: brief,
         offer,
         cta: 'See the course',
       },
     ],
   }
+}
+
+function excerptFromBrief(value) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!text) return ''
+  const sentence = text.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim()
+  return (sentence ?? text).slice(0, 120).trim()
 }
 
 function randomId() {

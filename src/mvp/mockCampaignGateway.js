@@ -1,6 +1,7 @@
 import { campaignSchema } from './contracts.js'
 import { createDraftCampaignFixture } from './fixtures.js'
 import { idempotencyStorageKey, MVP_STORAGE_KEY, parseMutationMeta } from './gateway.js'
+import { migrateStoredCampaign } from './migrations.js'
 import { getAvailableActions as getWorkflowActions, transitionCampaign } from './workflowRules.js'
 
 export function createMockCampaignGateway({
@@ -82,7 +83,11 @@ function readState(storage) {
     if (!raw) return emptyState()
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed?.campaigns) || !isRecord(parsed?.idempotencyResults)) return emptyState()
-    const campaigns = parsed.campaigns.map((campaign) => campaignSchema.safeParse(campaign)).filter((result) => result.success).map((result) => result.data)
+    const campaigns = parsed.campaigns
+      .map(migrateStoredCampaign)
+      .map((campaign) => campaignSchema.safeParse(campaign))
+      .filter((result) => result.success)
+      .map((result) => result.data)
     return { campaigns, idempotencyResults: parsed.idempotencyResults }
   } catch {
     return emptyState()
@@ -101,7 +106,7 @@ function emptyState() {
 function getIdempotentResult(state, meta) {
   const stored = state.idempotencyResults[idempotencyStorageKey(meta.actor, meta.idempotencyKey)]
   if (!stored) return null
-  return campaignSchema.parse(stored)
+  return campaignSchema.parse(migrateStoredCampaign(stored))
 }
 
 function storeIdempotentResult(state, meta, campaign) {

@@ -16,11 +16,11 @@ export const actorRoleSchema = z.enum(['marketer', 'designer', 'admin'])
 export const actorSchema = z.object({ id: z.string().min(1), role: actorRoleSchema })
 
 export const briefSchema = z.object({
+  text: z.string(),
   product: z.string(),
   audience: z.string(),
   goal: z.string(),
   offer: z.string(),
-  notes: z.string(),
 })
 
 export const copyCandidateSchema = z.object({

@@ -10,11 +10,11 @@ function createCampaign(overrides = {}) {
     name: 'Autumn launch',
     status: 'draft',
     brief: {
+      text: 'Launch a fast-track course for people moving to Oslo.',
       product: 'Fast-track course',
       audience: 'People moving to Oslo',
       goal: 'Course registrations',
       offer: '15% off',
-      notes: '',
     },
     copySets: [],
     selectedCopyId: null,
@@ -83,6 +83,31 @@ describe('MVP workflow rules', () => {
 
     expect(generated.status).toBe('draft')
     expect(getAvailableActions(generated, marketer)).toContain('select_copy')
+  })
+
+  test('selecting a copy atomically persists its edited values', () => {
+    const copySet = {
+      id: 'copy-set-1',
+      candidates: [
+        { id: 'copy-1', headline: 'Speak sooner', body: 'Practical Norwegian', offer: '15% off', cta: 'Start learning' },
+        { id: 'copy-2', headline: 'Feel at home', body: 'Useful language habits.', offer: '15% off', cta: 'Try it free' },
+      ],
+      createdAt: '2026-09-04T08:05:00.000Z',
+    }
+    const generated = createCampaign({ copySets: [copySet] })
+
+    const selected = transitionCampaign(generated, 'select_copy', marketer, {
+      copyId: 'copy-2',
+      copy: {
+        headline: 'Move with confidence',
+        body: 'Practical language.',
+        offer: '15% off',
+        cta: 'Start now',
+      },
+    })
+
+    expect(selected.selectedCopyId).toBe('copy-2')
+    expect(selected.copySets[0].candidates[1].headline).toBe('Move with confidence')
   })
 
   test('editing selected copy returns later work to the copy-ready boundary', () => {

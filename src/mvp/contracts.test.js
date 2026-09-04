@@ -12,11 +12,11 @@ function createDraftCampaign() {
     name: 'Autumn launch',
     status: 'draft',
     brief: {
+      text: 'Launch a fast-track course for people moving to Oslo.',
       product: 'Fast-track course',
       audience: 'People moving to Oslo',
       goal: 'Course registrations',
       offer: '15% off',
-      notes: '',
     },
     copySets: [],
     selectedCopyId: null,
@@ -38,6 +38,21 @@ describe('MVP contracts', () => {
       versions: [],
       providerMode: 'mock',
     })
+  })
+
+  test('accepts a draft with one free-form brief field', () => {
+    const campaign = createDraftCampaign()
+    campaign.brief = {
+      text: 'Launch an Oslo course for new arrivals.',
+      product: '',
+      audience: '',
+      goal: '',
+      offer: '',
+    }
+
+    const parsed = campaignSchema.parse(campaign)
+
+    expect(parsed.brief.text).toBe('Launch an Oslo course for new arrivals.')
   })
 
   test('rejects an unknown campaign status', () => {
