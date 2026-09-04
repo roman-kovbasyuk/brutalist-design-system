@@ -268,3 +268,102 @@ export const generationJobSchema = z.strictObject({
   actualCostMicrounits: z.number().int().nonnegative().nullable(),
   timeoutAt: z.string().datetime({ offset: true }),
 })
+
+const providerMetadataFields = {
+  provider: z.enum(['mock', 'gemini']),
+  model: nonEmptyString.max(200),
+  region: nonEmptyString.max(100),
+  usage: z.record(z.string(), z.number().int().nonnegative()),
+  actualCostMicrounits: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  safety: z.strictObject({
+    verdict: z.enum(['safe', 'blocked']),
+    categories: z.array(nonEmptyString.max(100)),
+  }),
+}
+
+export const briefAnalysisSchema = z.strictObject({
+  summary: nonEmptyString.max(1_000),
+  themes: z.array(nonEmptyString.max(160)).max(10),
+  warnings: z.array(nonEmptyString.max(500)).max(10),
+})
+
+export const analyseBriefInputSchema = z.strictObject({ brief: briefSchema })
+export const generateCopyInputSchema = z.strictObject({ brief: briefSchema, analysis: briefAnalysisSchema })
+export const generateDirectionsInputSchema = z.strictObject({ brief: briefSchema, copy: copyVariantSchema })
+export const generateImageInputSchema = z.strictObject({
+  direction: visualDirectionSchema,
+  width: z.number().int().min(64).max(4_096),
+  height: z.number().int().min(64).max(4_096),
+})
+
+const providerErrorSchema = z.strictObject({
+  code: z.enum(['content_rejected', 'provider_blocked', 'rate_limited', 'provider_unavailable', 'invalid_output']),
+  message: nonEmptyString.max(500),
+  retryable: z.boolean(),
+})
+
+const providerFailureSchema = z.strictObject({ ...providerMetadataFields, error: providerErrorSchema })
+export const analyseBriefResultSchema = z.union([
+  z.strictObject({ ...providerMetadataFields, analysis: briefAnalysisSchema }),
+  providerFailureSchema,
+])
+export const generateCopyResultSchema = z.union([
+  z.strictObject({ ...providerMetadataFields, copies: z.array(copyVariantSchema).min(1).max(10) }),
+  providerFailureSchema,
+])
+export const generateDirectionsResultSchema = z.union([
+  z.strictObject({ ...providerMetadataFields, directions: z.array(visualDirectionSchema).min(1).max(10) }),
+  providerFailureSchema,
+])
+export const generateImageResultSchema = z.union([
+  z.strictObject({
+    ...providerMetadataFields,
+    image: z.strictObject({
+      bytes: z.instanceof(Uint8Array),
+      mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+      width: z.number().int().positive().max(4_096),
+      height: z.number().int().positive().max(4_096),
+    }),
+  }),
+  providerFailureSchema,
+])
+
+export const analyseBriefRequestSchema = z.strictObject({})
+export const copyGenerationRequestSchema = z.strictObject({})
+export const directionGenerationRequestSchema = z.strictObject({})
+export const imageGenerationRequestSchema = z.strictObject({
+  directionId: nonEmptyString,
+  width: z.number().int().min(64).max(4_096),
+  height: z.number().int().min(64).max(4_096),
+})
+export const copySelectionRequestSchema = z.strictObject({ copyId: nonEmptyString })
+export const directionSelectionRequestSchema = z.strictObject({ directionId: nonEmptyString })
+
+export const generationResultMetadataSchema = z.union([
+  z.strictObject({ analysis: briefAnalysisSchema }),
+  z.strictObject({ copySetId: nonEmptyString, copies: z.array(copyVariantSchema) }),
+  z.strictObject({ directions: z.array(visualDirectionSchema) }),
+  z.strictObject({ image: z.strictObject({
+    mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+    width: z.number().int().positive().max(4_096),
+    height: z.number().int().positive().max(4_096),
+    byteSize: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  }) }),
+])
+
+export const generationJobDetailsSchema = generationJobSchema.extend({
+  result: generationResultMetadataSchema.nullable(),
+  errorCode: nonEmptyString.nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+})
+
+export const generationCommandResponseSchema = z.strictObject({
+  job: generationJobDetailsSchema,
+  requestId: requestIdSchema,
+})
+
+export const generationJobResponseSchema = z.strictObject({
+  ...generationJobDetailsSchema.shape,
+  requestId: requestIdSchema,
+})

@@ -14,6 +14,9 @@ import { createAuditRepository } from './auditRepository.js'
 import { createIdempotencyRepository } from './idempotencyRepository.js'
 import { createWorkflowService } from '../services/workflowService.js'
 import { createIdempotencyService } from '../services/idempotencyService.js'
+import { createGenerationControlPlane } from './generationJobRepository.js'
+import { createGenerationService } from '../services/generationService.js'
+import { createMockProvider } from '../providers/mockProvider.js'
 import { buildApp } from '../app.js'
 import { hashCanonical } from '../../shared/canonicalJson.js'
 import { createAuthenticator } from '../auth/verifyToken.js'
@@ -109,8 +112,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(6)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql'])
+    expect(tracked.rows).toHaveLength(7)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -209,11 +212,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql'])
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
     expect((await pool.query('SELECT disabled, disabled_at FROM users WHERE id = $1', [actorId])).rows[0])
@@ -1086,5 +1089,210 @@ describe('idempotency coordination', () => {
       .toEqual({ kind: 'conflict' })
     await pool.end()
     pools.delete(pool)
+  })
+})
+
+describe('persisted generation control plane', () => {
+  async function generationHarness({ budget = 1_000_000, limit = 3, disabled = false, provider = createMockProvider(), now = new Date('2026-09-04T10:00:00Z'), timeoutMs = 50 } = {}) {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    const campaign = await insertCampaign(pool, actorId, { id: randomUUID() })
+    await createSettingsRepository(pool).update({
+      expectedRevision: 0, provider: 'mock', model: 'mock-v1', region: 'europe-west6',
+      dailyBudgetMicrounits: budget, perStepRegenerationLimit: limit, generationDisabled: disabled, updatedBy: actorId,
+    })
+    let currentTime = now
+    const controlPlane = createGenerationControlPlane({ pool, clock: () => currentTime, providerNames: ['mock'] })
+    const service = createGenerationService({
+      pool, controlPlane, providers: { mock: provider }, timeoutMs, clock: () => currentTime,
+    })
+    return {
+      pool, actor: { id: actorId, role: 'marketer', disabled: false }, campaign, provider, service, controlPlane,
+      setTime(value) { currentTime = value },
+    }
+  }
+
+  test('persists service-owned jobs, brief metadata, copy sets, and exact idempotent responses', async () => {
+    const harness = await generationHarness()
+    const analysed = await harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'brief-key', input: {} })
+    const copied = await harness.service.generateCopy({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'copy-key', input: {} })
+    const replay = await harness.service.generateCopy({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'copy-key', input: {} })
+
+    expect(analysed.body.job).toMatchObject({ status: 'succeeded', step: 'brief_analysis', provider: 'mock', actualCostMicrounits: 80 })
+    expect(copied.body.job).toMatchObject({ status: 'succeeded', step: 'copy', actualCostMicrounits: 240, result: { copySetId: expect.any(String), copies: expect.any(Array) } })
+    expect(replay).toEqual({ ...copied, replayed: true })
+    expect((await harness.pool.query('SELECT candidates FROM copy_sets WHERE generation_job_id = $1', [copied.body.job.id])).rows[0].candidates).toEqual(copied.body.job.result.copies)
+    expect((await harness.pool.query('SELECT dispatch_state, response_body FROM generation_jobs WHERE id = $1', [copied.body.job.id])).rows[0])
+      .toMatchObject({ dispatch_state: 'dispatched', response_body: copied.body })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('conflicts when a generation idempotency key is reused with changed input', async () => {
+    const baseProvider = createMockProvider()
+    const generateImage = vi.fn(baseProvider.generateImage)
+    const provider = { ...baseProvider, generateImage }
+    const harness = await generationHarness({ provider })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('direction-input', $1, 'Clean focus', 'Soft daylight on a clean desk.', 'pending')`,
+      [harness.campaign.id],
+    )
+
+    await harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'image-input',
+      input: { directionId: 'direction-input', width: 1200, height: 628 },
+    })
+    await expect(harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'image-input',
+      input: { directionId: 'direction-input', width: 1080, height: 1080 },
+    })).rejects.toMatchObject({ code: 'idempotency_conflict' })
+
+    expect(generateImage).toHaveBeenCalledOnce()
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('serializes concurrent UTC-day reservations so requests cannot overspend', async () => {
+    const baseProvider = createMockProvider()
+    const provider = { ...baseProvider, analyseBrief: vi.fn(baseProvider.analyseBrief) }
+    const analyseSpy = provider.analyseBrief
+    const first = await generationHarness({ budget: 1_000, provider })
+    const secondCampaign = await insertCampaign(first.pool, first.actor.id)
+
+    const outcomes = await Promise.allSettled([
+      first.service.analyseBrief({ actor: first.actor, campaignId: first.campaign.id, idempotencyKey: 'concurrent-a', input: {} }),
+      first.service.analyseBrief({ actor: first.actor, campaignId: secondCampaign.id, idempotencyKey: 'concurrent-b', input: {} }),
+    ])
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.status === 'rejected')[0].reason).toMatchObject({ code: 'over_budget' })
+    expect(analyseSpy).toHaveBeenCalledOnce()
+    expect((await first.pool.query("SELECT count(*)::int AS count FROM generation_jobs WHERE budget_day = DATE '2026-09-04'")).rows[0].count).toBe(1)
+    await first.pool.end()
+    pools.delete(first.pool)
+  })
+
+  test('makes concurrent same-key callers wait for and replay the original provider result', async () => {
+    const baseProvider = createMockProvider()
+    const analyseBrief = vi.fn(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      return baseProvider.analyseBrief(...args)
+    })
+    const provider = { ...baseProvider, analyseBrief }
+    const harness = await generationHarness({ budget: 10_000, provider, timeoutMs: 200 })
+
+    const [first, concurrent] = await Promise.all([
+      harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'one-call', input: {} }),
+      harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'one-call', input: {} }),
+    ])
+
+    expect(first.status).toBe(201)
+    expect(concurrent.status).toBe(201)
+    expect(concurrent.body).toEqual(first.body)
+    expect(analyseBrief).toHaveBeenCalledOnce()
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('uses UTC calendar-day boundaries for budget reservations', async () => {
+    const harness = await generationHarness({ budget: 1_000, limit: 5, now: new Date('2026-09-04T23:59:59.900Z') })
+    await harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'day-one', input: {} })
+    await expect(harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'same-day', input: {} }))
+      .rejects.toMatchObject({ code: 'over_budget' })
+    harness.setTime(new Date('2026-09-05T00:00:00.100Z'))
+    await expect(harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'day-two', input: {} }))
+      .resolves.toMatchObject({ body: { job: { status: 'succeeded' } } })
+    expect((await harness.pool.query('SELECT budget_day::text AS day FROM generation_jobs ORDER BY budget_day')).rows.map((row) => row.day)).toEqual(['2026-09-04', '2026-09-05'])
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('normalizes kill-switch and regeneration-cap failures before any provider call', async () => {
+    const baseProvider = createMockProvider()
+    const provider = { ...baseProvider, analyseBrief: vi.fn(baseProvider.analyseBrief) }
+    const analyseSpy = provider.analyseBrief
+    const killed = await generationHarness({ disabled: true, provider })
+    await expect(killed.service.analyseBrief({ actor: killed.actor, campaignId: killed.campaign.id, idempotencyKey: 'killed', input: {} }))
+      .rejects.toMatchObject({ code: 'kill_switch_active' })
+    expect(analyseSpy).not.toHaveBeenCalled()
+    expect((await killed.pool.query('SELECT count(*)::int AS count FROM generation_jobs')).rows[0].count).toBe(0)
+    await killed.pool.end()
+    pools.delete(killed.pool)
+
+    await resetDatabase()
+    const migrationPool = makePool()
+    await runMigrations({ pool: migrationPool })
+    await migrationPool.end()
+    pools.delete(migrationPool)
+    const capped = await generationHarness({ limit: 0, provider })
+    await expect(capped.service.analyseBrief({ actor: capped.actor, campaignId: capped.campaign.id, idempotencyKey: 'capped', input: {} }))
+      .rejects.toMatchObject({ code: 'regeneration_cap_reached' })
+    expect(analyseSpy).not.toHaveBeenCalled()
+    expect((await capped.pool.query('SELECT count(*)::int AS count FROM generation_jobs')).rows[0].count).toBe(0)
+    await capped.pool.end()
+    pools.delete(capped.pool)
+  })
+
+  test('persists ambiguous calls as unknown, retains their full reservation, and never redispatches the key', async () => {
+    const baseProvider = createMockProvider()
+    const call = vi.fn(() => new Promise(() => {}))
+    const provider = { ...baseProvider, analyseBrief: call }
+    const harness = await generationHarness({ provider, timeoutMs: 10, budget: 1_000 })
+
+    const first = await harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'ambiguous', input: {} })
+    const retry = await harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'ambiguous', input: {} })
+
+    expect(first.body.job).toMatchObject({ status: 'unknown', reservedCostMicrounits: 1_000, actualCostMicrounits: null })
+    expect(retry).toEqual({ ...first, replayed: true })
+    expect(call).toHaveBeenCalledOnce()
+    await expect(harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'new-key', input: {} }))
+      .rejects.toMatchObject({ code: 'over_budget' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('derives unknown after a simulated crash following persisted dispatch and never calls the provider on retry', async () => {
+    const baseProvider = createMockProvider()
+    const provider = { ...baseProvider, analyseBrief: vi.fn(baseProvider.analyseBrief) }
+    const harness = await generationHarness({ provider, budget: 2_000, timeoutMs: 10 })
+    const prepared = await harness.controlPlane.prepareGeneration({
+      actor: harness.actor, campaignId: harness.campaign.id, step: 'brief_analysis', input: {}, idempotencyKey: 'crashed',
+      jobId: 'crashed-job', ownerToken: 'dead-process', maxCostMicrounits: 1_000,
+      startedAt: new Date('2026-09-04T10:00:00.000Z'), timeoutAt: new Date('2026-09-04T10:00:00.010Z'),
+    })
+    expect(prepared.kind).toBe('owner')
+    expect(await harness.controlPlane.markDispatched({ jobId: 'crashed-job', ownerToken: 'dead-process', dispatchedAt: new Date('2026-09-04T10:00:00.001Z') })).toBe(true)
+    harness.setTime(new Date('2026-09-04T10:00:01.000Z'))
+
+    const retry = await harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'crashed', input: {} })
+
+    expect(retry.body.job).toMatchObject({ id: 'crashed-job', status: 'unknown', reservedCostMicrounits: 1_000, actualCostMicrounits: null })
+    expect(provider.analyseBrief).not.toHaveBeenCalled()
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('runs copy and direction selections through pure workflow transitions with revision and audit in one transaction', async () => {
+    const harness = await generationHarness({ budget: 1_000_000 })
+    await harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'analysis', input: {} })
+    const copied = await harness.service.generateCopy({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'copy', input: {} })
+    const selectedCopy = await harness.service.selectCopy({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 0, input: { copyId: copied.body.job.result.copies[0].id } })
+    const directions = await harness.service.generateDirections({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'directions', input: {} })
+    const direction = directions.body.job.result.directions[0]
+    await harness.pool.query(
+      `INSERT INTO assets (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id)
+       VALUES ($1, $2, 'direction', $3, 'image/png', 1, 1200, 628, $4, 'generation', $5)`,
+      ['preview-1', harness.campaign.id, `campaigns/${harness.campaign.id}/preview-1.png`, 'a'.repeat(64), directions.body.job.id],
+    )
+    await harness.pool.query("UPDATE visual_directions SET status = 'ready', preview_asset_id = 'preview-1' WHERE id = $1", [direction.id])
+    const selectedDirection = await harness.service.selectDirection({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 1, input: { directionId: direction.id } })
+
+    expect(selectedCopy).toMatchObject({ status: 'copy_ready', revision: 1, selectedCopyId: copied.body.job.result.copySetId })
+    expect(selectedDirection).toMatchObject({ status: 'direction_selected', revision: 2, selectedDirectionId: direction.id })
+    expect((await harness.pool.query("SELECT action FROM audit_events WHERE action IN ('campaign.copy_selected', 'campaign.direction_selected') ORDER BY created_at, action")).rows.map((row) => row.action).sort())
+      .toEqual(['campaign.copy_selected', 'campaign.direction_selected'])
+    await harness.pool.end()
+    pools.delete(harness.pool)
   })
 })

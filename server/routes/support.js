@@ -32,6 +32,17 @@ export function parseIfMatch(request) {
   return revision
 }
 
+export function parseIdempotencyKey(request) {
+  const value = request.headers['idempotency-key']
+  if (value === undefined) {
+    throw new PublicApiError(428, 'precondition_required', 'An Idempotency-Key header is required')
+  }
+  if (typeof value !== 'string' || !/^[\x21-\x7e]{1,255}$/.test(value)) {
+    throw new PublicApiError(400, 'invalid_idempotency_key', 'Idempotency-Key must be 1-255 visible ASCII characters without whitespace')
+  }
+  return value
+}
+
 export function setRevisionEtag(reply, resource) {
   reply.header('etag', `"${resource.revision}"`)
   return resource

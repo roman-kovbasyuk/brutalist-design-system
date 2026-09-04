@@ -4,6 +4,9 @@ import { loadConfig } from './config.js'
 import { runMigrations } from './db/migrate.js'
 import { createPool } from './db/pool.js'
 import { createWorkflowService } from './services/workflowService.js'
+import { createGenerationService } from './services/generationService.js'
+import { createGenerationControlPlane } from './repositories/generationJobRepository.js'
+import { createMockProvider } from './providers/mockProvider.js'
 
 const productionDependencies = {
   buildApp,
@@ -11,6 +14,9 @@ const productionDependencies = {
   createFirebaseTokenVerifier,
   createPool,
   createWorkflowService,
+  createGenerationControlPlane,
+  createGenerationService,
+  createMockProvider,
   runMigrations,
 }
 
@@ -20,6 +26,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
   const pool = resolved.createPool({ connectionString: config.databaseUrl })
   let app
   let tokenVerifier
+  let generationProvider
   let closePromise
 
   const close = () => {
@@ -29,6 +36,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
         for (const operation of [
           () => app?.close?.(),
           () => tokenVerifier?.close?.(),
+          () => generationProvider?.close?.(),
           () => pool.end(),
         ]) {
           try {
@@ -46,6 +54,13 @@ export async function createServerRuntime({ environment = process.env, dependenc
   try {
     await resolved.runMigrations({ pool })
     const workflowService = resolved.createWorkflowService({ pool })
+    generationProvider = resolved.createMockProvider()
+    const generationControlPlane = resolved.createGenerationControlPlane({ pool, providerNames: ['mock'] })
+    const generationService = resolved.createGenerationService({
+      pool,
+      controlPlane: generationControlPlane,
+      providers: { mock: generationProvider },
+    })
     tokenVerifier = resolved.createFirebaseTokenVerifier({ projectId: config.firebaseProjectId })
     const resolveActor = resolved.createAuthenticator({ pool, tokenVerifier })
     app = resolved.buildApp({
@@ -55,6 +70,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       },
       resolveActor,
       workflowService,
+      generationService,
     })
     return { app, close, config }
   } catch (error) {

@@ -8,11 +8,20 @@ describe('production server composition', () => {
     const app = { close: vi.fn(async () => { calls.push('app.close') }) }
     const verifier = { verify: vi.fn(), close: vi.fn(async () => { calls.push('verifier.close') }) }
     const workflowService = { kind: 'workflow' }
+    const generationControlPlane = { kind: 'generation-control-plane' }
+    const generationProvider = {
+      analyseBrief: vi.fn(), generateCopy: vi.fn(), generateDirections: vi.fn(), generateImage: vi.fn(),
+      close: vi.fn(async () => { calls.push('provider.close') }),
+    }
+    const generationService = { kind: 'generation' }
     const resolveActor = vi.fn()
     const dependencies = {
       createPool: vi.fn(() => pool),
       runMigrations: vi.fn(async () => { calls.push('migrate') }),
       createWorkflowService: vi.fn(() => workflowService),
+      createGenerationControlPlane: vi.fn(() => generationControlPlane),
+      createMockProvider: vi.fn(() => generationProvider),
+      createGenerationService: vi.fn(() => generationService),
       createFirebaseTokenVerifier: vi.fn(() => verifier),
       createAuthenticator: vi.fn(() => resolveActor),
       buildApp: vi.fn((input) => { calls.push('buildApp'); return app }),
@@ -25,13 +34,18 @@ describe('production server composition', () => {
 
     expect(calls.slice(0, 2)).toEqual(['migrate', 'buildApp'])
     expect(dependencies.createWorkflowService).toHaveBeenCalledWith({ pool })
+    expect(dependencies.createGenerationControlPlane).toHaveBeenCalledWith({ pool, providerNames: ['mock'] })
+    expect(dependencies.createGenerationService).toHaveBeenCalledWith({
+      pool, controlPlane: generationControlPlane, providers: { mock: generationProvider },
+    })
     expect(dependencies.createFirebaseTokenVerifier).toHaveBeenCalledWith({ projectId: 'banner-project' })
     expect(dependencies.createAuthenticator).toHaveBeenCalledWith(expect.objectContaining({ pool, tokenVerifier: verifier }))
-    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService }))
+    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService, generationService }))
     await runtime.close()
     await runtime.close()
     expect(app.close).toHaveBeenCalledOnce()
     expect(verifier.close).toHaveBeenCalledOnce()
+    expect(generationProvider.close).toHaveBeenCalledOnce()
     expect(pool.end).toHaveBeenCalledOnce()
   })
 
