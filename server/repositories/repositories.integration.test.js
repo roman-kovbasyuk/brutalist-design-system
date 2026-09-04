@@ -1106,7 +1106,7 @@ describe('persisted generation control plane', () => {
     budget = 1_000_000, limit = 3, disabled = false, provider = createMockProvider(),
     model = 'mock-v1', region = 'europe-west6',
     providerRegistry = { mock: [{ model: 'mock-v1', region: 'europe-west6' }] },
-    imageResultSink, controlPlaneOptions = {}, advanceClockOnWait = false,
+    controlPlaneOptions = {}, advanceClockOnWait = false,
     now = new Date('2026-09-04T10:00:00Z'), timeoutMs = 50,
   } = {}) {
     const pool = makePool()
@@ -1121,13 +1121,13 @@ describe('persisted generation control plane', () => {
     const waitOptions = advanceClockOnWait ? {
       wait: async (duration) => {
         waits.push(duration)
+        if (waits.length > 10) throw new Error('Generation polling did not converge')
         currentTime = new Date(currentTime.getTime() + duration)
       },
     } : {}
     const controlPlane = createGenerationControlPlane({ pool, clock: () => currentTime, providerRegistry, ...waitOptions, ...controlPlaneOptions })
     const service = createGenerationService({
       pool, controlPlane, providers: { mock: provider }, timeoutMs, clock: () => currentTime,
-      ...(imageResultSink ? { imageResultSink } : {}),
     })
     return {
       pool, actor: { id: actorId, role: 'marketer', disabled: false }, campaign, provider, service, controlPlane, waits,
@@ -1151,32 +1151,56 @@ describe('persisted generation control plane', () => {
     pools.delete(harness.pool)
   })
 
-  test('conflicts when a generation idempotency key is reused with changed input', async () => {
+  test('replays a stored image outcome before the unavailable gate and conflicts on changed input', async () => {
     const baseProvider = createMockProvider()
     const generateImage = vi.fn(baseProvider.generateImage)
     const provider = { ...baseProvider, generateImage }
-    const harness = await generationHarness({
-      provider,
-      imageResultSink: { accept: vi.fn(async ({ image }) => ({
-        assetId: 'asset-image-input', mimeType: image.mimeType, width: image.width, height: image.height, byteSize: image.bytes.byteLength,
-      })) },
-    })
+    const harness = await generationHarness({ provider })
     await harness.pool.query(
       `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
        VALUES ('direction-input', $1, 'Clean focus', 'Soft daylight on a clean desk.', 'pending')`,
       [harness.campaign.id],
     )
 
-    await harness.service.generateImage({
+    const prepared = await harness.controlPlane.prepareGeneration({
+      actor: harness.actor, campaignId: harness.campaign.id, step: 'image', idempotencyKey: 'image-input',
+      input: { directionId: 'direction-input', width: 1200, height: 628 }, jobId: 'legacy-image-job', ownerToken: 'legacy-owner',
+      maxCostMicrounits: 250_000, startedAt: new Date('2026-09-04T10:00:00.000Z'), timeoutAt: new Date('2026-09-04T10:00:00.050Z'),
+    })
+    await harness.controlPlane.markDispatched({ jobId: prepared.job.id, ownerToken: prepared.ownerToken, dispatchedAt: new Date('2026-09-04T10:00:00.001Z') })
+    const stored = await harness.controlPlane.completeProviderResult({
+      jobId: prepared.job.id, ownerToken: prepared.ownerToken, status: 'blocked', safety: { verdict: 'blocked', categories: ['mock_policy'] },
+      usage: { inputUnits: 1, outputUnits: 0 }, actualCostMicrounits: 0, resultMetadata: null,
+      errorCode: 'provider_blocked', completedAt: new Date('2026-09-04T10:00:00.002Z'),
+    })
+
+    await expect(harness.service.generateImage({
       actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'image-input',
       input: { directionId: 'direction-input', width: 1200, height: 628 },
-    })
+    })).resolves.toEqual({ ...stored, replayed: true })
     await expect(harness.service.generateImage({
       actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'image-input',
       input: { directionId: 'direction-input', width: 1080, height: 1080 },
     })).rejects.toMatchObject({ code: 'idempotency_conflict' })
 
-    expect(generateImage).toHaveBeenCalledOnce()
+    expect(generateImage).not.toHaveBeenCalled()
+    expect((await harness.pool.query("SELECT count(*)::int AS count FROM generation_jobs WHERE step = 'image'")).rows[0].count).toBe(1)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rejects a new image command without creating a reservation or calling the provider', async () => {
+    const baseProvider = createMockProvider()
+    const provider = { ...baseProvider, generateImage: vi.fn(baseProvider.generateImage) }
+    const harness = await generationHarness({ provider })
+
+    await expect(harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'new-image',
+      input: { directionId: 'missing-direction', width: 1200, height: 628 },
+    })).rejects.toMatchObject({ code: 'image_storage_unavailable', statusCode: 503 })
+
+    expect(provider.generateImage).not.toHaveBeenCalled()
+    expect((await harness.pool.query("SELECT count(*)::int AS count FROM generation_jobs WHERE step = 'image'")).rows[0].count).toBe(0)
     await harness.pool.end()
     pools.delete(harness.pool)
   })
@@ -1238,6 +1262,29 @@ describe('persisted generation control plane', () => {
     expect(harness.waits).toEqual([10, 10, 5])
     expect((await harness.pool.query("SELECT status, response_status FROM generation_jobs WHERE id = 'wait-deadline-job'")).rows[0])
       .toEqual({ status: 'unknown', response_status: 202 })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('stores unknown at the deadline when a dispatch loser waits on a replacement owner that never dispatches', async () => {
+    const harness = await generationHarness({ advanceClockOnWait: true, timeoutMs: 25 })
+    await harness.controlPlane.prepareGeneration({
+      actor: harness.actor, campaignId: harness.campaign.id, step: 'brief_analysis', input: {}, idempotencyKey: 'lost-owner-deadline',
+      jobId: 'lost-owner-job', ownerToken: 'first-owner', maxCostMicrounits: 1_000,
+      startedAt: new Date('2026-09-04T10:00:00.000Z'), timeoutAt: new Date('2026-09-04T10:00:00.025Z'),
+    })
+    await harness.controlPlane.prepareGeneration({
+      actor: harness.actor, campaignId: harness.campaign.id, step: 'brief_analysis', input: {}, idempotencyKey: 'lost-owner-deadline',
+      jobId: 'unused-job-id', ownerToken: 'replacement-owner', maxCostMicrounits: 1_000,
+      startedAt: new Date('2026-09-04T10:00:00.000Z'), timeoutAt: new Date('2026-09-04T10:00:00.025Z'),
+    })
+
+    const response = await harness.controlPlane.waitForResult({ jobId: 'lost-owner-job' })
+
+    expect(response).toMatchObject({ status: 202, body: { job: { id: 'lost-owner-job', status: 'unknown' } } })
+    expect(harness.waits).toEqual([10, 10, 5])
+    expect((await harness.pool.query("SELECT status, dispatch_state, response_status FROM generation_jobs WHERE id = 'lost-owner-job'")).rows[0])
+      .toEqual({ status: 'unknown', dispatch_state: 'not_dispatched', response_status: 202 })
     await harness.pool.end()
     pools.delete(harness.pool)
   })

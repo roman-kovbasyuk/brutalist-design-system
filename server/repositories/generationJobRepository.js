@@ -171,6 +171,27 @@ export function createGenerationControlPlane({
   if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) throw new TypeError('Generation polling interval must be positive')
 
   return {
+    async preflightGeneration({ actor, campaignId, step, input, idempotencyKey }) {
+      const fingerprint = hashCanonical({ step, input })
+      const existing = await pool.query(
+        `SELECT * FROM generation_jobs
+         WHERE actor_id = $1 AND method = 'POST' AND campaign_id = $2 AND step = $3 AND idempotency_key = $4`,
+        [actor.id, campaignId, step, idempotencyKey],
+      )
+      const row = existing.rows[0]
+      if (!row) return { kind: 'new' }
+      if (row.request_fingerprint !== fingerprint) {
+        conflict('idempotency_conflict', 'This idempotency key was already used with a different request')
+      }
+      if (row.response_status != null && row.response_body != null) {
+        return { kind: 'replay', response: { status: row.response_status, body: row.response_body } }
+      }
+      if (row.status === 'pending' && row.dispatch_state === 'not_dispatched') {
+        return { kind: 'claimable', job: mapJob(row) }
+      }
+      return { kind: 'in_progress', job: mapJob(row) }
+    },
+
     async prepareGeneration({ actor, campaignId, step, input, idempotencyKey, jobId, ownerToken, maxCostMicrounits, startedAt, timeoutAt }) {
       const fingerprint = hashCanonical({ step, input })
       return transaction(pool, async (client) => {
@@ -265,11 +286,13 @@ export function createGenerationControlPlane({
             return { response: { status: row.response_status, body: row.response_body } }
           }
           const observedAt = clock()
-          if (row.status === 'pending' && row.dispatch_state === 'dispatched' && row.timeout_at <= observedAt) {
+          if (row.status === 'pending' && row.timeout_at <= observedAt) {
             const expired = await client.query(
               `UPDATE generation_jobs
-               SET status = 'unknown', unknown_reason = 'timeout_recovery', updated_at = $2
-               WHERE id = $1 AND status = 'pending' AND dispatch_state = 'dispatched'
+               SET status = 'unknown',
+                   unknown_reason = CASE WHEN dispatch_state = 'dispatched' THEN 'timeout_recovery' ELSE 'ownership_recovery_timeout' END,
+                   updated_at = $2
+               WHERE id = $1 AND status = 'pending'
                RETURNING *`,
               [jobId, observedAt],
             )

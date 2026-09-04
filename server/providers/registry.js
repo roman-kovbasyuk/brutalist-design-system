@@ -14,8 +14,8 @@ export function assertProviderRegistry(registry) {
     throw new TypeError('A server-controlled generation provider registry is required')
   }
   for (const [provider, tuples] of Object.entries(registry)) {
-    if (!provider.trim() || !Array.isArray(tuples) || tuples.length === 0) {
-      throw new TypeError('Every registered provider requires at least one model and region tuple')
+    if (!provider.trim() || !Array.isArray(tuples) || tuples.length !== 1) {
+      throw new TypeError('Every registered provider requires exactly one model and region tuple')
     }
     for (const tuple of tuples) {
       if (typeof tuple?.model !== 'string' || !tuple.model.trim() || typeof tuple?.region !== 'string' || !tuple.region.trim()) {

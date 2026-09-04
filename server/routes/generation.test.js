@@ -8,6 +8,15 @@ const pendingJob = {
   result: { copySetId: 'set-1', copies: [] }, errorCode: null,
   createdAt: '2026-09-04T10:00:00.000Z', updatedAt: '2026-09-04T10:00:01.000Z',
 }
+const blockedImageJob = {
+  ...pendingJob,
+  step: 'image',
+  status: 'blocked',
+  safety: { verdict: 'blocked', categories: ['mock_policy'] },
+  actualCostMicrounits: 0,
+  result: null,
+  errorCode: 'provider_blocked',
+}
 const campaign = {
   id: 'campaign-1', title: 'Launch', brief: { product: 'Course', audience: 'Learners', objective: 'Signups', offer: '', locale: 'en', notes: '' },
   status: 'copy_ready', revision: 1, selectedCopyId: 'set-1', selectedDirectionId: null, compositionId: null,
@@ -20,7 +29,7 @@ function makeApp({ role = 'marketer', generation = {} } = {}) {
     analyseBrief: vi.fn(async () => ({ status: 201, body: { job: { ...pendingJob, step: 'brief_analysis' } } })),
     generateCopy: vi.fn(async () => ({ status: 201, body: { job: pendingJob } })),
     generateDirections: vi.fn(async () => ({ status: 201, body: { job: { ...pendingJob, step: 'directions' } } })),
-    generateImage: vi.fn(async () => ({ status: 201, body: { job: { ...pendingJob, step: 'image', result: { image: { assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } } } })),
+    generateImage: vi.fn(async () => ({ status: 201, body: { job: blockedImageJob } })),
     getJob: vi.fn(async () => pendingJob),
     selectCopy: vi.fn(async () => campaign),
     selectDirection: vi.fn(async () => ({ ...campaign, status: 'direction_selected', revision: 2, selectedDirectionId: 'direction-1' })),
@@ -68,8 +77,8 @@ describe('generation and selection routes', () => {
     await app.close()
   })
 
-  test('allows authenticated job reads but never serializes temporary image bytes', async () => {
-    const { app } = makeApp({ role: 'designer', generation: { getJob: vi.fn(async () => ({ ...pendingJob, step: 'image', result: { image: { assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } })) } })
+  test('allows authenticated reads of blocked image jobs without provider bytes', async () => {
+    const { app } = makeApp({ role: 'designer', generation: { getJob: vi.fn(async () => blockedImageJob) } })
     const response = await app.inject({ method: 'GET', url: '/api/v1/generation-jobs/job-1' })
 
     expect(response.statusCode).toBe(200)

@@ -6,7 +6,6 @@ import {
   directionGenerationRequestSchema,
   directionSelectionRequestSchema,
   imageGenerationRequestSchema,
-  imageResultSinkReceiptSchema,
 } from '../../shared/contracts.js'
 import { invokeProvider, validateGenerationProvider } from '../providers/provider.js'
 
@@ -71,19 +70,11 @@ function normalizedResult(step, result) {
       status: result.safety.verdict === 'blocked' || result.error?.code === 'content_rejected' ? 'blocked' : 'failed',
       resultMetadata: null,
       errorCode: result.error?.code ?? 'provider_blocked',
-      temporaryImage: undefined,
     }
   }
   if (step === 'brief_analysis') return { status: 'succeeded', resultMetadata: { analysis: result.analysis } }
   if (step === 'copy') return { status: 'succeeded', resultMetadata: { copies: result.copies } }
   if (step === 'directions') return { status: 'succeeded', resultMetadata: { directions: result.directions } }
-  if (step === 'image') {
-    return {
-      status: 'succeeded',
-      resultMetadata: null,
-      image: result.image,
-    }
-  }
   throw new TypeError(`Unknown generation step ${step}`)
 }
 
@@ -96,26 +87,34 @@ export function createGenerationService({
   clock = () => new Date(),
   timeoutMs = 30_000,
   maximumCosts = defaultMaximumCosts,
-  imageResultSink,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   if (!controlPlane || typeof controlPlane.prepareGeneration !== 'function') throw new TypeError('A generation control plane is required')
+  if (typeof controlPlane.preflightGeneration !== 'function' || typeof controlPlane.waitForResult !== 'function') {
+    throw new TypeError('The generation control plane must support replay preflight and result coordination')
+  }
   if (!providers || typeof providers !== 'object') throw new TypeError('Generation providers are required')
   for (const provider of Object.values(providers)) validateGenerationProvider(provider)
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new TypeError('Generation timeout must be a positive safe integer')
   for (const [step, cost] of Object.entries(maximumCosts)) {
     if (!Number.isSafeInteger(cost) || cost < 0) throw new TypeError(`Maximum cost for ${step} must be a non-negative safe integer`)
   }
-  if (imageResultSink !== undefined && typeof imageResultSink?.accept !== 'function') {
-    throw new TypeError('An image result sink must implement accept')
-  }
-
   const execute = async ({ actor, campaignId, idempotencyKey, input, step, schema }) => {
     requireRole(actor, editorRoles)
     const command = validate(schema, input ?? {})
     validateIdempotencyKey(idempotencyKey)
     if (typeof campaignId !== 'string' || campaignId.trim().length === 0) throw new GenerationServiceError(400, 'invalid_campaign_id', 'Campaign id is required')
-    if (step === 'image' && !imageResultSink) {
+
+    const preflight = await controlPlane.preflightGeneration({ actor, campaignId, step, input: command, idempotencyKey })
+    if (preflight.kind === 'replay') return { ...preflight.response, replayed: true }
+    if (preflight.kind === 'in_progress') {
+      return { ...(await controlPlane.waitForResult({ jobId: preflight.job.id })), replayed: true }
+    }
+    if (preflight.kind !== 'new' && preflight.kind !== 'claimable') {
+      throw new TypeError(`Unknown generation preflight result ${preflight.kind}`)
+    }
+
+    if (step === 'image') {
       throw new GenerationServiceError(503, 'image_storage_unavailable', 'Image generation is unavailable until durable storage is configured')
     }
 
@@ -136,9 +135,6 @@ export function createGenerationService({
     })
     if (prepared.kind === 'replay') return { ...prepared.response, replayed: true }
     if (prepared.kind === 'in_progress') {
-      if (typeof controlPlane.waitForResult !== 'function') {
-        return { status: 202, body: { job: prepared.job }, replayed: true }
-      }
       return { ...(await controlPlane.waitForResult({ jobId: prepared.job.id })), replayed: true }
     }
     if (prepared.kind !== 'owner') throw new TypeError(`Unknown generation preparation result ${prepared.kind}`)
@@ -149,8 +145,7 @@ export function createGenerationService({
       dispatchedAt: safeInstant(clock(), 'Generation clock'),
     })
     if (!dispatched) {
-      const observed = await controlPlane.getJob({ actor, jobId: prepared.job.id })
-      return { status: 202, body: { job: observed }, replayed: true }
+      return { ...(await controlPlane.waitForResult({ jobId: prepared.job.id })), replayed: true }
     }
 
     const provider = providers[prepared.job.provider]
@@ -197,31 +192,6 @@ export function createGenerationService({
     }
 
     const normalized = normalizedResult(step, result)
-    if (normalized.image) {
-      let receipt
-      try {
-        receipt = imageResultSinkReceiptSchema.parse(await imageResultSink.accept({
-          actor,
-          campaignId,
-          jobId: prepared.job.id,
-          image: normalized.image,
-          signal: abortController.signal,
-        }))
-        if (receipt.mimeType !== normalized.image.mimeType
-          || receipt.width !== normalized.image.width
-          || receipt.height !== normalized.image.height
-          || receipt.byteSize !== normalized.image.bytes.byteLength) {
-          throw new TypeError('Durable image receipt does not match the provider result')
-        }
-        normalized.resultMetadata = { image: receipt }
-      } catch {
-        return controlPlane.markUnknown({
-          jobId: prepared.job.id,
-          ownerToken: prepared.ownerToken,
-          reason: 'image_storage_ambiguous',
-        })
-      }
-    }
     const committed = await controlPlane.completeProviderResult({
       jobId: prepared.job.id,
       ownerToken: prepared.ownerToken,
