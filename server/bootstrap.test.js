@@ -14,6 +14,8 @@ describe('production server composition', () => {
       close: vi.fn(async () => { calls.push('provider.close') }),
     }
     const generationService = { kind: 'generation' }
+    const assetService = { kind: 'asset-service' }
+    const assetStore = { close: vi.fn(async () => { calls.push('assetStore.close') }) }
     const providerRegistry = { gemini: [{ model: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu' }] }
     const resolveActor = vi.fn()
     const dependencies = {
@@ -24,6 +26,9 @@ describe('production server composition', () => {
       createMockProvider: vi.fn(() => { throw new Error('production must not create mock') }),
       createGeminiProvider: vi.fn(() => generationProvider),
       createGenerationService: vi.fn(() => generationService),
+      createGcsAssetStore: vi.fn(() => assetStore),
+      createMemoryAssetStore: vi.fn(() => { throw new Error('production must not create memory storage') }),
+      createAssetService: vi.fn(() => assetService),
       createGenerationProviderRegistry: vi.fn(() => providerRegistry),
       reconcileGenerationSettings: vi.fn(async () => { calls.push('reconcile') }),
       createFirebaseTokenVerifier: vi.fn(() => verifier),
@@ -36,6 +41,7 @@ describe('production server composition', () => {
         NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio', FIREBASE_PROJECT_ID: 'banner-project',
         GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project', VERTEX_AI_LOCATION: 'eu',
         GEMINI_TEXT_MODEL: 'gemini-3.5-flash', GEMINI_IMAGE_MODEL: 'gemini-3.1-flash-image',
+        ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-private-assets', GCS_PROJECT_ID: 'banner-project',
       },
       dependencies,
     })
@@ -54,16 +60,20 @@ describe('production server composition', () => {
     expect(dependencies.createMockProvider).not.toHaveBeenCalled()
     expect(dependencies.createGenerationControlPlane).toHaveBeenCalledWith({ pool, providerRegistry })
     expect(dependencies.createGenerationService).toHaveBeenCalledWith({
-      pool, controlPlane: generationControlPlane, providers: { gemini: generationProvider },
+      pool, controlPlane: generationControlPlane, providers: { gemini: generationProvider }, assetStore,
     })
+    expect(dependencies.createGcsAssetStore).toHaveBeenCalledWith({ bucketName: 'banner-private-assets', projectId: 'banner-project' })
+    expect(dependencies.createMemoryAssetStore).not.toHaveBeenCalled()
+    expect(dependencies.createAssetService).toHaveBeenCalledWith({ pool, assetStore })
     expect(dependencies.createFirebaseTokenVerifier).toHaveBeenCalledWith({ projectId: 'banner-project' })
     expect(dependencies.createAuthenticator).toHaveBeenCalledWith(expect.objectContaining({ pool, tokenVerifier: verifier }))
-    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService, generationService }))
+    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService, generationService, assetService }))
     await runtime.close()
     await runtime.close()
     expect(app.close).toHaveBeenCalledOnce()
     expect(verifier.close).toHaveBeenCalledOnce()
     expect(generationProvider.close).toHaveBeenCalledOnce()
+    expect(assetStore.close).toHaveBeenCalledOnce()
     expect(pool.end).toHaveBeenCalledOnce()
   })
 
@@ -73,6 +83,7 @@ describe('production server composition', () => {
     const verifier = { verify: vi.fn(), close: vi.fn(async () => {}) }
     const provider = { analyseBrief: vi.fn(), generateCopy: vi.fn(), generateDirections: vi.fn(), generateImage: vi.fn() }
     const providerRegistry = { mock: [{ model: 'mock-v1', region: 'europe-west6' }] }
+    const assetStore = { close: vi.fn(async () => {}) }
     const dependencies = {
       createPool: vi.fn(() => pool), runMigrations: vi.fn(async () => {}), createWorkflowService: vi.fn(() => ({})),
       createGenerationControlPlane: vi.fn(() => ({})), createGenerationService: vi.fn(() => ({})),
@@ -80,6 +91,7 @@ describe('production server composition', () => {
       createGeminiProvider: vi.fn(), createFirebaseTokenVerifier: vi.fn(() => verifier),
       createAuthenticator: vi.fn(() => vi.fn()), buildApp: vi.fn(() => app),
       reconcileGenerationSettings: vi.fn(),
+      createMemoryAssetStore: vi.fn(() => assetStore), createGcsAssetStore: vi.fn(), createAssetService: vi.fn(() => ({})),
     }
 
     const runtime = await createServerRuntime({ environment: { NODE_ENV: 'test', GENERATION_PROVIDER: 'mock' }, dependencies })
@@ -87,6 +99,8 @@ describe('production server composition', () => {
     expect(dependencies.createMockProvider).toHaveBeenCalledWith({ model: 'mock-v1', region: 'europe-west6' })
     expect(dependencies.createGeminiProvider).not.toHaveBeenCalled()
     expect(dependencies.createGenerationService).toHaveBeenCalledWith(expect.objectContaining({ providers: { mock: provider } }))
+    expect(dependencies.createMemoryAssetStore).toHaveBeenCalledOnce()
+    expect(dependencies.createGenerationService).toHaveBeenCalledWith(expect.objectContaining({ assetStore }))
     expect(dependencies.reconcileGenerationSettings).toHaveBeenCalledWith({
       pool, providerRegistry, selected: { provider: 'mock', model: 'mock-v1', region: 'europe-west6' },
     })
@@ -119,6 +133,7 @@ describe('production server composition', () => {
       environment: {
         NODE_ENV: nodeEnv, GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
         VERTEX_AI_LOCATION: 'eu', GEMINI_TEXT_MODEL: 'gemini-3.5-flash', GEMINI_IMAGE_MODEL: 'gemini-3.1-flash-image',
+        ASSET_STORE: 'memory',
       },
       dependencies,
     })
@@ -144,6 +159,7 @@ describe('production server composition', () => {
       environment: {
         NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio', FIREBASE_PROJECT_ID: 'banner-project',
         GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
+        ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-private-assets', GCS_PROJECT_ID: 'banner-project',
       },
       dependencies,
     })).rejects.toThrow('migration failed')

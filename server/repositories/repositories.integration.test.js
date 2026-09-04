@@ -23,6 +23,7 @@ import { createAuthenticator } from '../auth/verifyToken.js'
 import { createGenerationProviderRegistry } from '../providers/registry.js'
 import { reconcileGenerationSettings } from '../services/generationSettingsService.js'
 import { createServerRuntime } from '../bootstrap.js'
+import { createMemoryAssetStore } from '../storage/memoryAssetStore.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
@@ -115,8 +116,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(8)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql'])
+    expect(tracked.rows).toHaveLength(9)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -223,11 +224,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql'])
     expect((await pool.query("SELECT budget_day::text AS day FROM generation_jobs WHERE id = 'legacy-generation-job'")).rows[0].day).toBe('2025-12-31')
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
@@ -1186,6 +1187,7 @@ describe('persisted generation control plane', () => {
     providerRegistry = { mock: [{ model: 'mock-v1', region: 'europe-west6' }] },
     controlPlaneOptions = {}, advanceClockOnWait = false,
     now = new Date('2026-09-04T10:00:00Z'), timeoutMs = 50,
+    assetStore,
   } = {}) {
     const pool = makePool()
     const actorId = await insertUser(pool)
@@ -1206,6 +1208,7 @@ describe('persisted generation control plane', () => {
     const controlPlane = createGenerationControlPlane({ pool, clock: () => currentTime, providerRegistry, ...waitOptions, ...controlPlaneOptions })
     const service = createGenerationService({
       pool, controlPlane, providers: { [providerName]: provider }, timeoutMs, clock: () => currentTime,
+      ...(assetStore ? { assetStore } : {}),
     })
     return {
       pool, actor: { id: actorId, role: 'marketer', disabled: false }, campaign, provider, service, controlPlane, waits,
@@ -1268,6 +1271,41 @@ describe('persisted generation control plane', () => {
     expect((await harness.pool.query('SELECT candidates FROM copy_sets WHERE generation_job_id = $1', [copied.body.job.id])).rows[0].candidates).toEqual(copied.body.job.result.copies)
     expect((await harness.pool.query('SELECT dispatch_state, response_body FROM generation_jobs WHERE id = $1', [copied.body.job.id])).rows[0])
       .toMatchObject({ dispatch_state: 'dispatched', response_body: copied.body })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('commits generated asset metadata, ready direction link, and the byte-free idempotent response atomically', async () => {
+    const baseProvider = createMockProvider()
+    const generateImage = vi.fn(baseProvider.generateImage)
+    const assetStore = createMemoryAssetStore()
+    const harness = await generationHarness({ provider: { ...baseProvider, generateImage }, assetStore, timeoutMs: 500 })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('durable-direction', $1, 'Clean focus', 'Soft daylight on a clean desk.', 'pending')`,
+      [harness.campaign.id],
+    )
+
+    const first = await harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'durable-image-key',
+      input: { directionId: 'durable-direction', width: 800, height: 800 },
+    })
+    const replay = await harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'durable-image-key',
+      input: { directionId: 'durable-direction', width: 800, height: 800 },
+    })
+    const assetId = first.body.job.result.image.asset.id
+    const asset = (await harness.pool.query('SELECT * FROM assets WHERE id = $1', [assetId])).rows[0]
+    const direction = (await harness.pool.query('SELECT status, preview_asset_id FROM visual_directions WHERE id = $1', ['durable-direction'])).rows[0]
+    const stored = await assetStore.get({ objectKey: asset.object_key })
+
+    expect(first).toMatchObject({ status: 201, body: { job: { status: 'succeeded', result: { image: { asset: { id: assetId, kind: 'direction', sha256: asset.sha256 }, width: 800, height: 800 } } } } })
+    expect(replay).toEqual({ ...first, replayed: true })
+    expect(direction).toEqual({ status: 'ready', preview_asset_id: assetId })
+    expect(createHash('sha256').update(stored).digest('hex')).toBe(asset.sha256)
+    expect(asset).toMatchObject({ campaign_id: harness.campaign.id, generation_job_id: first.body.job.id, source: 'generation', byte_size: String(stored.length) })
+    expect(JSON.stringify(first.body)).not.toContain('bytes')
+    expect(generateImage).toHaveBeenCalledOnce()
     await harness.pool.end()
     pools.delete(harness.pool)
   })

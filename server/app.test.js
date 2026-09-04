@@ -105,6 +105,9 @@ describe('Banner Studio API shell', () => {
       FIREBASE_PROJECT_ID: 'banner-project',
       GENERATION_PROVIDER: 'gemini',
       VERTEX_AI_PROJECT_ID: 'banner-project',
+      ASSET_STORE: 'gcs',
+      GCS_ASSET_BUCKET: 'banner-private-assets',
+      GCS_PROJECT_ID: 'banner-project',
     }
 
     expect(() => loadConfig(productionEnvironment))
@@ -119,6 +122,12 @@ describe('Banner Studio API shell', () => {
       .toThrow('GENERATION_PROVIDER=gemini is required in production')
     expect(() => loadConfig({ ...productionEnvironment, VERTEX_AI_PROJECT_ID: '' }))
       .toThrow('VERTEX_AI_PROJECT_ID is required for Gemini')
+    expect(() => loadConfig({ ...productionEnvironment, ASSET_STORE: 'memory' }))
+      .toThrow('ASSET_STORE=gcs is required in production')
+    expect(() => loadConfig({ ...productionEnvironment, GCS_ASSET_BUCKET: '' }))
+      .toThrow('GCS_ASSET_BUCKET is required for GCS asset storage')
+    expect(() => loadConfig({ ...productionEnvironment, GCS_PROJECT_ID: '' }))
+      .toThrow('GCS_PROJECT_ID is required for GCS asset storage')
     expect(() => loadConfig({ ...productionEnvironment, PORT: 'invalid' }))
       .toThrow('PORT must be an integer between 1 and 65535')
     expect(() => loadConfig({ ...productionEnvironment, PORT: databaseUrl }))
@@ -153,6 +162,11 @@ describe('Banner Studio API shell', () => {
         location: 'eu',
         textModel: 'gemini-3.5-flash',
         imageModel: 'gemini-3.1-flash-image',
+      },
+      assetStorage: {
+        provider: 'memory',
+        bucket: undefined,
+        projectId: undefined,
       },
     })
     expect(Object.isFrozen(config)).toBe(true)

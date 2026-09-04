@@ -10,6 +10,9 @@ import { createMockProvider } from './providers/mockProvider.js'
 import { createGeminiProvider } from './providers/geminiProvider.js'
 import { createGenerationProviderRegistry } from './providers/registry.js'
 import { reconcileGenerationSettings } from './services/generationSettingsService.js'
+import { createMemoryAssetStore } from './storage/memoryAssetStore.js'
+import { createGcsAssetStore } from './storage/gcsAssetStore.js'
+import { createAssetService } from './services/assetService.js'
 
 const productionDependencies = {
   buildApp,
@@ -23,6 +26,9 @@ const productionDependencies = {
   createGeminiProvider,
   createGenerationProviderRegistry,
   reconcileGenerationSettings,
+  createMemoryAssetStore,
+  createGcsAssetStore,
+  createAssetService,
   runMigrations,
 }
 
@@ -33,6 +39,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
   let app
   let tokenVerifier
   let generationProvider
+  let assetStore
   let closePromise
 
   const close = () => {
@@ -43,6 +50,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
           () => app?.close?.(),
           () => tokenVerifier?.close?.(),
           () => generationProvider?.close?.(),
+          () => assetStore?.close?.(),
           () => pool.end(),
         ]) {
           try {
@@ -86,10 +94,15 @@ export async function createServerRuntime({ environment = process.env, dependenc
       pool,
       providerRegistry,
     })
+    assetStore = config.assetStorage.provider === 'gcs'
+      ? resolved.createGcsAssetStore({ bucketName: config.assetStorage.bucket, projectId: config.assetStorage.projectId })
+      : resolved.createMemoryAssetStore()
+    const assetService = resolved.createAssetService({ pool, assetStore })
     const generationService = resolved.createGenerationService({
       pool,
       controlPlane: generationControlPlane,
       providers: { [config.generation.provider]: generationProvider },
+      assetStore,
     })
     tokenVerifier = resolved.createFirebaseTokenVerifier({ projectId: config.firebaseProjectId })
     const resolveActor = resolved.createAuthenticator({ pool, tokenVerifier })
@@ -101,6 +114,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       resolveActor,
       workflowService,
       generationService,
+      assetService,
     })
     return { app, close, config }
   } catch (error) {

@@ -375,6 +375,75 @@ export function createGenerationControlPlane({
       })
     },
 
+    async completeGeneratedImage({ jobId, ownerToken, directionId, asset, safety, usage, actualCostMicrounits, completedAt }) {
+      safeMicrounits(actualCostMicrounits, 'actualCostMicrounits')
+      return transaction(pool, async (client) => {
+        const locked = await client.query('SELECT * FROM generation_jobs WHERE id = $1 FOR UPDATE', [jobId])
+        const current = locked.rows[0]
+        if (!current || current.owner_token !== ownerToken || current.status !== 'pending' || current.dispatch_state !== 'dispatched') {
+          if (current?.response_status != null && current?.response_body != null) {
+            return { status: current.response_status, body: current.response_body }
+          }
+          conflict('generation_owner_lost', 'Generation result ownership was lost')
+        }
+        if (current.step !== 'image' || current.campaign_id !== asset.campaignId || current.id !== asset.generationJobId) {
+          conflict('generation_asset_mismatch', 'Generated asset does not match its image job')
+        }
+        if (current.input_snapshot?.direction?.id !== directionId) {
+          conflict('generation_direction_mismatch', 'Generated image direction does not match its job snapshot')
+        }
+        if (BigInt(actualCostMicrounits) > BigInt(current.reserved_cost_microunits)) {
+          conflict('generation_cost_exceeded_reservation', 'Provider cost exceeded its reservation')
+        }
+        const campaign = await client.query('SELECT id FROM campaigns WHERE id = $1 FOR UPDATE', [current.campaign_id])
+        if (campaign.rowCount !== 1) conflict('not_found', 'Campaign was not found', 404)
+        const direction = await client.query(
+          `SELECT id FROM visual_directions
+           WHERE id = $1 AND campaign_id = $2 AND stale = false AND status = 'pending' AND preview_asset_id IS NULL
+           FOR UPDATE`,
+          [directionId, current.campaign_id],
+        )
+        if (direction.rowCount !== 1) conflict('generation_direction_mismatch', 'Generated image direction is not pending for this campaign')
+        await client.query(
+          `INSERT INTO assets
+             (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id, version_id, created_at)
+           VALUES ($1, $2, 'direction', $3, $4, $5, $6, $7, $8, 'generation', $9, NULL, $10)`,
+          [asset.id, asset.campaignId, asset.objectKey, asset.mimeType, asset.byteSize, asset.width, asset.height, asset.sha256, jobId, completedAt],
+        )
+        await client.query(
+          `UPDATE visual_directions SET status = 'ready', preview_asset_id = $2 WHERE id = $1`,
+          [directionId, asset.id],
+        )
+        const persistedResult = {
+          image: {
+            asset: { id: asset.id, kind: 'direction', sha256: asset.sha256 },
+            mimeType: asset.mimeType,
+            width: asset.width,
+            height: asset.height,
+            byteSize: asset.byteSize,
+          },
+        }
+        const updated = await client.query(
+          `UPDATE generation_jobs
+           SET status = 'succeeded', safety = $3, usage = $4, actual_cost_microunits = $5,
+               result_metadata = $6, error_code = NULL, completed_at = $7, updated_at = $7
+           WHERE id = $1 AND owner_token = $2
+           RETURNING *`,
+          [jobId, ownerToken, safety, usage, actualCostMicrounits, persistedResult, completedAt],
+        )
+        return storeResponse(client, updated.rows[0], 201)
+      })
+    },
+
+    async registerOrphanUpload({ objectKey, campaignId, reason }) {
+      await pool.query(
+        `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (object_key) DO NOTHING`,
+        [idGenerator(), objectKey, campaignId, reason],
+      )
+    },
+
     async markUnknown({ jobId, ownerToken, reason }) {
       return transaction(pool, async (client) => {
         const updated = await client.query(

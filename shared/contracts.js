@@ -354,12 +354,17 @@ const interimImageResultMetadataSchema = z.strictObject({
   image: z.strictObject({ assetId: nonEmptyString, ...historicalImageMetadataFields }),
 })
 
+const durableImageResultMetadataSchema = z.strictObject({
+  image: z.strictObject({ asset: assetReferenceSchema, ...historicalImageMetadataFields }),
+})
+
 export const generationResultMetadataSchema = z.union([
   z.strictObject({ analysis: briefAnalysisSchema }),
   z.strictObject({ copySetId: nonEmptyString, copies: z.array(copyVariantSchema) }),
   z.strictObject({ directions: z.array(visualDirectionSchema) }),
   legacyImageResultMetadataSchema,
   interimImageResultMetadataSchema,
+  durableImageResultMetadataSchema,
 ])
 
 export const generationJobDetailsSchema = generationJobSchema.extend({

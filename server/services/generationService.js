@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   analyseBriefRequestSchema,
   copyGenerationRequestSchema,
@@ -8,6 +8,8 @@ import {
   imageGenerationRequestSchema,
 } from '../../shared/contracts.js'
 import { invokeProvider, validateGenerationProvider } from '../providers/provider.js'
+import { decodeGeneratedImage } from '../images/imageDecoder.js'
+import { validateAssetStore } from '../storage/assetStore.js'
 
 const editorRoles = ['marketer', 'admin']
 const readerRoles = ['marketer', 'designer', 'admin']
@@ -78,15 +80,55 @@ function normalizedResult(step, result) {
   throw new TypeError(`Unknown generation step ${step}`)
 }
 
+const extensionsByMimeType = Object.freeze({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' })
+
+function hashedPathSegment(value) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function generatedObjectKey({ campaignId, jobId, assetId, mimeType }) {
+  if (typeof assetId !== 'string' || !/^[A-Za-z0-9._-]{1,200}$/.test(assetId)) throw new TypeError('Generated asset id is unsafe')
+  const extension = extensionsByMimeType[mimeType]
+  if (!extension) throw new TypeError('Generated image MIME type is unsupported')
+  return `campaigns/${hashedPathSegment(campaignId)}/generation-jobs/${hashedPathSegment(jobId)}/generated/${assetId}.${extension}`
+}
+
+async function beforeDeadline(operation, timeoutAt, clock, code) {
+  const remaining = safeInstant(timeoutAt, 'Generation timeout').getTime() - safeInstant(clock(), 'Generation clock').getTime()
+  if (remaining <= 0) {
+    Promise.resolve(operation).catch(() => {})
+    const error = new Error('Generation durability deadline elapsed')
+    error.code = code
+    throw error
+  }
+  let timer
+  try {
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error('Generation durability deadline elapsed')
+          error.code = code
+          reject(error)
+        }, remaining)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export function createGenerationService({
   pool,
   controlPlane,
   providers,
   idGenerator = randomUUID,
   ownerTokenGenerator = randomUUID,
+  assetIdGenerator = randomUUID,
   clock = () => new Date(),
   timeoutMs = 30_000,
   maximumCosts = defaultMaximumCosts,
+  assetStore,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   if (!controlPlane || typeof controlPlane.prepareGeneration !== 'function') throw new TypeError('A generation control plane is required')
@@ -95,6 +137,12 @@ export function createGenerationService({
   }
   if (!providers || typeof providers !== 'object') throw new TypeError('Generation providers are required')
   for (const provider of Object.values(providers)) validateGenerationProvider(provider)
+  if (assetStore !== undefined) {
+    validateAssetStore(assetStore)
+    if (typeof controlPlane.completeGeneratedImage !== 'function' || typeof controlPlane.registerOrphanUpload !== 'function') {
+      throw new TypeError('Durable image generation requires image persistence and orphan registration')
+    }
+  }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new TypeError('Generation timeout must be a positive safe integer')
   for (const [step, cost] of Object.entries(maximumCosts)) {
     if (!Number.isSafeInteger(cost) || cost < 0) throw new TypeError(`Maximum cost for ${step} must be a non-negative safe integer`)
@@ -114,7 +162,7 @@ export function createGenerationService({
       throw new TypeError(`Unknown generation preflight result ${preflight.kind}`)
     }
 
-    if (step === 'image') {
+    if (step === 'image' && !assetStore) {
       throw new GenerationServiceError(503, 'image_storage_unavailable', 'Image generation is unavailable until durable storage is configured')
     }
 
@@ -189,6 +237,75 @@ export function createGenerationService({
       return controlPlane.markUnknown({
         jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'provider_identity_mismatch',
       })
+    }
+
+    if (step === 'image' && !result.error && result.safety.verdict !== 'blocked') {
+      const decoded = await decodeGeneratedImage(result.image.bytes, result.image.mimeType)
+      if (!decoded) {
+        return controlPlane.completeProviderResult({
+          jobId: prepared.job.id,
+          ownerToken: prepared.ownerToken,
+          status: 'failed',
+          safety: result.safety,
+          usage: result.usage,
+          actualCostMicrounits: result.actualCostMicrounits,
+          resultMetadata: null,
+          errorCode: 'invalid_output',
+          completedAt: safeInstant(clock(), 'Generation clock'),
+        })
+      }
+      const bytes = Buffer.from(decoded.bytes)
+      const assetId = assetIdGenerator()
+      const objectKey = generatedObjectKey({ campaignId, jobId: prepared.job.id, assetId, mimeType: decoded.mimeType })
+      const asset = {
+        id: assetId,
+        campaignId,
+        kind: 'direction',
+        objectKey,
+        mimeType: decoded.mimeType,
+        byteSize: bytes.length,
+        width: decoded.width,
+        height: decoded.height,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        source: 'generation',
+        generationJobId: prepared.job.id,
+        versionId: null,
+      }
+      try {
+        const stored = await beforeDeadline(
+          assetStore.put({ objectKey, bytes, contentType: decoded.mimeType }),
+          prepared.job.timeoutAt,
+          clock,
+          'asset_upload_timeout',
+        )
+        if (stored?.objectKey !== objectKey || stored?.byteSize !== bytes.length) throw new Error('Asset store response mismatch')
+      } catch {
+        await controlPlane.registerOrphanUpload({
+          objectKey, campaignId, reason: 'generation_image_upload_ambiguous',
+        }).catch(() => {})
+        return controlPlane.markUnknown({
+          jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_upload_ambiguous',
+        })
+      }
+      try {
+        return await beforeDeadline(controlPlane.completeGeneratedImage({
+          jobId: prepared.job.id,
+          ownerToken: prepared.ownerToken,
+          directionId: command.directionId,
+          asset,
+          safety: result.safety,
+          usage: result.usage,
+          actualCostMicrounits: result.actualCostMicrounits,
+          completedAt: safeInstant(clock(), 'Generation clock'),
+        }), prepared.job.timeoutAt, clock, 'asset_persistence_timeout')
+      } catch {
+        await controlPlane.registerOrphanUpload({
+          objectKey, campaignId, reason: 'generation_image_persistence_failed',
+        }).catch(() => {})
+        return controlPlane.markUnknown({
+          jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_persistence_ambiguous',
+        })
+      }
     }
 
     const normalized = normalizedResult(step, result)

@@ -2,6 +2,7 @@ import { GEMINI_IMAGE_MODELS, GEMINI_LOCATIONS, GEMINI_TEXT_MODELS } from './pro
 
 const validNodeEnvironments = new Set(['development', 'production', 'test'])
 const validGenerationProviders = new Set(['mock', 'gemini'])
+const validAssetStores = new Set(['memory', 'gcs'])
 
 function parsePort(value) {
   if (value === undefined) return 3000
@@ -52,6 +53,13 @@ export function loadConfig(environment) {
   if (!GEMINI_LOCATIONS.includes(vertexLocation)) throw new Error('VERTEX_AI_LOCATION must be an approved Gemini location')
   if (!GEMINI_TEXT_MODELS.includes(textModel)) throw new Error('GEMINI_TEXT_MODEL must be an approved Gemini text model')
   if (!GEMINI_IMAGE_MODELS.includes(imageModel)) throw new Error('GEMINI_IMAGE_MODEL must be an approved Gemini image model')
+  const assetStore = environment.ASSET_STORE?.trim() || 'memory'
+  if (!validAssetStores.has(assetStore)) throw new Error('ASSET_STORE must be an approved asset store')
+  if (nodeEnv === 'production' && assetStore !== 'gcs') throw new Error('ASSET_STORE=gcs is required in production')
+  const assetBucket = environment.GCS_ASSET_BUCKET?.trim()
+  const assetProjectId = environment.GCS_PROJECT_ID?.trim()
+  if (assetStore === 'gcs' && !assetBucket) throw new Error('GCS_ASSET_BUCKET is required for GCS asset storage')
+  if (assetStore === 'gcs' && !assetProjectId) throw new Error('GCS_PROJECT_ID is required for GCS asset storage')
 
   return Object.freeze({
     nodeEnv,
@@ -65,6 +73,11 @@ export function loadConfig(environment) {
       location: vertexLocation,
       textModel,
       imageModel,
+    }),
+    assetStorage: Object.freeze({
+      provider: assetStore,
+      bucket: assetBucket,
+      projectId: assetProjectId,
     }),
   })
 }
