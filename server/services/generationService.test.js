@@ -34,8 +34,7 @@ function harness(overrides = {}) {
       status: 201,
       body: { job: { ...succeeded, step: 'image', result: { image: { asset: { id: asset.id, kind: 'direction', sha256: asset.sha256 }, mimeType: asset.mimeType, width: asset.width, height: asset.height, byteSize: asset.byteSize } } } },
     })),
-    registerOrphanUpload: vi.fn(async () => {}),
-    markUnknown: vi.fn(async () => ({ status: 202, body: { job: { ...job, status: 'unknown', attempts: 1 } } })),
+    recoverGeneration: vi.fn(async () => ({ status: 202, body: { job: { ...job, status: 'unknown', attempts: 1 } } })),
     getJob: vi.fn(async () => succeeded),
     ...overrides.controlPlane,
   }
@@ -142,7 +141,10 @@ describe('generation service external-call recovery', () => {
     const result = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'corrupt-readback', input: { directionId: 'direction-1', width: 1200, height: 628 } })
 
     expect(result.body.job.status).toBe('unknown')
-    expect(controlPlane.registerOrphanUpload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'generation_image_readback_failed' }))
+    expect(controlPlane.recoverGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'asset_readback_failed',
+      orphan: expect.objectContaining({ reason: 'generation_image_readback_failed' }),
+    }))
     expect(controlPlane.completeGeneratedImage).not.toHaveBeenCalled()
   })
 
@@ -163,8 +165,9 @@ describe('generation service external-call recovery', () => {
     const result = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'object-exists', input: { directionId: 'direction-1', width: 1200, height: 628 } })
 
     expect(result.body.job.status).toBe('unknown')
-    expect(controlPlane.registerOrphanUpload).not.toHaveBeenCalled()
-    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'asset_object_exists' }))
+    expect(controlPlane.recoverGeneration).toHaveBeenCalledWith({
+      jobId: 'job-1', ownerToken: 'owner-1', reason: 'asset_object_exists',
+    })
   })
 
   test('does not start an upload after the persisted durability deadline has elapsed', async () => {
@@ -187,8 +190,9 @@ describe('generation service external-call recovery', () => {
 
     expect(result.body.job.status).toBe('unknown')
     expect(assetStore.put).not.toHaveBeenCalled()
-    expect(controlPlane.registerOrphanUpload).not.toHaveBeenCalled()
-    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'asset_upload_timeout' }))
+    expect(controlPlane.recoverGeneration).toHaveBeenCalledWith({
+      jobId: 'job-1', ownerToken: 'owner-1', reason: 'asset_upload_timeout',
+    })
   })
 
   test('marks an upload failure unknown without redispatching and registers the possible object for cleanup', async () => {
@@ -205,8 +209,10 @@ describe('generation service external-call recovery', () => {
     const result = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'upload-failure', input: { directionId: 'direction-1', width: 1200, height: 628 } })
 
     expect(result.body.job.status).toBe('unknown')
-    expect(controlPlane.registerOrphanUpload).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'campaign-1', reason: 'generation_image_upload_ambiguous' }))
-    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'asset_upload_ambiguous' }))
+    expect(controlPlane.recoverGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      jobId: 'job-1', ownerToken: 'owner-1', reason: 'asset_upload_ambiguous',
+      orphan: expect.objectContaining({ campaignId: 'campaign-1', reason: 'generation_image_upload_ambiguous' }),
+    }))
     expect(controlPlane.completeGeneratedImage).not.toHaveBeenCalled()
   })
 
@@ -228,8 +234,10 @@ describe('generation service external-call recovery', () => {
     const result = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'db-failure', input: { directionId: 'direction-1', width: 1200, height: 628 } })
 
     expect(result.body.job.status).toBe('unknown')
-    expect(controlPlane.registerOrphanUpload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'generation_image_persistence_failed' }))
-    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'asset_persistence_ambiguous' }))
+    expect(controlPlane.recoverGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'asset_persistence_ambiguous',
+      orphan: expect.objectContaining({ reason: 'generation_image_persistence_failed' }),
+    }))
   })
 
   test('reserves and persists dispatch before invoking a provider, then commits its validated result', async () => {
@@ -278,7 +286,7 @@ describe('generation service external-call recovery', () => {
 
     expect(outcome.body.job.status).toBe('unknown')
     expect(provider.generateCopy).toHaveBeenCalledOnce()
-    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ jobId: 'job-1', ownerToken: 'owner-1', reason: 'provider_timeout' }))
+    expect(controlPlane.recoverGeneration).toHaveBeenCalledWith(expect.objectContaining({ jobId: 'job-1', ownerToken: 'owner-1', reason: 'provider_timeout' }))
     expect(controlPlane.completeProviderResult).not.toHaveBeenCalled()
   })
 
@@ -291,14 +299,14 @@ describe('generation service external-call recovery', () => {
         prepareGeneration: vi.fn(async () => replay
           ? ({ kind: 'replay', response: unknown })
           : ({ kind: 'owner', ownerToken: 'owner-1', job, context: { brief, analysis: { summary: 'A course.', themes: [], warnings: [] } } })),
-        markUnknown: vi.fn(async () => { replay = true; return unknown }),
+        recoverGeneration: vi.fn(async () => { replay = true; return unknown }),
       },
     })
 
     expect((await service.generateCopy({ actor, campaignId: 'campaign-1', idempotencyKey: 'crash-key', input: {} })).body.job.status).toBe('unknown')
     expect((await service.generateCopy({ actor, campaignId: 'campaign-1', idempotencyKey: 'crash-key', input: {} })).body.job.status).toBe('unknown')
     expect(provider.generateCopy).toHaveBeenCalledOnce()
-    expect(controlPlane.markUnknown).toHaveBeenCalledOnce()
+    expect(controlPlane.recoverGeneration).toHaveBeenCalledOnce()
   })
 
 })

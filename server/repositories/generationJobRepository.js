@@ -118,6 +118,19 @@ function persistenceDeadlineError() {
   return error
 }
 
+function recoveryDeadlineError() {
+  const error = new Error('Generation recovery exceeded its database deadline')
+  error.code = 'generation_recovery_timeout'
+  return error
+}
+
+async function refreshTransactionDeadline(client, deadline) {
+  const observedAt = await databaseClock(client)
+  if (observedAt >= deadline) throw recoveryDeadlineError()
+  await setTransactionDeadline(client, deadline, observedAt)
+  return observedAt
+}
+
 function providerContextError(step) {
   const requirements = {
     copy: ['brief_analysis_required', 'Analyse the campaign brief before generating copy'],
@@ -200,12 +213,62 @@ export function createGenerationControlPlane({
   providerRegistry = generationProviderRegistry,
   wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
   pollIntervalMs = 10,
+  recoveryTimeoutMs = 250,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   assertProviderRegistry(providerRegistry)
   if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) throw new TypeError('Generation polling interval must be positive')
+  if (!Number.isSafeInteger(recoveryTimeoutMs) || recoveryTimeoutMs <= 0) throw new TypeError('Generation recovery timeout must be a positive integer')
+
+  const recoverGeneration = async ({ jobId, ownerToken, reason, orphan }) => transaction(pool, async (client) => {
+    const startedAt = await databaseClock(client)
+    const recoveryDeadline = new Date(startedAt.getTime() + recoveryTimeoutMs)
+    await setTransactionDeadline(client, recoveryDeadline, startedAt)
+
+    const locked = await client.query('SELECT * FROM generation_jobs WHERE id = $1 FOR UPDATE', [jobId])
+    const current = locked.rows[0]
+    await refreshTransactionDeadline(client, recoveryDeadline)
+    if (!current) conflict('generation_owner_lost', 'Generation result ownership was lost')
+
+    const response = current.response_status != null && current.response_body != null
+      ? { status: current.response_status, body: current.response_body }
+      : null
+    if (response?.status === 201) return response
+    if (!response && (current.owner_token !== ownerToken || current.status !== 'pending' || current.dispatch_state !== 'dispatched')) {
+      conflict('generation_owner_lost', 'Generation result ownership was lost')
+    }
+
+    if (orphan) {
+      if (orphan.campaignId !== current.campaign_id) {
+        conflict('generation_asset_mismatch', 'Generated asset recovery does not match its job')
+      }
+      await lockAssetObjectKey(client, orphan.objectKey)
+      await refreshTransactionDeadline(client, recoveryDeadline)
+      await client.query(
+        `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason)
+         SELECT $1, $2, $3, $4
+         WHERE NOT EXISTS (SELECT 1 FROM assets WHERE object_key = $2)
+         ON CONFLICT (object_key) DO NOTHING`,
+        [idGenerator(), orphan.objectKey, orphan.campaignId, orphan.reason],
+      )
+    }
+
+    if (response) return response
+    await refreshTransactionDeadline(client, recoveryDeadline)
+    const updated = await client.query(
+      `UPDATE generation_jobs
+       SET status = 'unknown', unknown_reason = $3, updated_at = $4
+       WHERE id = $1 AND owner_token = $2 AND status = 'pending' AND dispatch_state = 'dispatched'
+       RETURNING *`,
+      [jobId, ownerToken, reason, clock()],
+    )
+    if (updated.rowCount !== 1) conflict('generation_owner_lost', 'Generation result ownership was lost')
+    await refreshTransactionDeadline(client, recoveryDeadline)
+    return storeResponse(client, updated.rows[0], 202)
+  })
 
   return {
+    recoverGeneration,
     async preflightGeneration({ actor, campaignId, step, input, idempotencyKey }) {
       const fingerprint = hashCanonical({ step, input })
       const existing = await pool.query(
@@ -436,14 +499,7 @@ export function createGenerationControlPlane({
         }
         let observedAt = await databaseClock(client)
         if (current.timeout_at <= observedAt || current.timeout_at <= clock()) {
-          const expired = await client.query(
-            `UPDATE generation_jobs
-             SET status = 'unknown', unknown_reason = 'asset_persistence_timeout', updated_at = $2
-             WHERE id = $1 AND owner_token = $3 AND status = 'pending' AND dispatch_state = 'dispatched'
-             RETURNING *`,
-            [jobId, observedAt, ownerToken],
-          )
-          return storeResponse(client, expired.rows[0], 202)
+          throw persistenceDeadlineError()
         }
         await setTransactionDeadline(client, current.timeout_at, observedAt)
         const campaign = await client.query('SELECT id FROM campaigns WHERE id = $1 FOR UPDATE', [current.campaign_id])
@@ -458,14 +514,7 @@ export function createGenerationControlPlane({
         await lockAssetObjectKey(client, asset.objectKey)
         observedAt = await databaseClock(client)
         if (current.timeout_at <= observedAt || current.timeout_at <= clock()) {
-          const expired = await client.query(
-            `UPDATE generation_jobs
-             SET status = 'unknown', unknown_reason = 'asset_persistence_timeout', updated_at = $2
-             WHERE id = $1 AND owner_token = $3 AND status = 'pending' AND dispatch_state = 'dispatched'
-             RETURNING *`,
-            [jobId, observedAt, ownerToken],
-          )
-          return storeResponse(client, expired.rows[0], 202)
+          throw persistenceDeadlineError()
         }
         await setTransactionDeadline(client, current.timeout_at, observedAt)
         await client.query(
@@ -503,20 +552,6 @@ export function createGenerationControlPlane({
       })
     },
 
-    async registerOrphanUpload({ objectKey, campaignId, reason }) {
-      return transaction(pool, async (client) => {
-        await lockAssetObjectKey(client, objectKey)
-        const inserted = await client.query(
-          `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason)
-           SELECT $1, $2, $3, $4
-           WHERE NOT EXISTS (SELECT 1 FROM assets WHERE object_key = $2)
-           ON CONFLICT (object_key) DO NOTHING`,
-          [idGenerator(), objectKey, campaignId, reason],
-        )
-        return inserted.rowCount === 1
-      })
-    },
-
     async cleanupOrphanUpload({ orphanId, deleteObject, cleanedAt }) {
       if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
       return transaction(pool, async (client) => {
@@ -543,23 +578,7 @@ export function createGenerationControlPlane({
     },
 
     async markUnknown({ jobId, ownerToken, reason }) {
-      return transaction(pool, async (client) => {
-        const updated = await client.query(
-          `UPDATE generation_jobs
-           SET status = 'unknown', unknown_reason = $3, updated_at = $4
-           WHERE id = $1 AND owner_token = $2 AND status = 'pending' AND dispatch_state = 'dispatched'
-           RETURNING *`,
-          [jobId, ownerToken, reason, clock()],
-        )
-        if (updated.rowCount === 0) {
-          const current = await client.query('SELECT response_status, response_body FROM generation_jobs WHERE id = $1', [jobId])
-          if (current.rows[0]?.response_status != null && current.rows[0]?.response_body != null) {
-            return { status: current.rows[0].response_status, body: current.rows[0].response_body }
-          }
-          conflict('generation_owner_lost', 'Generation result ownership was lost')
-        }
-        return storeResponse(client, updated.rows[0], 202)
-      })
+      return recoverGeneration({ jobId, ownerToken, reason })
     },
 
     async getJob({ jobId }) {

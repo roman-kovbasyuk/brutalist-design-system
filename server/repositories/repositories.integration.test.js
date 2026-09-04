@@ -35,6 +35,21 @@ function makePool() {
   return pool
 }
 
+function observeSettlementWithin(promise, timeoutMs) {
+  let timer
+  const settled = promise.then(
+    (value) => ({ kind: 'fulfilled', value }),
+    (error) => ({ kind: 'rejected', error }),
+  )
+  const observed = Promise.race([
+    settled,
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ kind: 'deadline_ignored' }), timeoutMs)
+    }),
+  ]).finally(() => clearTimeout(timer))
+  return { observed, settled }
+}
+
 async function resetDatabase() {
   const pool = makePool()
   const result = await pool.query('SELECT current_database() AS name')
@@ -1424,18 +1439,20 @@ describe('persisted generation control plane', () => {
     pools.delete(harness.pool)
   })
 
-  test('cannot commit generated image success after its database row lock outlives the persisted deadline', async () => {
+  test('bounds image recovery when the job row stays locked after completion reaches its deadline', async () => {
     const assetStore = createMemoryAssetStore()
+    let releaseBlocker = async () => {}
     const harness = await generationHarness({
       assetStore,
-      timeoutMs: 80,
+      timeoutMs: 500,
       now: new Date(),
+      controlPlaneOptions: { recoveryTimeoutMs: 40 },
       decorateControlPlane: (controlPlane, { pool }) => ({
         ...controlPlane,
         async completeGeneratedImage(input) {
           const blocker = await pool.connect()
           let released = false
-          const release = async () => {
+          releaseBlocker = async () => {
             if (released) return
             released = true
             await blocker.query('ROLLBACK').catch(() => {})
@@ -1443,13 +1460,7 @@ describe('persisted generation control plane', () => {
           }
           await blocker.query('BEGIN')
           await blocker.query('SELECT id FROM generation_jobs WHERE id = $1 FOR UPDATE', [input.jobId])
-          const timer = setTimeout(() => { void release() }, 160)
-          try {
-            return await controlPlane.completeGeneratedImage(input)
-          } finally {
-            clearTimeout(timer)
-            await release()
-          }
+          throw Object.assign(new Error('image completion lock deadline elapsed'), { code: '55P03' })
         },
       }),
     })
@@ -1459,22 +1470,152 @@ describe('persisted generation control plane', () => {
       [harness.campaign.id],
     )
 
-    const result = await harness.service.generateImage({
+    const pending = harness.service.generateImage({
       actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'deadline-lock-image',
       input: { directionId: 'deadline-lock-direction', width: 800, height: 800 },
     })
+    const { observed, settled } = observeSettlementWithin(pending, 200)
+    const outcome = await observed
+    const rowWhileBlocked = (await harness.pool.query(
+      `SELECT status, response_status FROM generation_jobs
+       WHERE id = (SELECT id FROM generation_jobs WHERE idempotency_key = 'deadline-lock-image')`,
+    )).rows[0]
+    const orphanCountWhileBlocked = (await harness.pool.query('SELECT count(*)::int AS count FROM orphaned_uploads')).rows[0].count
+    await releaseBlocker()
+    await settled
 
-    expect(result).toMatchObject({ status: 202, body: { job: { status: 'unknown' } } })
+    expect(outcome).toMatchObject({
+      kind: 'rejected',
+      error: { statusCode: 503, code: 'generation_recovery_unavailable' },
+    })
+    expect(rowWhileBlocked).toEqual({ status: 'pending', response_status: null })
+    expect(orphanCountWhileBlocked).toBe(0)
     expect((await harness.pool.query('SELECT count(*)::int AS count FROM assets')).rows[0].count).toBe(0)
-    expect((await harness.pool.query(
-      'SELECT status, unknown_reason FROM generation_jobs WHERE id = $1',
-      [result.body.job.id],
-    )).rows[0]).toEqual({ status: 'unknown', unknown_reason: 'asset_persistence_timeout' })
-    const orphans = await harness.pool.query(
-      `SELECT o.object_key FROM orphaned_uploads o
-       WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.object_key = o.object_key)`,
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('keeps declined image completion recovery atomic when the object advisory lock stays contended', async () => {
+    const backingStore = createMemoryAssetStore()
+    let harness
+    let releaseBlocker = async () => {}
+    const assetStore = {
+      async put(input) {
+        const receipt = await backingStore.put(input)
+        const blocker = await harness.pool.connect()
+        let released = false
+        releaseBlocker = async () => {
+          if (released) return
+          released = true
+          await blocker.query('ROLLBACK').catch(() => {})
+          blocker.release()
+        }
+        await blocker.query('BEGIN')
+        await blocker.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [input.objectKey])
+        return receipt
+      },
+      async get(input) {
+        return backingStore.get(input)
+      },
+      delete: (input) => backingStore.delete(input),
+    }
+    harness = await generationHarness({
+      assetStore,
+      timeoutMs: 500,
+      now: new Date(),
+      controlPlaneOptions: { recoveryTimeoutMs: 40 },
+      decorateControlPlane: (controlPlane, { advanceClock }) => ({
+        ...controlPlane,
+        completeGeneratedImage(input) {
+          advanceClock(1_000)
+          return controlPlane.completeGeneratedImage(input)
+        },
+      }),
+    })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('recovery-object-lock-direction', $1, 'Clean focus', 'Soft daylight.', 'pending')`,
+      [harness.campaign.id],
     )
-    expect(orphans.rowCount).toBe(1)
+
+    const pending = harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'recovery-object-lock-image',
+      input: { directionId: 'recovery-object-lock-direction', width: 800, height: 800 },
+    })
+    const { observed, settled } = observeSettlementWithin(pending, 200)
+    const outcome = await observed
+    const rowWhileBlocked = (await harness.pool.query(
+      `SELECT status, response_status FROM generation_jobs WHERE idempotency_key = 'recovery-object-lock-image'`,
+    )).rows[0]
+    const orphanCountWhileBlocked = (await harness.pool.query('SELECT count(*)::int AS count FROM orphaned_uploads')).rows[0].count
+    await releaseBlocker()
+    await settled
+
+    expect(outcome).toMatchObject({
+      kind: 'rejected',
+      error: { statusCode: 503, code: 'generation_recovery_unavailable' },
+    })
+    expect(rowWhileBlocked).toEqual({ status: 'pending', response_status: null })
+    expect(orphanCountWhileBlocked).toBe(0)
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM assets')).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('bounds provider fallback recovery when the dispatched job row stays locked', async () => {
+    const baseProvider = createMockProvider()
+    let harness
+    let releaseBlocker = async () => {}
+    const provider = {
+      ...baseProvider,
+      async generateImage() {
+        const blocker = await harness.pool.connect()
+        let released = false
+        releaseBlocker = async () => {
+          if (released) return
+          released = true
+          await blocker.query('ROLLBACK').catch(() => {})
+          blocker.release()
+        }
+        await blocker.query('BEGIN')
+        await blocker.query(
+          `SELECT id FROM generation_jobs
+           WHERE idempotency_key = 'provider-recovery-lock-image' FOR UPDATE`,
+        )
+        throw new Error('provider acknowledgement is ambiguous')
+      },
+    }
+    harness = await generationHarness({
+      provider,
+      assetStore: createMemoryAssetStore(),
+      timeoutMs: 500,
+      now: new Date(),
+      controlPlaneOptions: { recoveryTimeoutMs: 40 },
+    })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('provider-recovery-lock-direction', $1, 'Clean focus', 'Soft daylight.', 'pending')`,
+      [harness.campaign.id],
+    )
+
+    const pending = harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'provider-recovery-lock-image',
+      input: { directionId: 'provider-recovery-lock-direction', width: 800, height: 800 },
+    })
+    const { observed, settled } = observeSettlementWithin(pending, 200)
+    const outcome = await observed
+    const rowWhileBlocked = (await harness.pool.query(
+      `SELECT status, response_status FROM generation_jobs WHERE idempotency_key = 'provider-recovery-lock-image'`,
+    )).rows[0]
+    await releaseBlocker()
+    await settled
+
+    expect(outcome).toMatchObject({
+      kind: 'rejected',
+      error: { statusCode: 503, code: 'generation_recovery_unavailable' },
+    })
+    expect(rowWhileBlocked).toEqual({ status: 'pending', response_status: null })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM orphaned_uploads')).rows[0].count).toBe(0)
     await harness.pool.end()
     pools.delete(harness.pool)
   })

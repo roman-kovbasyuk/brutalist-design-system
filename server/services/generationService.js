@@ -137,20 +137,32 @@ export function createGenerationService({
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   if (!controlPlane || typeof controlPlane.prepareGeneration !== 'function') throw new TypeError('A generation control plane is required')
-  if (typeof controlPlane.preflightGeneration !== 'function' || typeof controlPlane.waitForResult !== 'function') {
+  if (typeof controlPlane.preflightGeneration !== 'function' || typeof controlPlane.waitForResult !== 'function'
+    || typeof controlPlane.recoverGeneration !== 'function') {
     throw new TypeError('The generation control plane must support replay preflight and result coordination')
   }
   if (!providers || typeof providers !== 'object') throw new TypeError('Generation providers are required')
   for (const provider of Object.values(providers)) validateGenerationProvider(provider)
   if (assetStore !== undefined) {
     validateAssetStore(assetStore)
-    if (typeof controlPlane.completeGeneratedImage !== 'function' || typeof controlPlane.registerOrphanUpload !== 'function') {
-      throw new TypeError('Durable image generation requires image persistence and orphan registration')
+    if (typeof controlPlane.completeGeneratedImage !== 'function') {
+      throw new TypeError('Durable image generation requires image persistence')
     }
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new TypeError('Generation timeout must be a positive safe integer')
   for (const [step, cost] of Object.entries(maximumCosts)) {
     if (!Number.isSafeInteger(cost) || cost < 0) throw new TypeError(`Maximum cost for ${step} must be a non-negative safe integer`)
+  }
+  const recoverGeneration = async (input) => {
+    try {
+      return await controlPlane.recoverGeneration(input)
+    } catch {
+      throw new GenerationServiceError(
+        503,
+        'generation_recovery_unavailable',
+        'Generation result recovery is temporarily unavailable',
+      )
+    }
   }
   const execute = async ({ actor, campaignId, idempotencyKey, input, step, schema }) => {
     requireRole(actor, editorRoles)
@@ -203,7 +215,7 @@ export function createGenerationService({
 
     const provider = providers[prepared.job.provider]
     if (!provider) {
-      return controlPlane.markUnknown({
+      return recoverGeneration({
         jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'provider_configuration_missing',
       })
     }
@@ -229,7 +241,7 @@ export function createGenerationService({
     try {
       result = await Promise.race([providerCall, timeout])
     } catch (error) {
-      return controlPlane.markUnknown({
+      return recoverGeneration({
         jobId: prepared.job.id,
         ownerToken: prepared.ownerToken,
         reason: error?.code === 'provider_timeout' || error?.name === 'AbortError' ? 'provider_timeout' : 'provider_call_ambiguous',
@@ -239,7 +251,7 @@ export function createGenerationService({
     }
 
     if (result.provider !== prepared.job.provider || result.model !== prepared.job.model || result.region !== prepared.job.region) {
-      return controlPlane.markUnknown({
+      return recoverGeneration({
         jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'provider_identity_mismatch',
       })
     }
@@ -286,20 +298,18 @@ export function createGenerationService({
         if (stored?.objectKey !== objectKey || stored?.byteSize !== bytes.length) throw new Error('Asset store response mismatch')
       } catch (error) {
         if (error?.code === 'object_exists') {
-          return controlPlane.markUnknown({
+          return recoverGeneration({
             jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_object_exists',
           })
         }
         if (error?.code === 'asset_upload_timeout' && error.operationStarted === false) {
-          return controlPlane.markUnknown({
+          return recoverGeneration({
             jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_upload_timeout',
           })
         }
-        await controlPlane.registerOrphanUpload({
-          objectKey, campaignId, reason: 'generation_image_upload_ambiguous',
-        }).catch(() => {})
-        return controlPlane.markUnknown({
+        return recoverGeneration({
           jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_upload_ambiguous',
+          orphan: { objectKey, campaignId, reason: 'generation_image_upload_ambiguous' },
         })
       }
       try {
@@ -315,11 +325,9 @@ export function createGenerationService({
           throw new Error('Stored asset readback did not match the provider bytes')
         }
       } catch {
-        await controlPlane.registerOrphanUpload({
-          objectKey, campaignId, reason: 'generation_image_readback_failed',
-        }).catch(() => {})
-        return controlPlane.markUnknown({
+        return recoverGeneration({
           jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_readback_failed',
+          orphan: { objectKey, campaignId, reason: 'generation_image_readback_failed' },
         })
       }
       try {
@@ -334,21 +342,23 @@ export function createGenerationService({
           completedAt: safeInstant(clock(), 'Generation clock'),
         })
         if (completion.status === 201) return completion
-        await controlPlane.registerOrphanUpload({
-          objectKey, campaignId, reason: 'generation_image_persistence_declined',
-        }).catch(() => {})
-        return completion
+        return recoverGeneration({
+          jobId: prepared.job.id,
+          ownerToken: prepared.ownerToken,
+          reason: 'asset_persistence_declined',
+          orphan: { objectKey, campaignId, reason: 'generation_image_persistence_declined' },
+        })
       } catch (error) {
         const timedOut = persistenceTimedOut(error)
-        await controlPlane.registerOrphanUpload({
-          objectKey, campaignId, reason: timedOut
-            ? 'generation_image_persistence_timeout'
-            : 'generation_image_persistence_failed',
-        }).catch(() => {})
-        return controlPlane.markUnknown({
+        return recoverGeneration({
           jobId: prepared.job.id,
           ownerToken: prepared.ownerToken,
           reason: timedOut ? 'asset_persistence_timeout' : 'asset_persistence_ambiguous',
+          orphan: {
+            objectKey,
+            campaignId,
+            reason: timedOut ? 'generation_image_persistence_timeout' : 'generation_image_persistence_failed',
+          },
         })
       }
     }
