@@ -22,6 +22,7 @@ import { hashCanonical } from '../../shared/canonicalJson.js'
 import { createAuthenticator } from '../auth/verifyToken.js'
 import { createGenerationProviderRegistry } from '../providers/registry.js'
 import { reconcileGenerationSettings } from '../services/generationSettingsService.js'
+import { createServerRuntime } from '../bootstrap.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
@@ -251,7 +252,7 @@ describe('migration runner', () => {
   })
 })
 
-describe('production settings reconciliation', () => {
+describe('generation settings reconciliation', () => {
   const providerRegistry = createGenerationProviderRegistry({
     provider: 'gemini', textModel: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu',
   })
@@ -288,6 +289,39 @@ describe('production settings reconciliation', () => {
       provider: 'mock', model: 'mock-v1', region: 'europe-west6', revision: 1, updatedBy: adminId,
       dailyBudgetMicrounits: 500, perStepRegenerationLimit: 4, generationDisabled: true,
     })
+    await pool.end()
+    pools.delete(pool)
+  })
+})
+
+describe('non-production Gemini runtime settings reconciliation', () => {
+  test.each(['development', 'test'])('reconciles the untouched seed in a fresh %s database runtime', async (nodeEnv) => {
+    const provider = { close: vi.fn(async () => {}) }
+    const verifier = { close: vi.fn(async () => {}) }
+    const app = { close: vi.fn(async () => {}) }
+
+    const runtime = await createServerRuntime({
+      environment: {
+        NODE_ENV: nodeEnv, DATABASE_URL: databaseUrl, GENERATION_PROVIDER: 'gemini',
+        VERTEX_AI_PROJECT_ID: 'banner-project', VERTEX_AI_LOCATION: 'eu',
+        GEMINI_TEXT_MODEL: 'gemini-3.5-flash', GEMINI_IMAGE_MODEL: 'gemini-3.1-flash-image',
+      },
+      dependencies: {
+        createGeminiProvider: vi.fn(() => provider),
+        createGenerationControlPlane: vi.fn(() => ({})),
+        createGenerationService: vi.fn(() => ({})),
+        createFirebaseTokenVerifier: vi.fn(() => verifier),
+        createAuthenticator: vi.fn(() => vi.fn()),
+        buildApp: vi.fn(() => app),
+      },
+    })
+
+    const pool = makePool()
+    expect(await createSettingsRepository(pool).get()).toMatchObject({
+      provider: 'gemini', model: 'gemini-3.5-flash', region: 'eu',
+      revision: 0, updatedBy: null,
+    })
+    await runtime.close()
     await pool.end()
     pools.delete(pool)
   })

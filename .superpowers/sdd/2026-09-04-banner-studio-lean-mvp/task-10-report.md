@@ -5,7 +5,8 @@
 Task 10 and its review hardening are complete. The Task 9 generation lifecycle and durable-image-storage API gate remain intact.
 
 - Feature commit: `2450da5` — `feat: generate campaign assets with Gemini`
-- Review-fix commit: `fix: harden Gemini provider integration`
+- Review-fix commit: `6c7cb53` — `fix: harden Gemini provider integration`
+- Final safety/startup commit: `fix: close Gemini safety gaps`
 - Exact SDK dependency: `@google/genai@2.21.0`
 - Exact image decoder dependency: `sharp@0.35.4`
 
@@ -19,6 +20,7 @@ Task 10 and its review hardening are complete. The Task 9 generation lifecycle a
 - Invariant policy is supplied only through `config.systemInstruction`. User content is a fixed delimiter followed by deterministic serialized untrusted data; campaign injection cannot enter the system instruction.
 - Safety normalization is tied to the v2.21.0 exported `BlockedReason` and `FinishReason` values. Every real prompt block, including `JAILBREAK`, blocks output. Candidate finish reasons `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, and `IMAGE_RECITATION` block output.
 - Normalized blocked results contain bounded, deduplicated rating and block/finish-reason categories. No text or image bytes survive a block.
+- Any prompt or candidate safety rating with `blocked: true` also blocks output even when the sole candidate reports `STOP`; its category is retained and text/image content is discarded.
 - Content is consumed only from exactly one candidate with `finishReason: STOP`. Other terminal reasons and candidate counts normalize to `invalid_output`.
 - Known 429 and 503/Unavailable failures become sanitized `rate_limited` and `provider_unavailable` results. Abort and ambiguous transport failures still throw so the Task 9 lifecycle records an unknown post-dispatch result.
 
@@ -33,7 +35,7 @@ Task 10 and its review hardening are complete. The Task 9 generation lifecycle a
 
 - Production requires explicit `GENERATION_PROVIDER=gemini` and cannot silently select mock. Gemini requires `VERTEX_AI_PROJECT_ID`.
 - The active registry keeps one provider instance/name while storing per-step identities. `brief_analysis`, `copy`, and `directions` resolve to the text model; `image` resolves to the image model before reservation and reclaim checks.
-- After migrations and before serving or constructing a paid provider, production atomically reconciles only the untouched `mock/mock-v1/europe-west6`, revision-zero, never-admin-updated seed row to the active Gemini text tuple. Budget, regeneration cap, kill switch, revision, and updater remain unchanged.
+- After migrations and before serving or constructing a provider, every runtime reconciles settings against its selected registry. Development, test, and production Gemini runtimes atomically replace only the untouched `mock/mock-v1/europe-west6`, revision-zero, never-admin-updated seed row with the active Gemini text tuple. Budget, regeneration cap, kill switch, revision, and updater remain unchanged; a selected mock registry is a no-op.
 - An already-active persisted tuple is retained. An admin-modified or otherwise conflicting tuple fails startup with a sanitized `generation_settings_conflict`; it is never overwritten.
 - Workflow settings writes validate the merged provider/model/region inside the settings transaction against the injected active registry before persistence or audit. Arbitrary and retired tuples are rejected.
 - The public/service image command remains gated with `image_storage_unavailable` until Task 11 provides concrete durable storage, even though the provider adapter and registry are image-ready.
@@ -48,8 +50,10 @@ Task 10 and its review hardening are complete. The Task 9 generation lifecycle a
 - Review RED: the expanded adapter suite initially had 32 failures covering missing system instructions, incomplete enum handling, non-STOP/multiple-candidate consumption, blocked-byte survival, duplicate IDs, and mixed policy/user prompts.
 - Decoder RED: the decoder contract initially failed because the reusable decoder did not exist; subsequent real-container cases drove full decode, exact-boundary, animation, corruption, MIME, byte, and dimension checks.
 - Settings/smoke RED: regressions first demonstrated arbitrary settings persistence, missing seed reconciliation, and false-positive smoke success.
-- Focused GREEN: `npm test -- --run server/providers/geminiProvider.test.js server/images/imageDecoder.test.js server/providers/geminiSmoke.test.js server/services/generationSettingsService.test.js server/services/workflowService.test.js server/bootstrap.test.js` — 6 files, 82 tests passed.
-- Required PostgreSQL server/shared suite: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared` — 21 files, 302 tests passed.
+- Final safety/startup RED: explicit blocked safety ratings were consumed from `STOP` candidates, while development/test/mock bootstrap compositions skipped reconciliation.
+- Fresh-runtime PostgreSQL GREEN: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "reconciles the untouched seed in a fresh|generation settings reconciliation"` — 4 tests passed, 66 skipped by the focus filter.
+- Focused GREEN: `npm test -- --run server/providers/geminiProvider.test.js server/bootstrap.test.js server/services/generationSettingsService.test.js` — 3 files, 59 tests passed.
+- Required PostgreSQL server/shared suite: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared` — 21 files, 309 tests passed.
 - No-spend smoke gate: `npm run smoke:gemini` — reported disabled and made no provider call.
 - Production build: `npm run build` — application and VitePress builds completed successfully; the existing large-chunk warning remains.
 

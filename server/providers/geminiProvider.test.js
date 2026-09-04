@@ -266,6 +266,43 @@ describe('Gemini Vertex AI generation provider', () => {
     expect(JSON.stringify(result)).not.toContain('raw policy detail')
   })
 
+  test('blocks STOP text when prompt safety ratings explicitly mark a category blocked', async () => {
+    const response = textResponse({ analysis }, {
+      promptFeedback: {
+        safetyRatings: [{ category: 'HARM_CATEGORY_HATE_SPEECH', probability: 'HIGH', blocked: true }],
+      },
+    })
+    const { provider } = harness(response)
+
+    const result = await provider.analyseBrief({ brief }, new AbortController().signal)
+
+    expect(result).toMatchObject({
+      safety: { verdict: 'blocked', categories: ['HARM_CATEGORY_HATE_SPEECH'] },
+      error: { code: 'provider_blocked' },
+    })
+    expect(result).not.toHaveProperty('analysis')
+  })
+
+  test('blocks STOP image bytes when candidate safety ratings explicitly mark a category blocked', async () => {
+    const bytes = await validPng()
+    const { provider } = harness({
+      candidates: [{
+        finishReason: FinishReason.STOP,
+        content: { role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: Buffer.from(bytes).toString('base64') } }] },
+        safetyRatings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', probability: 'HIGH', blocked: true }],
+      }],
+      usageMetadata: { promptTokenCount: 20, totalTokenCount: 20 },
+    })
+
+    const result = await provider.generateImage({ direction, width: 320, height: 180 }, new AbortController().signal)
+
+    expect(result).toMatchObject({
+      safety: { verdict: 'blocked', categories: ['HARM_CATEGORY_DANGEROUS_CONTENT'] },
+      error: { code: 'provider_blocked' },
+    })
+    expect(result).not.toHaveProperty('image')
+  })
+
   test.each(Object.values(BlockedReason).filter((reason) => reason !== BlockedReason.BLOCKED_REASON_UNSPECIFIED))(
     'treats SDK prompt block reason %s as blocked and includes the reason category',
     async (blockReason) => {

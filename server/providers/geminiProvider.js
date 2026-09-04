@@ -232,6 +232,11 @@ function safetyCategories(response) {
 
 function safetyBlocked(response) {
   if (promptBlockedReasons.has(response?.promptFeedback?.blockReason)) return true
+  const ratings = [
+    ...(response?.promptFeedback?.safetyRatings ?? []),
+    ...(response?.candidates ?? []).flatMap((candidate) => candidate?.safetyRatings ?? []),
+  ]
+  if (ratings.some((rating) => rating?.blocked === true)) return true
   return (response?.candidates ?? []).some((candidate) => blockedFinishReasons.has(candidate?.finishReason))
 }
 

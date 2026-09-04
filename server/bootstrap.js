@@ -68,13 +68,11 @@ export async function createServerRuntime({ environment = process.env, dependenc
         }
       : { provider: 'mock', textModel: 'mock-v1', imageModel: 'mock-v1', region: 'europe-west6' }
     const providerRegistry = resolved.createGenerationProviderRegistry(providerSelection)
-    if (config.nodeEnv === 'production') {
-      await resolved.reconcileGenerationSettings({
-        pool,
-        providerRegistry,
-        selected: { provider: providerSelection.provider, model: providerSelection.textModel, region: providerSelection.region },
-      })
-    }
+    await resolved.reconcileGenerationSettings({
+      pool,
+      providerRegistry,
+      selected: { provider: providerSelection.provider, model: providerSelection.textModel, region: providerSelection.region },
+    })
     const workflowService = resolved.createWorkflowService({ pool, providerRegistry })
     generationProvider = config.generation.provider === 'gemini'
       ? resolved.createGeminiProvider({

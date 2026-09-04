@@ -22,7 +22,7 @@ function harness(current) {
   }
 }
 
-describe('production generation settings reconciliation', () => {
+describe('generation settings reconciliation', () => {
   test('atomically replaces only the untouched seed tuple and preserves controls', async () => {
     const current = {
       provider: 'mock', model: 'mock-v1', region: 'europe-west6', dailyBudgetMicrounits: 91,
@@ -39,6 +39,22 @@ describe('production generation settings reconciliation', () => {
     const { repository, reconcile } = harness(current)
 
     await expect(reconcile()).resolves.toBe(current)
+    expect(repository.initializeProviderTuple).not.toHaveBeenCalled()
+  })
+
+  test('keeps the fresh mock seed as a no-op when mock is the selected registry', async () => {
+    const current = { provider: 'mock', model: 'mock-v1', region: 'europe-west6', revision: 0, updatedBy: null }
+    const mockRegistry = createGenerationProviderRegistry({
+      provider: 'mock', textModel: 'mock-v1', imageModel: 'mock-v1', region: 'europe-west6',
+    })
+    const repository = { getForUpdate: vi.fn(async () => current), initializeProviderTuple: vi.fn() }
+
+    await expect(reconcileGenerationSettings({
+      pool: { query: vi.fn() }, providerRegistry: mockRegistry,
+      selected: { provider: 'mock', model: 'mock-v1', region: 'europe-west6' },
+      transaction: async (_pool, operation) => operation({ query: vi.fn() }),
+      createRepository: () => repository,
+    })).resolves.toBe(current)
     expect(repository.initializeProviderTuple).not.toHaveBeenCalled()
   })
 

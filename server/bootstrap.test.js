@@ -87,7 +87,49 @@ describe('production server composition', () => {
     expect(dependencies.createMockProvider).toHaveBeenCalledWith({ model: 'mock-v1', region: 'europe-west6' })
     expect(dependencies.createGeminiProvider).not.toHaveBeenCalled()
     expect(dependencies.createGenerationService).toHaveBeenCalledWith(expect.objectContaining({ providers: { mock: provider } }))
-    expect(dependencies.reconcileGenerationSettings).not.toHaveBeenCalled()
+    expect(dependencies.reconcileGenerationSettings).toHaveBeenCalledWith({
+      pool, providerRegistry, selected: { provider: 'mock', model: 'mock-v1', region: 'europe-west6' },
+    })
+    await runtime.close()
+  })
+
+  test.each(['development', 'test'])('reconciles a fresh %s runtime when Gemini is explicitly selected', async (nodeEnv) => {
+    const calls = []
+    const pool = { query: vi.fn(), end: vi.fn(async () => {}) }
+    const app = { close: vi.fn(async () => {}) }
+    const verifier = { close: vi.fn(async () => {}) }
+    const provider = { close: vi.fn(async () => {}) }
+    const providerRegistry = { gemini: [{ model: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu' }] }
+    const dependencies = {
+      createPool: vi.fn(() => pool),
+      runMigrations: vi.fn(async () => { calls.push('migrate') }),
+      createGenerationProviderRegistry: vi.fn(() => providerRegistry),
+      reconcileGenerationSettings: vi.fn(async () => { calls.push('reconcile') }),
+      createWorkflowService: vi.fn(() => ({})),
+      createGenerationControlPlane: vi.fn(() => ({})),
+      createGenerationService: vi.fn(() => ({})),
+      createMockProvider: vi.fn(),
+      createGeminiProvider: vi.fn(() => provider),
+      createFirebaseTokenVerifier: vi.fn(() => verifier),
+      createAuthenticator: vi.fn(() => vi.fn()),
+      buildApp: vi.fn(() => { calls.push('buildApp'); return app }),
+    }
+
+    const runtime = await createServerRuntime({
+      environment: {
+        NODE_ENV: nodeEnv, GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
+        VERTEX_AI_LOCATION: 'eu', GEMINI_TEXT_MODEL: 'gemini-3.5-flash', GEMINI_IMAGE_MODEL: 'gemini-3.1-flash-image',
+      },
+      dependencies,
+    })
+
+    expect(calls).toEqual(['migrate', 'reconcile', 'buildApp'])
+    expect(dependencies.reconcileGenerationSettings).toHaveBeenCalledWith({
+      pool, providerRegistry,
+      selected: { provider: 'gemini', model: 'gemini-3.5-flash', region: 'eu' },
+    })
+    expect(dependencies.createGeminiProvider).toHaveBeenCalledOnce()
+    expect(dependencies.createMockProvider).not.toHaveBeenCalled()
     await runtime.close()
   })
 
