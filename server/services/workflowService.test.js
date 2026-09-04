@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest'
 import { createWorkflowService } from './workflowService.js'
 import { pilotTemplateFixture } from '../../shared/fixtures/pilotTemplate.js'
 import { hashCanonical } from '../../shared/canonicalJson.js'
+import { createGenerationProviderRegistry } from '../providers/registry.js'
 
 const actor = { id: 'marketer-1', role: 'marketer', disabled: false }
 const admin = { id: 'admin-1', role: 'admin', disabled: false }
@@ -163,6 +164,33 @@ describe('workflow service', () => {
     expect(updated).toMatchObject({ generationDisabled: true, revision: 5, updatedBy: admin.id })
     expect(settingsRepository.update).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 4, generationDisabled: true, updatedBy: admin.id }))
     expect(auditRepository.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'settings.updated', createdAt: new Date('2026-09-04T10:00:00.000Z') }))
+  })
+
+  test('rejects an unregistered merged provider tuple before persistence or audit', async () => {
+    const { service, settingsRepository, auditRepository } = harness()
+
+    await expect(service.updateSettings({ actor: admin, expectedRevision: 4, patch: { model: 'retired-model' } }))
+      .rejects.toMatchObject({ statusCode: 400, code: 'invalid_provider_configuration', expose: true })
+
+    expect(settingsRepository.update).not.toHaveBeenCalled()
+    expect(auditRepository.append).not.toHaveBeenCalled()
+  })
+
+  test('persists a complete tuple admitted by the injected active registry', async () => {
+    const providerRegistry = createGenerationProviderRegistry({
+      provider: 'gemini', textModel: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu',
+    })
+    const { service, settingsRepository } = harness({ providerRegistry })
+
+    await service.updateSettings({
+      actor: admin,
+      expectedRevision: 4,
+      patch: { provider: 'gemini', model: 'gemini-3.5-flash', region: 'eu' },
+    })
+
+    expect(settingsRepository.update).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'gemini', model: 'gemini-3.5-flash', region: 'eu',
+    }))
   })
 
   test('creates immutable template versions with a service-generated hash and audit event', async () => {

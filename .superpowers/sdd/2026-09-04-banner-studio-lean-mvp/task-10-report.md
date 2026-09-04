@@ -1,65 +1,68 @@
 # Task 10 report — Vertex AI Gemini provider
 
-## Status
+## Status and commits
 
-Implemented the production Gemini adapter, strict provider configuration, step-aware model registry, bootstrap selection, and a no-spend-by-default smoke command. The Task 9 generation lifecycle and durable-image-storage gate remain intact.
+Task 10 and its review hardening are complete. The Task 9 generation lifecycle and durable-image-storage API gate remain intact.
 
-- Task commit: `feat: generate campaign assets with Gemini`
+- Feature commit: `2450da5` — `feat: generate campaign assets with Gemini`
+- Review-fix commit: `fix: harden Gemini provider integration`
 - Exact SDK dependency: `@google/genai@2.21.0`
+- Exact image decoder dependency: `sharp@0.35.4`
 
 ## Delivered behavior
 
-### Gemini adapter
+### Gemini adapter and safety
 
-- Added an injected-client/constructible Vertex AI adapter implementing `analyseBrief`, `generateCopy`, `generateDirections`, and `generateImage`; it never accepts or returns generation job IDs.
-- Constructible clients use `GoogleGenAI({ vertexai: true, project, location: 'eu', httpOptions: { apiVersion: 'v1' } })`, matching the installed v2.21.0 API.
-- Brief, copy, and direction calls request `application/json` with explicit strict JSON schemas. Returned JSON is parsed without fence removal or repair and then validated through the existing strict shared schemas.
-- Copy output requires exactly three variants. Direction output requires exactly five directions.
-- Deterministic prompt builders isolate untrusted campaign JSON from instructions and explicitly prohibit embedded text or logos in source imagery.
-- Image calls use `gemini-3.1-flash-image`, request image-only output, require exactly one inline image, accept only PNG/JPEG/WebP, strictly decode base64, derive dimensions from the encoded image header, and return `Uint8Array` bytes without persistence.
-- Prompt/candidate safety blocks become normalized `provider_blocked` results containing category names and no generated content. Known 429 and 503/Unavailable failures become normalized public errors without raw SDK details. Abort and ambiguous transport failures continue to throw so Task 9 records `unknown` after dispatch.
-- Usage metadata is accepted only as non-negative safe integers. Text costs use conservative integer EU rates; image costs use conservative integer rates. Missing/untrustworthy usage retains the operation reservation, and every estimate is capped at that reservation.
-- Optional provider cleanup is idempotent and participates in runtime shutdown.
+- The injected-client/constructible Vertex AI adapter implements `analyseBrief`, `generateCopy`, `generateDirections`, and direct `generateImage` without accepting or returning generation job IDs.
+- Constructible clients use `GoogleGenAI({ vertexai: true, project, location: 'eu', httpOptions: { apiVersion: 'v1' } })`.
+- Text calls use strict provider JSON schemas and strict shared schemas, without fence removal or repair. Copy output requires exactly three unique IDs; direction output requires exactly five unique IDs.
+- Invariant policy is supplied only through `config.systemInstruction`. User content is a fixed delimiter followed by deterministic serialized untrusted data; campaign injection cannot enter the system instruction.
+- Safety normalization is tied to the v2.21.0 exported `BlockedReason` and `FinishReason` values. Every real prompt block, including `JAILBREAK`, blocks output. Candidate finish reasons `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `IMAGE_SAFETY`, `IMAGE_PROHIBITED_CONTENT`, and `IMAGE_RECITATION` block output.
+- Normalized blocked results contain bounded, deduplicated rating and block/finish-reason categories. No text or image bytes survive a block.
+- Content is consumed only from exactly one candidate with `finishReason: STOP`. Other terminal reasons and candidate counts normalize to `invalid_output`.
+- Known 429 and 503/Unavailable failures become sanitized `rate_limited` and `provider_unavailable` results. Abort and ambiguous transport failures still throw so the Task 9 lifecycle records an unknown post-dispatch result.
 
-### Configuration, registry, and bootstrap
+### Image validation
 
-- Production requires explicit `GENERATION_PROVIDER=gemini`; it cannot silently or explicitly select mock.
-- Gemini requires `VERTEX_AI_PROJECT_ID`. The only approved location is `eu`; the only approved text and image models are `gemini-3.5-flash` and `gemini-3.1-flash-image`.
-- Development/tests retain explicit mock composition with `mock-v1` in `europe-west6`.
-- The selected registry has one provider entry and one provider instance. Its Gemini entry carries both the text/default and image model identities.
-- Before reservation, the control plane resolves `brief_analysis`, `copy`, and `directions` to `gemini-3.5-flash`, and `image` to `gemini-3.1-flash-image`. Reclaim checks validate the persisted step-specific identity. Unknown models, regions, providers, or steps fail before job creation/reservation.
-- The existing Task 9 API image command still returns `image_storage_unavailable` before reservation/dispatch until Task 11 supplies durable storage.
+- Generated base64 is length-bounded before decoding; encoded output is capped at 32 MiB.
+- The reusable decoder performs a complete `sharp` decode, allows only PNG/JPEG/WebP, requires decoded format to match MIME, limits dimensions to 4096×4096, and rejects animation/multiple pages.
+- Container boundaries are exact: PNG must terminate at a valid IEND chunk, JPEG at its actual final EOI, and WebP at the exact RIFF-declared length. Truncation, corruption, pseudo-headers, MIME mismatch, oversize dimensions/bytes, and trailing data fail closed.
+- Tests use real encoded PNG/JPEG/WebP images and a real two-frame animated WebP.
+
+### Configuration, registry, settings, and bootstrap
+
+- Production requires explicit `GENERATION_PROVIDER=gemini` and cannot silently select mock. Gemini requires `VERTEX_AI_PROJECT_ID`.
+- The active registry keeps one provider instance/name while storing per-step identities. `brief_analysis`, `copy`, and `directions` resolve to the text model; `image` resolves to the image model before reservation and reclaim checks.
+- After migrations and before serving or constructing a paid provider, production atomically reconciles only the untouched `mock/mock-v1/europe-west6`, revision-zero, never-admin-updated seed row to the active Gemini text tuple. Budget, regeneration cap, kill switch, revision, and updater remain unchanged.
+- An already-active persisted tuple is retained. An admin-modified or otherwise conflicting tuple fails startup with a sanitized `generation_settings_conflict`; it is never overwritten.
+- Workflow settings writes validate the merged provider/model/region inside the settings transaction against the injected active registry before persistence or audit. Arbitrary and retired tuples are rejected.
+- The public/service image command remains gated with `image_storage_unavailable` until Task 11 provides concrete durable storage, even though the provider adapter and registry are image-ready.
 
 ### Smoke command
 
-- Added `npm run smoke:gemini`.
-- It exits without constructing a provider or making a call unless `GEMINI_SMOKE_ENABLED=true` and strict Gemini configuration is present.
-- It logs only provider/model/region/safety/cost metadata, never the prompt, brief, credentials, bytes, generated content, or raw errors.
+- `npm run smoke:gemini` remains no-spend-by-default and does not construct a provider unless `GEMINI_SMOKE_ENABLED=true`.
+- An enabled smoke result with a normalized error or blocked safety verdict now throws a sanitized failure and emits no success metadata. Tests cover 429, 503, and blocked results without raw-detail leakage.
 
-## Tests and verification
+## TDD and verification
 
-Strict TDD evidence:
-
-- Initial focused RED: missing adapter/smoke modules plus expected config/bootstrap/registry failures.
-- Step-aware model RED: the PostgreSQL test observed an image job incorrectly persisting `gemini-3.5-flash` before implementation.
-- Focused GREEN: `npm test -- --run server/providers/geminiProvider.test.js server/providers/geminiSmoke.test.js server/providers/registry.test.js server/app.test.js server/bootstrap.test.js` — 5 files, 37 tests passed.
-- Step-aware PostgreSQL GREEN: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "resolves the persisted Gemini model"` — 1 passed, 65 skipped by the focus filter.
+- Review RED: the expanded adapter suite initially had 32 failures covering missing system instructions, incomplete enum handling, non-STOP/multiple-candidate consumption, blocked-byte survival, duplicate IDs, and mixed policy/user prompts.
+- Decoder RED: the decoder contract initially failed because the reusable decoder did not exist; subsequent real-container cases drove full decode, exact-boundary, animation, corruption, MIME, byte, and dimension checks.
+- Settings/smoke RED: regressions first demonstrated arbitrary settings persistence, missing seed reconciliation, and false-positive smoke success.
+- Focused GREEN: `npm test -- --run server/providers/geminiProvider.test.js server/images/imageDecoder.test.js server/providers/geminiSmoke.test.js server/services/generationSettingsService.test.js server/services/workflowService.test.js server/bootstrap.test.js` — 6 files, 82 tests passed.
+- Required PostgreSQL server/shared suite: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared` — 21 files, 302 tests passed.
 - No-spend smoke gate: `npm run smoke:gemini` — reported disabled and made no provider call.
-- Required scoped suite: `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared` — 19 files, 249 tests passed.
-- Production build: `npm run build` — application and VitePress builds completed successfully. The existing VitePress large-chunk warning remains.
+- Production build: `npm run build` — application and VitePress builds completed successfully; the existing large-chunk warning remains.
 
-## Official model and location decisions
+## Pinned model and location decisions
 
-- SDK: exact `@google/genai` `2.21.0`, Node-compatible v2 API.
-- API: Vertex AI v1 through `httpOptions.apiVersion`.
-- Processing location: EU multi-region `eu`, never `global`.
-- Text/default model: GA `gemini-3.5-flash`.
-- Image model: GA `gemini-3.1-flash-image`; the retiring `gemini-2.5-flash-image` is rejected.
+- Processing location: Vertex AI EU multi-region `eu`, never `global`.
+- Text/default model: `gemini-3.5-flash`.
+- Image model: `gemini-3.1-flash-image`.
+- Settings store the selected text/default tuple; the server-controlled step-aware registry resolves image jobs to the image model before reservation. Unknown provider/model/location/step combinations fail before spend.
 
-These decisions follow the Task 10 compatibility brief, which records verification against the Google Gen AI JavaScript SDK, Vertex AI quickstart, both model pages, and the Google model lifecycle page on 2026-09-04.
+## Concerns and handoff
 
-## Concerns and handoff notes
-
-- No paid live smoke was executed in this local task. The opt-in command is present and its disabled path is verified; staging operators must deliberately enable it with credentials and strict configuration.
-- Cost estimates intentionally prefer reservation retention over under-accounting. Pricing changes require updating the integer estimator inputs and re-verifying them against official Vertex AI pricing.
-- The adapter can generate images directly, and lower control-plane job identity is ready for the image model, but the public/service image command remains gated until Task 11 can atomically store and verify bytes.
+- No paid live smoke was executed. Staging operators must deliberately enable it with credentials and the strict production tuple.
+- `sharp` is a pinned native dependency; deployment images must support its published runtime binaries. Task 11 should reuse `server/images/imageDecoder.js` at the durable-storage boundary.
+- Cost estimates deliberately retain the reservation when usage is missing or untrustworthy. Pricing changes require deliberate integer-rate updates and re-verification against official Vertex AI pricing.
+- The build still reports the pre-existing VitePress large-chunk warning.

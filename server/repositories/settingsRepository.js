@@ -76,5 +76,19 @@ export function createSettingsRepository(client) {
       if (result.rowCount === 0) throw new SettingsRevisionConflictError(expectedRevision)
       return mapSettings(result.rows[0])
     },
+
+    async initializeProviderTuple({ provider, model, region }) {
+      const result = await client.query(
+        `UPDATE settings
+         SET provider = $2,
+             model = $3,
+             region = $4,
+             updated_at = now()
+         WHERE singleton = $1
+         RETURNING *`,
+        [true, provider, model, region],
+      )
+      return mapSettings(result.rows[0])
+    },
   }
 }

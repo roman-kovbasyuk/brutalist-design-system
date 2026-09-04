@@ -20,6 +20,8 @@ import { createMockProvider } from '../providers/mockProvider.js'
 import { buildApp } from '../app.js'
 import { hashCanonical } from '../../shared/canonicalJson.js'
 import { createAuthenticator } from '../auth/verifyToken.js'
+import { createGenerationProviderRegistry } from '../providers/registry.js'
+import { reconcileGenerationSettings } from '../services/generationSettingsService.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
@@ -244,6 +246,48 @@ describe('migration runner', () => {
     )
     expect(indexes.rows.some((row) => row.indexdef.includes('(id, publication_sequence DESC)'))).toBe(true)
     expect(indexes.rows.some((row) => row.indexdef.includes('(id, created_at DESC)'))).toBe(false)
+    await pool.end()
+    pools.delete(pool)
+  })
+})
+
+describe('production settings reconciliation', () => {
+  const providerRegistry = createGenerationProviderRegistry({
+    provider: 'gemini', textModel: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu',
+  })
+  const selected = { provider: 'gemini', model: 'gemini-3.5-flash', region: 'eu' }
+
+  test('reconciles a freshly migrated seed row while preserving control values', async () => {
+    const pool = makePool()
+    await pool.query(
+      'UPDATE settings SET daily_budget_microunits = $1, per_step_regeneration_limit = $2, generation_disabled = $3 WHERE singleton = $4',
+      [321, 8, true, true],
+    )
+
+    await reconcileGenerationSettings({ pool, providerRegistry, selected })
+
+    expect(await createSettingsRepository(pool).get()).toMatchObject({
+      ...selected, dailyBudgetMicrounits: 321, perStepRegenerationLimit: 8,
+      generationDisabled: true, revision: 0, updatedBy: null,
+    })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('does not overwrite admin-modified settings that conflict with the active registry', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createSettingsRepository(pool).update({
+      expectedRevision: 0, provider: 'mock', model: 'mock-v1', region: 'europe-west6',
+      dailyBudgetMicrounits: 500, perStepRegenerationLimit: 4, generationDisabled: true, updatedBy: adminId,
+    })
+
+    await expect(reconcileGenerationSettings({ pool, providerRegistry, selected }))
+      .rejects.toMatchObject({ code: 'generation_settings_conflict' })
+    expect(await createSettingsRepository(pool).get()).toMatchObject({
+      provider: 'mock', model: 'mock-v1', region: 'europe-west6', revision: 1, updatedBy: adminId,
+      dailyBudgetMicrounits: 500, perStepRegenerationLimit: 4, generationDisabled: true,
+    })
     await pool.end()
     pools.delete(pool)
   })

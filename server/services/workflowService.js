@@ -7,6 +7,7 @@ import { createSettingsRepository } from '../repositories/settingsRepository.js'
 import { createTemplateRepository } from '../repositories/templateRepository.js'
 import { createUserRepository } from '../repositories/userRepository.js'
 import { createAuditRepository } from '../repositories/auditRepository.js'
+import { assertProviderRegistry, generationProviderRegistry, providerTupleAllowed } from '../providers/registry.js'
 
 const campaignEditors = ['marketer', 'admin']
 const invitationTtlMs = 7 * 24 * 60 * 60 * 1000
@@ -87,9 +88,11 @@ export function createWorkflowService({
   repositories = defaultRepositories,
   idGenerator = randomUUID,
   clock = () => new Date(),
+  providerRegistry = generationProviderRegistry,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   if (typeof transaction !== 'function') throw new TypeError('A transaction function is required')
+  assertProviderRegistry(providerRegistry)
 
   const audit = async (client, event) => repositories.audit(client).append({
     id: idGenerator(),
@@ -278,9 +281,13 @@ export function createWorkflowService({
         const current = await settings.getForUpdate()
         if (!current) throw missing('Settings')
         if (current.revision !== expectedRevision) throw revisionConflict()
+        const desired = { ...current, ...command }
+        if (!providerTupleAllowed(providerRegistry, desired)) {
+          throw new WorkflowServiceError(400, 'invalid_provider_configuration', 'The selected generation provider configuration is not available')
+        }
         let updated
         try {
-          updated = await settings.update({ ...current, ...command, expectedRevision, updatedBy: actor.id })
+          updated = await settings.update({ ...desired, expectedRevision, updatedBy: actor.id })
         } catch (error) {
           if (error?.code === 'revision_conflict') throw revisionConflict()
           throw error

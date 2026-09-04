@@ -29,6 +29,10 @@ export async function runGeminiSmoke({
         notes: 'Return a concise analysis.',
       },
     }, new AbortController().signal)
+    if (result?.error || result?.safety?.verdict === 'blocked') {
+      const code = result?.error?.code ?? 'provider_blocked'
+      throw new Error(`Gemini smoke failed: ${code}`)
+    }
     write(JSON.stringify({
       provider: result.provider,
       model: result.model,

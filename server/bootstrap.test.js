@@ -25,6 +25,7 @@ describe('production server composition', () => {
       createGeminiProvider: vi.fn(() => generationProvider),
       createGenerationService: vi.fn(() => generationService),
       createGenerationProviderRegistry: vi.fn(() => providerRegistry),
+      reconcileGenerationSettings: vi.fn(async () => { calls.push('reconcile') }),
       createFirebaseTokenVerifier: vi.fn(() => verifier),
       createAuthenticator: vi.fn(() => resolveActor),
       buildApp: vi.fn((input) => { calls.push('buildApp'); return app }),
@@ -39,10 +40,13 @@ describe('production server composition', () => {
       dependencies,
     })
 
-    expect(calls.slice(0, 2)).toEqual(['migrate', 'buildApp'])
-    expect(dependencies.createWorkflowService).toHaveBeenCalledWith({ pool })
+    expect(calls.slice(0, 3)).toEqual(['migrate', 'reconcile', 'buildApp'])
+    expect(dependencies.createWorkflowService).toHaveBeenCalledWith({ pool, providerRegistry })
     expect(dependencies.createGenerationProviderRegistry).toHaveBeenCalledWith({
       provider: 'gemini', textModel: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu',
+    })
+    expect(dependencies.reconcileGenerationSettings).toHaveBeenCalledWith({
+      pool, providerRegistry, selected: { provider: 'gemini', model: 'gemini-3.5-flash', region: 'eu' },
     })
     expect(dependencies.createGeminiProvider).toHaveBeenCalledWith({
       project: 'banner-project', location: 'eu', textModel: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image',
@@ -75,6 +79,7 @@ describe('production server composition', () => {
       createGenerationProviderRegistry: vi.fn(() => providerRegistry), createMockProvider: vi.fn(() => provider),
       createGeminiProvider: vi.fn(), createFirebaseTokenVerifier: vi.fn(() => verifier),
       createAuthenticator: vi.fn(() => vi.fn()), buildApp: vi.fn(() => app),
+      reconcileGenerationSettings: vi.fn(),
     }
 
     const runtime = await createServerRuntime({ environment: { NODE_ENV: 'test', GENERATION_PROVIDER: 'mock' }, dependencies })
@@ -82,6 +87,7 @@ describe('production server composition', () => {
     expect(dependencies.createMockProvider).toHaveBeenCalledWith({ model: 'mock-v1', region: 'europe-west6' })
     expect(dependencies.createGeminiProvider).not.toHaveBeenCalled()
     expect(dependencies.createGenerationService).toHaveBeenCalledWith(expect.objectContaining({ providers: { mock: provider } }))
+    expect(dependencies.reconcileGenerationSettings).not.toHaveBeenCalled()
     await runtime.close()
   })
 

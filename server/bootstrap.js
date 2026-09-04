@@ -9,6 +9,7 @@ import { createGenerationControlPlane } from './repositories/generationJobReposi
 import { createMockProvider } from './providers/mockProvider.js'
 import { createGeminiProvider } from './providers/geminiProvider.js'
 import { createGenerationProviderRegistry } from './providers/registry.js'
+import { reconcileGenerationSettings } from './services/generationSettingsService.js'
 
 const productionDependencies = {
   buildApp,
@@ -21,6 +22,7 @@ const productionDependencies = {
   createMockProvider,
   createGeminiProvider,
   createGenerationProviderRegistry,
+  reconcileGenerationSettings,
   runMigrations,
 }
 
@@ -57,7 +59,6 @@ export async function createServerRuntime({ environment = process.env, dependenc
 
   try {
     await resolved.runMigrations({ pool })
-    const workflowService = resolved.createWorkflowService({ pool })
     const providerSelection = config.generation.provider === 'gemini'
       ? {
           provider: 'gemini',
@@ -67,6 +68,14 @@ export async function createServerRuntime({ environment = process.env, dependenc
         }
       : { provider: 'mock', textModel: 'mock-v1', imageModel: 'mock-v1', region: 'europe-west6' }
     const providerRegistry = resolved.createGenerationProviderRegistry(providerSelection)
+    if (config.nodeEnv === 'production') {
+      await resolved.reconcileGenerationSettings({
+        pool,
+        providerRegistry,
+        selected: { provider: providerSelection.provider, model: providerSelection.textModel, region: providerSelection.region },
+      })
+    }
+    const workflowService = resolved.createWorkflowService({ pool, providerRegistry })
     generationProvider = config.generation.provider === 'gemini'
       ? resolved.createGeminiProvider({
           project: config.generation.projectId,
