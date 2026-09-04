@@ -103,6 +103,11 @@ export function createUserRepository(client) {
       return mapUser(result.rows[0])
     },
 
+    async findByIdForUpdate(id) {
+      const result = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [id])
+      return mapUser(result.rows[0])
+    },
+
     async setDisabled({ id, disabled }) {
       const result = await client.query(
         'UPDATE users SET disabled = $2, updated_at = now() WHERE id = $1 RETURNING *',

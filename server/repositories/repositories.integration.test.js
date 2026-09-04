@@ -12,6 +12,8 @@ import { createTemplateRepository } from './templateRepository.js'
 import { createUserRepository } from './userRepository.js'
 import { createAuditRepository } from './auditRepository.js'
 import { createIdempotencyRepository } from './idempotencyRepository.js'
+import { createWorkflowService } from '../services/workflowService.js'
+import { buildApp } from '../app.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
@@ -104,8 +106,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(2)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql'])
+    expect(tracked.rows).toHaveLength(3)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -203,11 +205,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql'])
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
     expect(await createTemplateRepository(pool).listLatest())
@@ -247,6 +249,64 @@ describe('transaction ownership', () => {
       await pool.end()
       pools.delete(pool)
     }
+  })
+})
+
+describe('persistent workflow API checkpoint', () => {
+  test('creates through HTTP, reloads after restart, executes a command, and persists its audit row', async () => {
+    const firstPool = makePool()
+    const actorId = await insertUser(firstPool, { id: 'workflow-admin', role: 'admin' })
+    const actor = { id: actorId, role: 'admin', disabled: false }
+    const firstService = createWorkflowService({ pool: firstPool })
+    const firstApp = buildApp({ resolveActor: async () => actor, workflowService: firstService })
+    const response = await firstApp.inject({
+      method: 'POST',
+      url: '/api/v1/campaigns',
+      payload: {
+        title: 'Persistent HTTP campaign',
+        brief: { product: 'Course', audience: 'Learners', objective: 'Signups', offer: '', locale: 'en', notes: '' },
+      },
+    })
+    expect(response.statusCode).toBe(201)
+    expect(response.headers.etag).toBe('"0"')
+    const campaignId = response.json().id
+    await firstApp.close()
+    await firstPool.end()
+    pools.delete(firstPool)
+
+    const restartedPool = makePool()
+    const restartedService = createWorkflowService({ pool: restartedPool })
+    const restartedApp = buildApp({ resolveActor: async () => actor, workflowService: restartedService })
+    const reloaded = await restartedApp.inject({ method: 'GET', url: `/api/v1/campaigns/${campaignId}` })
+    expect(reloaded.statusCode).toBe(200)
+    expect(reloaded.json()).toMatchObject({ id: campaignId, title: 'Persistent HTTP campaign', status: 'draft', revision: 0 })
+
+    const transitioned = await restartedService.executeCampaignCommand({
+      actor,
+      campaignId,
+      expectedRevision: 0,
+      action: 'campaign.mock_transition',
+      validate: () => true,
+      apply: (campaign) => ({ ...campaign, status: 'copy_ready' }),
+      auditPayload: { checkpoint: true },
+    })
+    expect(transitioned).toMatchObject({ status: 'copy_ready', revision: 1 })
+    const staleEdit = await restartedApp.inject({
+      method: 'PATCH',
+      url: `/api/v1/campaigns/${campaignId}`,
+      headers: { 'if-match': '"0"' },
+      payload: { title: 'Stale overwrite' },
+    })
+    expect(staleEdit.statusCode).toBe(409)
+    expect(staleEdit.json()).toMatchObject({ code: 'revision_conflict' })
+    const auditRows = await createAuditRepository(restartedPool).listForEntity({ entityType: 'campaign', entityId: campaignId })
+    expect(auditRows).toEqual([
+      expect.objectContaining({ action: 'campaign.mock_transition', beforeStatus: 'draft', afterStatus: 'copy_ready', payload: { checkpoint: true } }),
+      expect.objectContaining({ action: 'campaign.created', beforeStatus: null, afterStatus: 'draft' }),
+    ])
+    await restartedApp.close()
+    await restartedPool.end()
+    pools.delete(restartedPool)
   })
 })
 
@@ -524,6 +584,28 @@ describe('supporting repositories', () => {
 })
 
 describe('idempotency coordination', () => {
+  test('marks owner failures and allows only the same fingerprint to retry ownership', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    const repository = createIdempotencyRepository(pool)
+    const scope = { actorId, method: 'POST', resourceId: 'campaign-failed', key: 'retry-failed' }
+
+    expect(await repository.claim({ ...scope, fingerprint: 'a'.repeat(64), ownerToken: 'owner-1' }))
+      .toEqual({ kind: 'owner' })
+    await repository.fail({ ...scope, ownerToken: 'owner-1', failureCode: 'operation_failed' })
+    expect(await repository.find(scope)).toMatchObject({ state: 'failed', failureCode: 'operation_failed' })
+    expect(await repository.claim({ ...scope, fingerprint: 'b'.repeat(64), ownerToken: 'owner-conflict' }))
+      .toEqual({ kind: 'conflict' })
+    expect(await repository.claim({ ...scope, fingerprint: 'a'.repeat(64), ownerToken: 'owner-2' }))
+      .toEqual({ kind: 'owner' })
+    expect(await repository.find(scope)).toMatchObject({ state: 'in_progress', ownerToken: 'owner-2', failureCode: null })
+    await repository.complete({ ...scope, ownerToken: 'owner-2', responseStatus: 200, responseBody: { recovered: true } })
+    expect(await repository.claim({ ...scope, fingerprint: 'a'.repeat(64), ownerToken: 'owner-3' }))
+      .toEqual({ kind: 'replay', responseStatus: 200, responseBody: { recovered: true } })
+    await pool.end()
+    pools.delete(pool)
+  })
+
   test('enforces the unique actor/method/resource/key scope', async () => {
     const pool = makePool()
     const actorId = await insertUser(pool)

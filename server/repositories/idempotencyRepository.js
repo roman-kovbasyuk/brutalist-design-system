@@ -29,6 +29,17 @@ export function createIdempotencyRepository(client) {
       if (record.state === 'completed') {
         return { kind: 'replay', responseStatus: record.response_status, responseBody: record.response_body }
       }
+      if (record.state === 'failed') {
+        const reclaimed = await client.query(
+          `UPDATE idempotency_records
+           SET state = 'in_progress', owner_token = $6, failed_at = NULL, failure_code = NULL
+           WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
+             AND fingerprint = $5 AND state = 'failed'
+           RETURNING actor_id`,
+          [...scope, fingerprint, ownerToken],
+        )
+        if (reclaimed.rowCount > 0) return { kind: 'owner' }
+      }
       return { kind: 'in_progress' }
     },
 
@@ -53,9 +64,33 @@ export function createIdempotencyRepository(client) {
       return { responseStatus: result.rows[0].response_status, responseBody: result.rows[0].response_body }
     },
 
+    async fail({ actorId, method, resourceId, key, ownerToken, failureCode }) {
+      if (typeof failureCode !== 'string' || failureCode.trim().length === 0) {
+        throw new TypeError('A failure code is required')
+      }
+      const result = await client.query(
+        `UPDATE idempotency_records
+         SET state = 'failed', failed_at = now(), failure_code = $6
+         WHERE actor_id = $1
+           AND method = $2
+           AND resource_id = $3
+           AND key = $4
+           AND owner_token = $5
+           AND state = 'in_progress'
+         RETURNING state, failure_code`,
+        [...scopeValues({ actorId, method, resourceId, key }), ownerToken, failureCode],
+      )
+      if (result.rowCount === 0) {
+        const error = new Error('Idempotency record is not owned by this operation')
+        error.code = 'idempotency_owner_conflict'
+        throw error
+      }
+      return { state: result.rows[0].state, failureCode: result.rows[0].failure_code }
+    },
+
     async find({ actorId, method, resourceId, key }) {
       const result = await client.query(
-        `SELECT fingerprint, state, response_status, response_body, owner_token, created_at, completed_at
+        `SELECT fingerprint, state, response_status, response_body, owner_token, created_at, completed_at, failed_at, failure_code
          FROM idempotency_records
          WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4`,
         scopeValues({ actorId, method, resourceId, key }),
@@ -70,6 +105,8 @@ export function createIdempotencyRepository(client) {
         ownerToken: row.owner_token,
         createdAt: row.created_at,
         completedAt: row.completed_at,
+        failedAt: row.failed_at,
+        failureCode: row.failure_code,
       }
     },
   }

@@ -19,13 +19,13 @@ export function createAuditRepository(client) {
   if (!client || typeof client.query !== 'function') throw new TypeError('A PostgreSQL pool or client is required')
 
   return {
-    async append({ id, actorId, actorRole, action, entityType, entityId, beforeStatus = null, afterStatus = null, versionId = null, payload = {} }) {
+    async append({ id, actorId, actorRole, action, entityType, entityId, beforeStatus = null, afterStatus = null, versionId = null, payload = {}, createdAt = new Date() }) {
       const result = await client.query(
         `INSERT INTO audit_events
-           (id, actor_id, actor_role, action, entity_type, entity_id, before_status, after_status, version_id, payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           (id, actor_id, actor_role, action, entity_type, entity_id, before_status, after_status, version_id, payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
-        [id, actorId, actorRole, action, entityType, entityId, beforeStatus, afterStatus, versionId, payload],
+        [id, actorId, actorRole, action, entityType, entityId, beforeStatus, afterStatus, versionId, payload, createdAt],
       )
       return mapAuditEvent(result.rows[0])
     },

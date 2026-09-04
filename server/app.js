@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import Fastify from 'fastify'
+import { registerCampaignRoutes } from './routes/campaigns.js'
+import { registerTemplateRoutes } from './routes/templates.js'
+import { registerUserRoutes } from './routes/users.js'
+import { registerSettingsRoutes } from './routes/settings.js'
 
 const safeRequestId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
@@ -21,7 +25,7 @@ function errorEnvelope(code, message, requestId, details) {
   }
 }
 
-export function buildApp({ readiness = async () => true } = {}) {
+export function buildApp({ readiness = async () => true, resolveActor, workflowService } = {}) {
   const app = Fastify({
     logger: false,
     requestIdHeader: false,
@@ -54,6 +58,17 @@ export function buildApp({ readiness = async () => true } = {}) {
     ))
   })
 
+  if ((resolveActor && !workflowService) || (!resolveActor && workflowService)) {
+    throw new TypeError('resolveActor and workflowService must be injected together')
+  }
+  if (resolveActor && workflowService) {
+    const dependencies = { resolveActor, workflowService }
+    registerCampaignRoutes(app, dependencies)
+    registerTemplateRoutes(app, dependencies)
+    registerUserRoutes(app, dependencies)
+    registerSettingsRoutes(app, dependencies)
+  }
+
   app.setNotFoundHandler((request, reply) => reply.code(404).send(errorEnvelope(
     'NOT_FOUND',
     'Route not found',
@@ -65,10 +80,12 @@ export function buildApp({ readiness = async () => true } = {}) {
       ? error.statusCode
       : 500
 
+    const exposed = error.expose === true && statusCode !== 500
     reply.code(statusCode).send(errorEnvelope(
-      statusCode === 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR',
-      statusCode === 500 ? 'An unexpected error occurred' : 'Request could not be processed',
+      exposed ? error.code : (statusCode === 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR'),
+      exposed ? error.publicMessage : (statusCode === 500 ? 'An unexpected error occurred' : 'Request could not be processed'),
       request.id,
+      exposed ? error.details : undefined,
     ))
   })
 

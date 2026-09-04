@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import {
+  campaignPatchRequestSchema,
+  campaignResponseSchema,
+  createCampaignRequestSchema,
+  createInvitationRequestSchema,
+  createTemplateVersionRequestSchema,
+  settingsPatchRequestSchema,
   assetHashSchema,
   campaignSchema,
   campaignStatusSchema,
@@ -21,6 +27,54 @@ const validVersionSnapshot = () => ({
 })
 
 describe('MVP contracts', () => {
+  test('accepts only title and brief in campaign edit payloads', () => {
+    expect(campaignPatchRequestSchema.parse({ title: 'Winter launch' })).toEqual({ title: 'Winter launch' })
+    expect(campaignPatchRequestSchema.safeParse({}).success).toBe(false)
+    for (const protectedField of [
+      'status', 'selectedCopyId', 'selectedDirectionId', 'compositionId',
+      'currentVersionNumber', 'openVersionId', 'version', 'review', 'delivery',
+      'composition', 'slotValues', 'templateId', 'templateVersion', 'ratioIds',
+    ]) {
+      expect(campaignPatchRequestSchema.safeParse({ title: 'Winter launch', [protectedField]: 'client-value' }).success)
+        .toBe(false)
+    }
+  })
+
+  test('defines strict create and response payloads for the HTTP interface', () => {
+    const brief = pilotCampaignFixture.brief
+    expect(createCampaignRequestSchema.parse({ title: 'Launch', brief })).toEqual({ title: 'Launch', brief })
+    expect(createCampaignRequestSchema.safeParse({ title: 'Launch', brief, status: 'approved' }).success).toBe(false)
+    expect(campaignResponseSchema.safeParse({
+      id: 'campaign-1', title: 'Launch', brief, status: 'draft', revision: 0,
+      selectedCopyId: null, selectedDirectionId: null, compositionId: null,
+      currentVersionNumber: 0, openVersionId: null, createdBy: 'user-1',
+      createdAt: '2026-09-04T10:00:00.000Z', updatedAt: '2026-09-04T10:00:00.000Z',
+      requestId: 'request-1',
+    }).success).toBe(true)
+  })
+
+  test('keeps invitations, templates, and settings commands strict', () => {
+    expect(createInvitationRequestSchema.parse({ email: ' Person@Example.com ', role: 'designer' }))
+      .toEqual({ email: 'person@example.com', role: 'designer' })
+    expect(createInvitationRequestSchema.safeParse({ email: 'a@example.com', role: 'designer', expiresAt: '2099-01-01' }).success).toBe(false)
+    expect(settingsPatchRequestSchema.safeParse({ generationDisabled: true }).success).toBe(true)
+    expect(settingsPatchRequestSchema.safeParse({}).success).toBe(false)
+    expect(settingsPatchRequestSchema.safeParse({ generationDisabled: true, revision: 1 }).success).toBe(false)
+    expect(createTemplateVersionRequestSchema.safeParse({
+      id: pilotTemplateFixture.id,
+      version: pilotTemplateFixture.version,
+      name: 'Pilot template',
+      manifest: pilotTemplateFixture,
+    }).success).toBe(true)
+    expect(createTemplateVersionRequestSchema.safeParse({
+      id: pilotTemplateFixture.id,
+      version: pilotTemplateFixture.version,
+      name: 'Pilot template',
+      manifest: pilotTemplateFixture,
+      manifestHash: 'a'.repeat(64),
+    }).success).toBe(false)
+  })
+
   test('accepts the pilot campaign fixture', () => {
     expect(campaignSchema.parse(pilotCampaignFixture)).toEqual(pilotCampaignFixture)
   })

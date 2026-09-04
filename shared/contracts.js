@@ -4,6 +4,8 @@ import { templateManifestSchema } from './templateManifest.js'
 
 const nonEmptyString = z.string().trim().min(1)
 const nullableAssetId = nonEmptyString.nullable().optional()
+const timestampSchema = z.string().datetime({ offset: true })
+const requestIdSchema = nonEmptyString.max(128)
 
 export const roleSchema = z.enum(['marketer', 'designer', 'admin'])
 
@@ -37,6 +39,136 @@ export const briefSchema = z.strictObject({
   offer: z.string().trim().max(500),
   locale: nonEmptyString.max(35),
   notes: z.string().trim().max(2_000),
+})
+
+export const createCampaignRequestSchema = z.strictObject({
+  title: nonEmptyString.max(200),
+  brief: briefSchema,
+})
+
+export const campaignPatchRequestSchema = z.strictObject({
+  title: nonEmptyString.max(200).optional(),
+  brief: briefSchema.optional(),
+}).refine((value) => Object.keys(value).length > 0, 'At least one editable field is required')
+
+const persistedCampaignFields = {
+  id: nonEmptyString,
+  title: nonEmptyString.max(200),
+  brief: briefSchema,
+  status: campaignStatusSchema,
+  revision: z.number().int().nonnegative(),
+  selectedCopyId: nonEmptyString.nullable(),
+  selectedDirectionId: nonEmptyString.nullable(),
+  compositionId: nonEmptyString.nullable(),
+  currentVersionNumber: z.number().int().nonnegative(),
+  openVersionId: nonEmptyString.nullable(),
+  createdBy: nonEmptyString,
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+}
+
+export const campaignResponseSchema = z.strictObject({
+  ...persistedCampaignFields,
+  requestId: requestIdSchema,
+})
+
+export const campaignListResponseSchema = z.strictObject({
+  campaigns: z.array(z.strictObject(persistedCampaignFields)),
+  requestId: requestIdSchema,
+})
+
+export const createInvitationRequestSchema = z.strictObject({
+  email: z.string().trim().toLowerCase().email().max(320),
+  role: roleSchema,
+})
+
+const invitationFields = {
+  id: nonEmptyString,
+  email: z.string().email(),
+  role: roleSchema,
+  invitedBy: nonEmptyString,
+  acceptedUserId: nonEmptyString.nullable(),
+  expiresAt: timestampSchema,
+  acceptedAt: timestampSchema.nullable(),
+  revokedAt: timestampSchema.nullable(),
+  createdAt: timestampSchema,
+}
+
+export const invitationResponseSchema = z.strictObject({
+  ...invitationFields,
+  requestId: requestIdSchema,
+})
+
+export const userResponseSchema = z.strictObject({
+  id: nonEmptyString,
+  email: z.string().email(),
+  firebaseUid: nonEmptyString.nullable(),
+  role: roleSchema,
+  displayName: nonEmptyString,
+  disabled: z.boolean(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+  requestId: requestIdSchema,
+})
+
+export const createTemplateVersionRequestSchema = z.strictObject({
+  id: nonEmptyString.max(200),
+  version: nonEmptyString.max(100),
+  name: nonEmptyString.max(200),
+  manifest: templateManifestSchema,
+})
+
+const templateVersionFields = {
+  id: nonEmptyString,
+  version: nonEmptyString,
+  name: nonEmptyString,
+  manifest: templateManifestSchema,
+  manifestHash: assetHashSchema,
+  createdBy: nonEmptyString,
+  createdAt: timestampSchema,
+}
+
+export const templateVersionResponseSchema = z.strictObject({
+  ...templateVersionFields,
+  requestId: requestIdSchema,
+})
+
+export const templateListResponseSchema = z.strictObject({
+  templates: z.array(z.strictObject(templateVersionFields)),
+  requestId: requestIdSchema,
+})
+
+const settingsFields = {
+  provider: z.enum(['mock', 'gemini']),
+  model: nonEmptyString.max(200),
+  region: nonEmptyString.max(100),
+  dailyBudgetMicrounits: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  perStepRegenerationLimit: z.number().int().nonnegative(),
+  generationDisabled: z.boolean(),
+}
+
+export const settingsPatchRequestSchema = z.strictObject({
+  provider: settingsFields.provider.optional(),
+  model: settingsFields.model.optional(),
+  region: settingsFields.region.optional(),
+  dailyBudgetMicrounits: settingsFields.dailyBudgetMicrounits.optional(),
+  perStepRegenerationLimit: settingsFields.perStepRegenerationLimit.optional(),
+  generationDisabled: settingsFields.generationDisabled.optional(),
+}).refine((value) => Object.keys(value).length > 0, 'At least one setting is required')
+
+export const settingsResponseSchema = z.strictObject({
+  ...settingsFields,
+  revision: z.number().int().nonnegative(),
+  updatedBy: nonEmptyString.nullable(),
+  updatedAt: timestampSchema,
+  requestId: requestIdSchema,
+})
+
+export const apiErrorResponseSchema = z.strictObject({
+  code: nonEmptyString,
+  message: nonEmptyString,
+  details: z.unknown().optional(),
+  requestId: requestIdSchema,
 })
 
 export const copyVariantSchema = z.strictObject({
