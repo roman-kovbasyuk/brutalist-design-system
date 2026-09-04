@@ -8,6 +8,7 @@ import {
   visualDirectionSchema,
 } from './contracts.js'
 import { pilotCampaignFixture } from './fixtures/pilotCampaign.js'
+import { pilotTemplateFixture } from './fixtures/pilotTemplate.js'
 
 describe('MVP contracts', () => {
   test('accepts the pilot campaign fixture', () => {
@@ -37,9 +38,30 @@ describe('MVP contracts', () => {
         templateVersion: undefined,
       },
       assets: [],
+      templateManifest: pilotTemplateFixture,
+      templateManifestHash: 'a'.repeat(64),
     }
 
     expect(campaignVersionSnapshotSchema.safeParse(snapshot).success).toBe(false)
+  })
+
+  test('requires a complete manifest and its lowercase hash in an immutable snapshot', () => {
+    const snapshot = {
+      selectedCopy: pilotCampaignFixture.selectedCopy,
+      selectedDirection: pilotCampaignFixture.selectedDirection,
+      composition: pilotCampaignFixture.composition,
+      assets: [],
+    }
+
+    expect(campaignVersionSnapshotSchema.safeParse(snapshot).success).toBe(false)
+    expect(campaignVersionSnapshotSchema.parse({
+      ...snapshot,
+      templateManifest: pilotTemplateFixture,
+      templateManifestHash: 'a'.repeat(64),
+    })).toMatchObject({
+      templateManifest: pilotTemplateFixture,
+      templateManifestHash: 'a'.repeat(64),
+    })
   })
 
   test('accepts only lowercase SHA-256 asset hashes', () => {

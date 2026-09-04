@@ -1,0 +1,169 @@
+import { z } from 'zod'
+
+const nonEmptyString = z.string().trim().min(1)
+const pixel = z.number().int().nonnegative()
+const positivePixel = z.number().int().positive()
+
+const placementSchema = z.strictObject({
+  x: pixel,
+  y: pixel,
+  width: positivePixel,
+  height: positivePixel,
+})
+
+const placementsSchema = z.record(z.string(), placementSchema)
+
+const ratioSchema = z.strictObject({
+  id: nonEmptyString,
+  width: positivePixel,
+  height: positivePixel,
+  safeArea: z.strictObject({
+    top: pixel,
+    right: pixel,
+    bottom: pixel,
+    left: pixel,
+  }),
+})
+
+const textSlotSchema = z.strictObject({
+  id: nonEmptyString,
+  type: z.enum(['text', 'cta']),
+  required: z.boolean(),
+  maxCharacters: z.number().int().positive(),
+  maxLines: z.number().int().positive(),
+  fontFamily: nonEmptyString,
+  fontWeight: z.number().int().positive(),
+  fontSize: positivePixel,
+  minFontSize: positivePixel,
+  placements: placementsSchema,
+})
+
+const imageSlotSchema = z.strictObject({
+  id: nonEmptyString,
+  type: z.literal('image'),
+  required: z.boolean(),
+  minWidth: positivePixel,
+  minHeight: positivePixel,
+  acceptedMimeTypes: z.array(nonEmptyString).min(1),
+  placements: placementsSchema,
+})
+
+const slotSchema = z.union([textSlotSchema, imageSlotSchema])
+
+export const templateManifestSchema = z.strictObject({
+  id: nonEmptyString,
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/),
+  name: nonEmptyString,
+  ratios: z.array(ratioSchema).min(1),
+  slots: z.array(slotSchema).min(1),
+}).superRefine((manifest, context) => {
+  const ratios = new Map()
+  const slots = new Set()
+
+  for (const ratio of manifest.ratios) {
+    if (ratios.has(ratio.id)) {
+      context.addIssue({ code: 'custom', path: ['ratios'], message: `Duplicate ratio: ${ratio.id}.` })
+      continue
+    }
+    ratios.set(ratio.id, ratio)
+    if (ratio.safeArea.left + ratio.safeArea.right >= ratio.width || ratio.safeArea.top + ratio.safeArea.bottom >= ratio.height) {
+      context.addIssue({ code: 'custom', path: ['ratios'], message: `Safe area leaves no usable space for ratio: ${ratio.id}.` })
+    }
+  }
+
+  for (const [slotIndex, slot] of manifest.slots.entries()) {
+    if (slots.has(slot.id)) {
+      context.addIssue({ code: 'custom', path: ['slots', slotIndex, 'id'], message: `Duplicate slot: ${slot.id}.` })
+    }
+    slots.add(slot.id)
+
+    if (slot.type !== 'image' && slot.fontSize < slot.minFontSize) {
+      context.addIssue({ code: 'custom', path: ['slots', slotIndex, 'fontSize'], message: `Slot ${slot.id} font size is below its minimum.` })
+    }
+
+    for (const ratio of manifest.ratios) {
+      const placement = slot.placements[ratio.id]
+      if (!placement) {
+        context.addIssue({ code: 'custom', path: ['slots', slotIndex, 'placements'], message: `Slot ${slot.id} is missing a placement for ratio: ${ratio.id}.` })
+        continue
+      }
+
+      if (placement.x + placement.width > ratio.width || placement.y + placement.height > ratio.height) {
+        context.addIssue({ code: 'custom', path: ['slots', slotIndex, 'placements', ratio.id], message: `Slot ${slot.id} placement exceeds the ${ratio.id} canvas.` })
+        continue
+      }
+
+      if (slot.type !== 'image') {
+        const { left, right, top, bottom } = ratio.safeArea
+        if (
+          placement.x < left ||
+          placement.y < top ||
+          placement.x + placement.width > ratio.width - right ||
+          placement.y + placement.height > ratio.height - bottom
+        ) {
+          context.addIssue({ code: 'custom', path: ['slots', slotIndex, 'placements', ratio.id], message: `Slot ${slot.id} placement exceeds the ${ratio.id} safe area.` })
+        }
+      }
+    }
+
+    for (const placementRatioId of Object.keys(slot.placements)) {
+      if (!ratios.has(placementRatioId)) {
+        context.addIssue({ code: 'custom', path: ['slots', slotIndex, 'placements', placementRatioId], message: `Slot ${slot.id} has a placement for unknown ratio: ${placementRatioId}.` })
+      }
+    }
+  }
+})
+
+const hasValue = (value) => typeof value === 'string' && value.trim().length > 0
+
+export function validateComposition(manifest, compositionInput) {
+  const errors = []
+  const ratioIds = compositionInput?.ratioIds ?? []
+  const slotValues = compositionInput?.slotValues ?? {}
+  const assetMetadata = compositionInput?.assetMetadata ?? {}
+  const ratios = new Map(manifest.ratios.map((ratio) => [ratio.id, ratio]))
+  const slots = new Map(manifest.slots.map((slot) => [slot.id, slot]))
+
+  if (ratioIds.length === 0) errors.push('At least one ratio is required.')
+
+  for (const ratioId of ratioIds) {
+    if (!ratios.has(ratioId)) errors.push(`Unsupported ratio: ${ratioId}.`)
+  }
+
+  for (const slotId of Object.keys(slotValues).sort()) {
+    if (!slots.has(slotId)) errors.push(`Unknown slot: ${slotId}.`)
+  }
+
+  for (const slot of manifest.slots) {
+    const value = slotValues[slot.id]
+    if (slot.required && !hasValue(value)) {
+      errors.push(`Missing required slot: ${slot.id}.`)
+      continue
+    }
+    if (!hasValue(value)) continue
+
+    if (slot.type === 'image') {
+      const asset = assetMetadata[value]
+      if (!asset) {
+        errors.push(`Missing metadata for image asset: ${value}.`)
+        continue
+      }
+      if (!Number.isInteger(asset.width) || !Number.isInteger(asset.height) || asset.width < slot.minWidth || asset.height < slot.minHeight) {
+        errors.push(`Asset ${value} is smaller than image slot ${slot.id} minimum dimensions (${slot.minWidth}×${slot.minHeight}).`)
+      }
+      if (!slot.acceptedMimeTypes.includes(asset.mimeType)) {
+        errors.push(`Asset ${value} MIME type is not accepted by image slot ${slot.id}.`)
+      }
+      continue
+    }
+
+    if (value.length > slot.maxCharacters) {
+      errors.push(`Slot ${slot.id} exceeds its ${slot.maxCharacters} character limit.`)
+    }
+    if (value.split(/\r?\n/).length > slot.maxLines) {
+      errors.push(`Slot ${slot.id} exceeds its ${slot.maxLines} line limit.`)
+    }
+  }
+
+  return { valid: errors.length === 0, errors }
+}

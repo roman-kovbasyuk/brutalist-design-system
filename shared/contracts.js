@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { templateManifestSchema } from './templateManifest.js'
 
 const nonEmptyString = z.string().trim().min(1)
 const nullableAssetId = nonEmptyString.nullable().optional()
@@ -80,6 +81,8 @@ export const campaignVersionSnapshotSchema = z.strictObject({
   selectedDirection: visualDirectionSchema,
   composition: compositionSchema,
   assets: z.array(assetReferenceSchema),
+  templateManifest: templateManifestSchema,
+  templateManifestHash: assetHashSchema,
 })
 
 export const campaignSchema = z.strictObject({
