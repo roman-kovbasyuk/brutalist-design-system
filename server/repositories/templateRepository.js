@@ -35,7 +35,7 @@ export function createTemplateRepository(client) {
 
     async listVersions(id) {
       const result = await client.query(
-        'SELECT * FROM templates WHERE id = $1 ORDER BY created_at DESC, version DESC',
+        'SELECT * FROM templates WHERE id = $1 ORDER BY publication_sequence DESC',
         [id],
       )
       return result.rows.map(mapTemplate)
@@ -45,7 +45,7 @@ export function createTemplateRepository(client) {
       const result = await client.query(
         `SELECT DISTINCT ON (id) *
          FROM templates
-         ORDER BY id, created_at DESC, version DESC`,
+         ORDER BY id, publication_sequence DESC`,
       )
       return result.rows.map(mapTemplate)
     },

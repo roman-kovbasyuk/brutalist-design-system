@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeEach, describe, expect, test } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { Pool } from 'pg'
 import { runMigrations } from '../db/migrate.js'
+import { withTransaction } from '../db/pool.js'
 import { createCampaignRepository, RevisionConflictError } from './campaignRepository.js'
 import { createSettingsRepository } from './settingsRepository.js'
 import { createTemplateRepository } from './templateRepository.js'
@@ -11,6 +15,7 @@ import { createIdempotencyRepository } from './idempotencyRepository.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
+const temporaryDirectories = new Set()
 
 function makePool() {
   const pool = new Pool({ connectionString: databaseUrl, max: 4 })
@@ -62,6 +67,13 @@ async function insertVersion(client, campaignId, createdBy, overrides = {}) {
   })
 }
 
+async function makeMigrationDirectory(files) {
+  const directory = await mkdtemp(join(tmpdir(), 'banner-studio-migrations-'))
+  temporaryDirectories.add(directory)
+  await Promise.all(Object.entries(files).map(([name, sql]) => writeFile(join(directory, name), sql)))
+  return directory
+}
+
 beforeEach(async () => {
   await resetDatabase()
   const pool = makePool()
@@ -72,6 +84,11 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await Promise.all([...pools].map((pool) => pool.end().catch(() => {})))
+})
+
+afterEach(async () => {
+  await Promise.all([...temporaryDirectories].map((directory) => rm(directory, { recursive: true, force: true })))
+  temporaryDirectories.clear()
 })
 
 describe('migration runner', () => {
@@ -108,6 +125,81 @@ describe('migration runner', () => {
     expect(loaded).toMatchObject({ id: 'persistent-campaign', title: 'Autumn launch', status: 'draft', revision: 0 })
     await reconnectedPool.end()
     pools.delete(reconnectedPool)
+  })
+
+  test('orders numeric migration prefixes numerically', async () => {
+    const pool = makePool()
+    const directory = await makeMigrationDirectory({
+      '10_tenth.sql': 'INSERT INTO migration_order (position) VALUES (10);',
+      '2_second.sql': 'CREATE TABLE migration_order (position integer NOT NULL); INSERT INTO migration_order (position) VALUES (2);',
+    })
+
+    await runMigrations({ pool, directory })
+
+    const order = await pool.query('SELECT position FROM migration_order')
+    expect(order.rows.map((row) => row.position)).toEqual([2, 10])
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('rejects duplicate numeric migration prefixes', async () => {
+    const pool = makePool()
+    const directory = await makeMigrationDirectory({
+      '2_first.sql': 'SELECT 1;',
+      '02_duplicate.sql': 'SELECT 2;',
+    })
+
+    await expect(runMigrations({ pool, directory })).rejects.toThrow('Duplicate migration version 2')
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('rejects a changed checksum for an applied migration', async () => {
+    const pool = makePool()
+    const directory = await makeMigrationDirectory({
+      '2_checksum.sql': 'CREATE TABLE checksum_guard (id integer PRIMARY KEY);',
+    })
+    await runMigrations({ pool, directory })
+    await writeFile(join(directory, '2_checksum.sql'), 'CREATE TABLE checksum_guard_changed (id integer PRIMARY KEY);')
+
+    await expect(runMigrations({ pool, directory })).rejects.toThrow('Migration checksum mismatch for 2_checksum.sql')
+    expect((await pool.query("SELECT to_regclass('checksum_guard_changed') AS name")).rows[0].name).toBeNull()
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('rolls back failed migration SQL and does not track it', async () => {
+    const pool = makePool()
+    const directory = await makeMigrationDirectory({
+      '2_broken.sql': 'CREATE TABLE rolled_back_table (id integer); SELECT missing_column FROM rolled_back_table;',
+    })
+
+    await expect(runMigrations({ pool, directory })).rejects.toMatchObject({ code: '42703' })
+    expect((await pool.query("SELECT to_regclass('rolled_back_table') AS name")).rows[0].name).toBeNull()
+    expect((await pool.query('SELECT name FROM schema_migrations WHERE name = $1', ['2_broken.sql'])).rowCount).toBe(0)
+    await pool.end()
+    pools.delete(pool)
+  })
+})
+
+describe('transaction ownership', () => {
+  test('rejects a caller-owned client without committing or releasing it', async () => {
+    const pool = makePool()
+    const client = await pool.connect()
+    await client.query('BEGIN')
+    await client.query('CREATE TEMP TABLE caller_transaction (value integer) ON COMMIT DROP')
+    await client.query('INSERT INTO caller_transaction (value) VALUES (1)')
+
+    try {
+      await expect(withTransaction(client, async () => {}))
+        .rejects.toThrow('withTransaction requires a PostgreSQL pool')
+      expect((await client.query('SELECT value FROM caller_transaction')).rows).toEqual([{ value: 1 }])
+    } finally {
+      await client.query('ROLLBACK')
+      client.release()
+      await pool.end()
+      pools.delete(pool)
+    }
   })
 })
 
@@ -163,8 +255,29 @@ describe('campaign repository and relational constraints', () => {
       [version.id, otherCampaign.id],
     )).rejects.toMatchObject({ code: '23503' })
 
-    await createCampaignRepository(pool).setOpenVersion({ campaignId: campaign.id, versionId: version.id })
-    expect((await createCampaignRepository(pool).findById(campaign.id)).openVersionId).toBe(version.id)
+    const opened = await createCampaignRepository(pool).setOpenVersion({
+      campaignId: campaign.id,
+      versionId: version.id,
+      expectedRevision: 0,
+    })
+    expect(opened).toMatchObject({ openVersionId: version.id, revision: 1 })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('increments revision when opening and closing a version and rejects stale revisions', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    const campaign = await insertCampaign(pool, actorId)
+    const version = await insertVersion(pool, campaign.id, actorId)
+    const repository = createCampaignRepository(pool)
+
+    expect(await repository.setOpenVersion({ campaignId: campaign.id, versionId: version.id, expectedRevision: 0 }))
+      .toMatchObject({ openVersionId: version.id, revision: 1 })
+    await expect(repository.clearOpenVersion({ campaignId: campaign.id, versionId: version.id, expectedRevision: 0 }))
+      .rejects.toBeInstanceOf(RevisionConflictError)
+    expect(await repository.clearOpenVersion({ campaignId: campaign.id, versionId: version.id, expectedRevision: 1 }))
+      .toMatchObject({ openVersionId: null, revision: 2 })
     await pool.end()
     pools.delete(pool)
   })
@@ -263,6 +376,41 @@ describe('supporting repositories', () => {
     expect(await repository.listLatest()).toEqual([expect.objectContaining({ id: 'split-focus', version: '1.1.0' })])
     await expect(pool.query("UPDATE templates SET name = 'Changed' WHERE id = 'split-focus' AND version = '1.0.0'"))
       .rejects.toMatchObject({ code: '55000' })
+    await expect(pool.query("DELETE FROM templates WHERE id = 'split-focus' AND version = '1.0.0'"))
+      .rejects.toMatchObject({ code: '55000' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('uses publication order for latest templates created in one transaction', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool, { role: 'admin' })
+
+    await withTransaction(pool, async (client) => {
+      const repository = createTemplateRepository(client)
+      await repository.createVersion({ id: 'sequence-test', version: '1.9.0', name: 'Sequence', manifest: {}, manifestHash: '1'.repeat(64), createdBy: actorId })
+      await repository.createVersion({ id: 'sequence-test', version: '1.10.0', name: 'Sequence', manifest: {}, manifestHash: '2'.repeat(64), createdBy: actorId })
+    })
+
+    expect(await createTemplateRepository(pool).listLatest())
+      .toEqual([expect.objectContaining({ id: 'sequence-test', version: '1.10.0' })])
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('replaces an expired pending invitation without weakening active uniqueness', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    const repository = createUserRepository(pool)
+    await repository.createInvitation({ id: 'expired-invite', email: 'person@example.test', role: 'designer', invitedBy: adminId, expiresAt: new Date('2020-01-01T00:00:00Z') })
+
+    const replacement = await repository.createInvitation({ id: 'replacement-invite', email: ' PERSON@example.test ', role: 'marketer', invitedBy: adminId, expiresAt: new Date('2030-01-01T00:00:00Z') })
+
+    expect(replacement).toMatchObject({ id: 'replacement-invite', email: 'person@example.test', role: 'marketer' })
+    const expired = await pool.query('SELECT revoked_at FROM invitations WHERE id = $1', ['expired-invite'])
+    expect(expired.rows[0].revoked_at).toBeInstanceOf(Date)
+    await expect(repository.createInvitation({ id: 'duplicate-active', email: 'person@example.test', role: 'designer', invitedBy: adminId, expiresAt: new Date('2031-01-01T00:00:00Z') }))
+      .rejects.toMatchObject({ code: '23505' })
     await pool.end()
     pools.delete(pool)
   })
@@ -282,6 +430,49 @@ describe('supporting repositories', () => {
     expect(await settings.get()).toMatchObject({ provider: 'gemini', model: 'gemini-2.5-flash' })
     await pool.end()
     pools.delete(pool)
+  })
+
+  test('round-trips the maximum safe budget and rejects database overflow', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    const repository = createSettingsRepository(pool)
+
+    const settings = await repository.update({ expectedRevision: 0, provider: 'mock', model: 'mock-v1', region: 'europe-west6', dailyBudgetMicrounits: 9_007_199_254_740_991, perStepRegenerationLimit: 3, generationDisabled: false, updatedBy: adminId })
+    expect(settings.dailyBudgetMicrounits).toBe(9_007_199_254_740_991)
+    expect((await repository.get()).dailyBudgetMicrounits).toBe(9_007_199_254_740_991)
+    await expect(pool.query('UPDATE settings SET daily_budget_microunits = $1 WHERE singleton = $2', ['9007199254740992', true]))
+      .rejects.toMatchObject({ code: '23514' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test.each([9_007_199_254_740_992, 1.5, -1, Number.NaN])(
+    'rejects unsafe budget input %s before querying PostgreSQL',
+    async (dailyBudgetMicrounits) => {
+      const pool = makePool()
+      const adminId = await insertUser(pool, { role: 'admin' })
+      const repository = createSettingsRepository(pool)
+
+      await expect(repository.update({ expectedRevision: 0, provider: 'mock', model: 'mock-v1', region: 'europe-west6', dailyBudgetMicrounits, perStepRegenerationLimit: 3, generationDisabled: false, updatedBy: adminId }))
+        .rejects.toBeInstanceOf(RangeError)
+      expect((await repository.get()).revision).toBe(0)
+      await pool.end()
+      pools.delete(pool)
+    },
+  )
+
+  test('refuses to map an unsafe bigint returned by PostgreSQL', async () => {
+    const client = {
+      async query() {
+        return { rows: [{
+          provider: 'mock', model: 'mock-v1', region: 'europe-west6',
+          daily_budget_microunits: '9007199254740992', per_step_regeneration_limit: 3,
+          generation_disabled: false, revision: 0, updated_by: null, updated_at: new Date(0),
+        }] }
+      },
+    }
+
+    await expect(createSettingsRepository(client).get()).rejects.toBeInstanceOf(RangeError)
   })
 })
 
@@ -320,6 +511,28 @@ describe('idempotency coordination', () => {
     await repository.complete({ ...scope, ownerToken: 'owner-1', responseStatus: 201, responseBody: { id: 'version-1' } })
     expect(await repository.claim({ ...scope, fingerprint: 'a'.repeat(64), ownerToken: 'owner-3' }))
       .toEqual({ kind: 'replay', responseStatus: 201, responseBody: { id: 'version-1' } })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('grants exactly one owner to concurrent claims and keeps all later outcomes deterministic', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    const repository = createIdempotencyRepository(pool)
+    const scope = { actorId, method: 'POST', resourceId: 'campaign-concurrent', key: 'same-key', fingerprint: 'c'.repeat(64) }
+
+    const results = await Promise.all([
+      repository.claim({ ...scope, ownerToken: 'owner-a' }),
+      repository.claim({ ...scope, ownerToken: 'owner-b' }),
+    ])
+
+    expect(results.map((result) => result.kind).sort()).toEqual(['in_progress', 'owner'])
+    const ownerToken = results[0].kind === 'owner' ? 'owner-a' : 'owner-b'
+    await repository.complete({ ...scope, ownerToken, responseStatus: 202, responseBody: { accepted: true } })
+    expect(await repository.claim({ ...scope, ownerToken: 'owner-c' }))
+      .toEqual({ kind: 'replay', responseStatus: 202, responseBody: { accepted: true } })
+    expect(await repository.claim({ ...scope, fingerprint: 'd'.repeat(64), ownerToken: 'owner-d' }))
+      .toEqual({ kind: 'conflict' })
     await pool.end()
     pools.delete(pool)
   })

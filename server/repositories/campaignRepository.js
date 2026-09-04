@@ -136,15 +136,24 @@ export function createCampaignRepository(client) {
       return result.rows.map(mapVersion)
     },
 
-    async setOpenVersion({ campaignId, versionId }) {
+    async setOpenVersion({ campaignId, versionId, expectedRevision }) {
       const result = await client.query(
         `UPDATE campaigns
-         SET open_version_id = $2, updated_at = now()
-         WHERE id = $1 AND open_version_id IS NULL
+         SET open_version_id = $2, revision = revision + 1, updated_at = now()
+         WHERE id = $1 AND revision = $3 AND open_version_id IS NULL
          RETURNING *`,
-        [campaignId, versionId],
+        [campaignId, versionId, expectedRevision],
       )
       if (result.rowCount === 0) {
+        const existing = await client.query('SELECT revision, open_version_id FROM campaigns WHERE id = $1', [campaignId])
+        if (existing.rowCount === 0) {
+          const error = new Error(`Campaign ${campaignId} was not found`)
+          error.code = 'not_found'
+          throw error
+        }
+        if (existing.rows[0].revision !== expectedRevision) {
+          throw new RevisionConflictError(campaignId, expectedRevision)
+        }
         const error = new Error(`Campaign ${campaignId} already has an open version or does not exist`)
         error.code = 'open_version_conflict'
         throw error
@@ -152,15 +161,28 @@ export function createCampaignRepository(client) {
       return mapCampaign(result.rows[0])
     },
 
-    async clearOpenVersion({ campaignId, versionId }) {
+    async clearOpenVersion({ campaignId, versionId, expectedRevision }) {
       const result = await client.query(
         `UPDATE campaigns
-         SET open_version_id = NULL, updated_at = now()
-         WHERE id = $1 AND open_version_id = $2
+         SET open_version_id = NULL, revision = revision + 1, updated_at = now()
+         WHERE id = $1 AND open_version_id = $2 AND revision = $3
          RETURNING *`,
-        [campaignId, versionId],
+        [campaignId, versionId, expectedRevision],
       )
-      return mapCampaign(result.rows[0])
+      if (result.rowCount > 0) return mapCampaign(result.rows[0])
+
+      const existing = await client.query('SELECT revision, open_version_id FROM campaigns WHERE id = $1', [campaignId])
+      if (existing.rowCount === 0) {
+        const error = new Error(`Campaign ${campaignId} was not found`)
+        error.code = 'not_found'
+        throw error
+      }
+      if (existing.rows[0].revision !== expectedRevision) {
+        throw new RevisionConflictError(campaignId, expectedRevision)
+      }
+      const error = new Error(`Campaign ${campaignId} does not have version ${versionId} open`)
+      error.code = 'open_version_conflict'
+      throw error
     },
   }
 }

@@ -1,10 +1,31 @@
+const maximumSafeMicrounits = Number.MAX_SAFE_INTEGER
+
+function parseSafeMicrounits(value) {
+  let parsed
+  try {
+    parsed = BigInt(value)
+  } catch {
+    throw new RangeError('dailyBudgetMicrounits must be a non-negative safe integer')
+  }
+  if (parsed < 0n || parsed > BigInt(maximumSafeMicrounits)) {
+    throw new RangeError('dailyBudgetMicrounits must be a non-negative safe integer')
+  }
+  return Number(parsed)
+}
+
+function validateMicrounitsInput(value) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximumSafeMicrounits) {
+    throw new RangeError('dailyBudgetMicrounits must be a non-negative safe integer')
+  }
+}
+
 function mapSettings(row) {
   if (!row) return null
   return {
     provider: row.provider,
     model: row.model,
     region: row.region,
-    dailyBudgetMicrounits: Number(row.daily_budget_microunits),
+    dailyBudgetMicrounits: parseSafeMicrounits(row.daily_budget_microunits),
     perStepRegenerationLimit: row.per_step_regeneration_limit,
     generationDisabled: row.generation_disabled,
     revision: row.revision,
@@ -36,6 +57,7 @@ export function createSettingsRepository(client) {
     },
 
     async update({ expectedRevision, provider, model, region, dailyBudgetMicrounits, perStepRegenerationLimit, generationDisabled, updatedBy }) {
+      validateMicrounitsInput(dailyBudgetMicrounits)
       const result = await client.query(
         `UPDATE settings
          SET provider = $2,

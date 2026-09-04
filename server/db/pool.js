@@ -7,16 +7,13 @@ export function createPool({ connectionString, ...options } = {}) {
   return new Pool({ connectionString, ...options })
 }
 
-export async function withTransaction(clientOrPool, operation) {
-  if (!clientOrPool || typeof clientOrPool.query !== 'function') {
-    throw new TypeError('A PostgreSQL pool or client is required')
+export async function withTransaction(pool, operation) {
+  if (!pool || typeof pool.connect !== 'function' || typeof pool.query !== 'function' || typeof pool.release === 'function') {
+    throw new TypeError('withTransaction requires a PostgreSQL pool')
   }
   if (typeof operation !== 'function') throw new TypeError('A transaction operation is required')
 
-  const client = typeof clientOrPool.connect === 'function'
-    ? await clientOrPool.connect()
-    : clientOrPool
-  const release = typeof client.release === 'function' ? () => client.release() : () => {}
+  const client = await pool.connect()
 
   try {
     await client.query('BEGIN')
@@ -27,6 +24,6 @@ export async function withTransaction(clientOrPool, operation) {
     await client.query('ROLLBACK').catch(() => {})
     throw error
   } finally {
-    release()
+    client.release()
   }
 }

@@ -8,11 +8,25 @@ const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), 'migra
 const migrationLockId = 4_249_733_141
 
 async function loadMigrations(directory) {
-  const names = (await readdir(directory))
-    .filter((name) => /^\d+_[a-z0-9_]+\.sql$/.test(name))
-    .sort((left, right) => left.localeCompare(right))
+  const migrations = (await readdir(directory))
+    .map((name) => {
+      const match = /^(\d+)_[a-z0-9_]+\.sql$/.exec(name)
+      return match ? { name, version: BigInt(match[1]) } : null
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.version < right.version) return -1
+      if (left.version > right.version) return 1
+      return left.name.localeCompare(right.name)
+    })
 
-  return Promise.all(names.map(async (name) => {
+  for (let index = 1; index < migrations.length; index += 1) {
+    if (migrations[index - 1].version === migrations[index].version) {
+      throw new Error(`Duplicate migration version ${migrations[index].version}`)
+    }
+  }
+
+  return Promise.all(migrations.map(async ({ name }) => {
     const sql = await readFile(join(directory, name), 'utf8')
     const checksum = createHash('sha256').update(sql).digest('hex')
     return { name, sql, checksum }

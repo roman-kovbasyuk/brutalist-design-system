@@ -34,8 +34,18 @@ export function createUserRepository(client) {
     async createInvitation({ id, email, role, invitedBy, expiresAt }) {
       const normalizedEmail = email.trim().toLowerCase()
       const result = await client.query(
-        `INSERT INTO invitations (id, email, role, invited_by, expires_at)
-         VALUES ($1, $2, $3, $4, $5)
+        `WITH retired AS (
+           UPDATE invitations
+           SET revoked_at = now()
+           WHERE email = $2
+             AND accepted_at IS NULL
+             AND revoked_at IS NULL
+             AND expires_at <= now()
+           RETURNING id
+         )
+         INSERT INTO invitations (id, email, role, invited_by, expires_at)
+         SELECT $1, $2, $3, $4, $5
+         FROM (SELECT count(*) FROM retired) AS retirement_barrier
          RETURNING *`,
         [id, normalizedEmail, role, invitedBy, expiresAt],
       )
