@@ -1,0 +1,42 @@
+export const pilotCampaignFixture = {
+  id: 'campaign-fast-track-norwegian',
+  title: 'Fast-Track Norwegian launch',
+  status: 'composed',
+  brief: {
+    product: 'Fast-Track Norwegian intensive',
+    audience: 'People preparing to move to Oslo',
+    objective: 'Generate qualified course enquiries',
+    offer: '15% off until Sunday',
+    locale: 'en',
+    notes: 'Focus on confidence in everyday conversations.',
+  },
+  selectedCopy: {
+    id: 'copy-1',
+    headline: 'Speak before you move',
+    body: 'Build practical Norwegian confidence for everyday life in Oslo.',
+    offer: 'Save 15% until Sunday',
+    cta: 'Explore the intensive',
+    visualPrompt: 'A confident newcomer speaking with a local in an Oslo café',
+  },
+  selectedDirection: {
+    id: 'direction-1',
+    title: 'Everyday confidence',
+    prompt: 'Natural editorial photograph of a friendly conversation in an Oslo café',
+    status: 'ready',
+    previewAssetId: 'asset-direction-1',
+  },
+  composition: {
+    id: 'composition-1',
+    templateId: 'split-focus',
+    templateVersion: '1.0.0',
+    ratioIds: ['square'],
+    slotValues: {
+      headline: 'Speak before you move',
+      body: 'Build practical Norwegian confidence for everyday life in Oslo.',
+      cta: 'Explore the intensive',
+      image: 'asset-direction-1',
+    },
+    validation: { valid: true, errors: [] },
+    stale: false,
+  },
+}
