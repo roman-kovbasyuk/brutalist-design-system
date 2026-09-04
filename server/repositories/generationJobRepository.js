@@ -565,13 +565,14 @@ export function createGenerationControlPlane({
         if (!candidate) return { kind: 'missing' }
         await lockAssetObjectKey(client, candidate.object_key)
         const selected = await client.query(
-          `SELECT id, object_key FROM orphaned_uploads
+          `SELECT id, object_key, claimed_build_id FROM orphaned_uploads
            WHERE id = $1 AND object_key = $2 AND status <> 'cleaned'
            FOR UPDATE`,
           [orphanId, candidate.object_key],
         )
         const orphan = selected.rows[0]
         if (!orphan) return { kind: 'missing' }
+        if (orphan.claimed_build_id) return { kind: 'claimed', objectKey: orphan.object_key }
         const referenced = await client.query('SELECT 1 FROM assets WHERE object_key = $1', [orphan.object_key])
         if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
         await deleteObject({ objectKey: orphan.object_key })

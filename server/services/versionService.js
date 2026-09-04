@@ -108,8 +108,10 @@ function verifyTemplate(template) {
   }
 }
 
-function verifyCopyLineage(copy) {
+function verifyCopyLineage(copy, campaignBrief) {
   if (!copy?.selectedCopy || copy.stale || copy.generationStep !== 'copy' || !isSafeGeneration(copy)
+    || copy.generationInput?.brief == null
+    || hashCanonical(copy.generationInput.brief) !== hashCanonical(campaignBrief)
     || copy.generationResult?.copySetId !== copy.id
     || !Array.isArray(copy.generationResult?.copies) || !Array.isArray(copy.candidates)
     || hashCanonical(copy.generationResult?.copies) !== hashCanonical(copy.candidates)
@@ -120,13 +122,21 @@ function verifyCopyLineage(copy) {
   }
 }
 
-function verifyDirectionLineage(direction) {
+function verifyDirectionLineage(direction, selectedCopy) {
   const generated = Array.isArray(direction?.generationResult?.directions)
     ? direction.generationResult.directions.find((candidate) => candidate.id === direction.id)
     : null
   if (!direction || direction.stale || direction.status !== 'ready' || !direction.previewAssetId
     || direction.generationStep !== 'directions' || !isSafeGeneration(direction)
-    || !generated || generated.title !== direction.title || generated.prompt !== direction.prompt) {
+    || direction.generationInput?.copy == null
+    || hashCanonical(direction.generationInput.copy) !== hashCanonical(selectedCopy)
+    || !generated || hashCanonical(generated) !== hashCanonical({
+      id: direction.id,
+      title: direction.title,
+      prompt: direction.prompt,
+      status: 'pending',
+      previewAssetId: null,
+    })) {
     fail(409, 'direction_selection_invalid', 'The selected direction is stale, unsafe, or unavailable')
   }
 }
@@ -151,7 +161,14 @@ function verifyImageAssetLineage(asset, direction, { requireGenerated = false } 
   const generated = asset?.source === 'generation'
     && asset.generationStep === 'image'
     && isSafeGeneration(asset)
-    && asset.generationInput?.direction?.id === direction.id
+    && asset.generationInput?.direction != null
+    && hashCanonical(asset.generationInput.direction) === hashCanonical({
+      id: direction.id,
+      title: direction.title,
+      prompt: direction.prompt,
+      status: 'pending',
+      previewAssetId: null,
+    })
     && matchesGeneratedAssetResult(asset)
   const uploaded = asset?.source === 'upload' && asset.generationJobId == null
   if (!validShape || (requireGenerated ? !generated : !(generated || uploaded))) {
@@ -174,8 +191,8 @@ function immutableSourceAsset(asset) {
   }
 }
 
-function verifyCompositionSources({ template, composition, direction, previewAsset, sourceAssets }) {
-  verifyDirectionLineage(direction)
+function verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets }) {
+  verifyDirectionLineage(direction, copy.selectedCopy)
   verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
   if (previewAsset.id !== direction.previewAssetId) {
     fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
@@ -256,8 +273,84 @@ function validatePreparedContext({ campaign, copy, direction, composition, templ
   if (composition.templateId !== template.id || composition.templateVersion !== template.version) {
     fail(409, 'template_mismatch', 'The composition does not match its immutable template version')
   }
-  verifyCopyLineage(copy)
-  verifyCompositionSources({ template, composition, direction, previewAsset, sourceAssets })
+  verifyCopyLineage(copy, campaign.brief)
+  verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets })
+}
+
+function exactObjectKeys(value, keys) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && hashCanonical(Object.keys(value).sort()) === hashCanonical([...keys].sort())
+}
+
+function roundCoordinate(value) {
+  return Math.round(value * 1_000_000) / 1_000_000
+}
+
+function validRenderedTextLines(value, lines, maxLines) {
+  if (!Array.isArray(lines) || lines.length < 1 || lines.length > maxLines
+    || lines.some((line) => typeof line !== 'string')) return false
+  const paragraphs = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')
+    .map((paragraph) => paragraph.trim().split(/[\t\f\v ]+/).filter(Boolean))
+  let lineIndex = 0
+  for (const paragraph of paragraphs) {
+    if (paragraph.length === 0) {
+      if (lines[lineIndex] !== '') return false
+      lineIndex += 1
+      continue
+    }
+    let wordIndex = 0
+    while (wordIndex < paragraph.length) {
+      const line = lines[lineIndex]
+      if (typeof line !== 'string' || line.length === 0) return false
+      const words = line.trim().split(/[\t\f\v ]+/).filter(Boolean)
+      if (line !== words.join(' ') || words.length === 0) return false
+      for (const word of words) {
+        if (word !== paragraph[wordIndex]) return false
+        wordIndex += 1
+      }
+      lineIndex += 1
+    }
+  }
+  return lineIndex === lines.length
+}
+
+function validRenderedSlotProvenance({ renderedSlots, manifest, composition, sourceAssets, ratioId }) {
+  if (!Array.isArray(renderedSlots)) return false
+  const presentSlots = manifest.slots.filter((slot) => Object.hasOwn(composition.slotValues, slot.id))
+  if (renderedSlots.length !== presentSlots.length) return false
+  const sourceById = new Map(sourceAssets.map((asset) => [asset.id, asset]))
+  for (const [index, definition] of presentSlots.entries()) {
+    const rendered = renderedSlots[index]
+    const placement = definition.placements[ratioId]
+    if (!rendered || rendered.id !== definition.id || rendered.type !== definition.type
+      || !exactObjectKeys(rendered.placement, ['x', 'y', 'width', 'height'])
+      || hashCanonical(rendered.placement) !== hashCanonical(placement)) return false
+    if (definition.type === 'image') {
+      const source = sourceById.get(composition.slotValues[definition.id])
+      if (!source || !exactObjectKeys(rendered, ['id', 'type', 'placement', 'source', 'crop'])
+        || !exactObjectKeys(rendered.source, ['mimeType', 'width', 'height', 'sha256'])
+        || rendered.source.mimeType !== source.mimeType
+        || rendered.source.width !== source.width || rendered.source.height !== source.height
+        || rendered.source.sha256 !== source.sha256
+        || !exactObjectKeys(rendered.crop, ['x', 'y', 'width', 'height'])) return false
+      const scale = Math.max(placement.width / source.width, placement.height / source.height)
+      const expectedCrop = {
+        x: roundCoordinate((source.width - placement.width / scale) / 2),
+        y: roundCoordinate((source.height - placement.height / scale) / 2),
+        width: roundCoordinate(placement.width / scale),
+        height: roundCoordinate(placement.height / scale),
+      }
+      if (hashCanonical(rendered.crop) !== hashCanonical(expectedCrop)) return false
+      continue
+    }
+    if (!exactObjectKeys(rendered, ['id', 'type', 'lines', 'placement', 'font'])
+      || !exactObjectKeys(rendered.font, ['family', 'weight', 'size'])
+      || rendered.font.family !== definition.fontFamily
+      || rendered.font.weight !== definition.fontWeight
+      || rendered.font.size !== definition.fontSize
+      || !validRenderedTextLines(composition.slotValues[definition.id], rendered.lines, definition.maxLines)) return false
+  }
+  return true
 }
 
 function contextMatchesPlan({ copy, direction, composition, template, sourceAssets }, plan) {
@@ -338,8 +431,10 @@ export function createVersionService({
       }
       const template = await repository.findTemplate(command.templateId, command.templateVersion)
       verifyTemplate(template)
+      const copy = await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId)
+      verifyCopyLineage(copy, campaign.brief)
       const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
-      verifyDirectionLineage(direction)
+      verifyDirectionLineage(direction, copy.selectedCopy)
       const previewAsset = await repository.findAsset(campaign.id, direction.previewAssetId)
       verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
       const sourceIds = referencedImageAssetIds(template.manifest, command.slotValues)
@@ -496,25 +591,30 @@ export function createVersionService({
       const decoded = await beforeDeadline(deadlineAt, () => decodeGeneratedImage(bytes, 'image/png'))
       const ratio = build.plan.templateManifest.ratios.find((candidate) => candidate.id === planned.ratioId)
       const nested = rendered.renderManifest
-      const exactKeys = (value, keys) => value && typeof value === 'object'
-        && hashCanonical(Object.keys(value).sort()) === hashCanonical([...keys].sort())
       if (!ratio || !decoded
         || rendered.mimeType !== 'image/png' || rendered.byteSize !== bytes.length || rendered.sha256 !== sha256
         || rendered.width !== ratio.width || rendered.height !== ratio.height
         || decoded.mimeType !== 'image/png' || decoded.width !== ratio.width || decoded.height !== ratio.height
-        || !exactKeys(nested, ['schemaVersion', 'template', 'ratio', 'canvas', 'slots', 'output'])
-        || nested.schemaVersion !== 1 || !Array.isArray(nested.slots)
-        || !exactKeys(nested.template, ['id', 'version', 'sha256'])
+        || !exactObjectKeys(nested, ['schemaVersion', 'template', 'ratio', 'canvas', 'slots', 'output'])
+        || nested.schemaVersion !== 1
+        || !exactObjectKeys(nested.template, ['id', 'version', 'sha256'])
         || nested.template.id !== build.plan.templateManifest.id
         || nested.template.version !== build.plan.templateManifest.version
         || nested.template.sha256 !== build.plan.templateManifestHash
         || nested.ratio !== planned.ratioId
-        || !exactKeys(nested.canvas, ['width', 'height'])
+        || !exactObjectKeys(nested.canvas, ['width', 'height'])
         || nested.canvas.width !== ratio.width || nested.canvas.height !== ratio.height
-        || !exactKeys(nested.output, ['mimeType', 'width', 'height', 'byteSize', 'sha256'])
+        || !exactObjectKeys(nested.output, ['mimeType', 'width', 'height', 'byteSize', 'sha256'])
         || nested.output.mimeType !== 'image/png'
         || nested.output.width !== ratio.width || nested.output.height !== ratio.height
-        || nested.output.byteSize !== bytes.length || nested.output.sha256 !== sha256) {
+        || nested.output.byteSize !== bytes.length || nested.output.sha256 !== sha256
+        || !validRenderedSlotProvenance({
+          renderedSlots: nested.slots,
+          manifest: build.plan.templateManifest,
+          composition: build.plan.composition,
+          sourceAssets: build.plan.sourceAssets,
+          ratioId: planned.ratioId,
+        })) {
         fail(502, 'renderer_integrity_failure', 'Rendered review asset failed integrity verification')
       }
       renders.push({
@@ -551,7 +651,14 @@ export function createVersionService({
       ...build.plan.ratioAssets.map((asset) => asset.objectKey),
       build.plan.manifestAsset.objectKey,
     ]
-    if (!await repository.adoptBuildObjects({ buildId: build.id, ownerToken, objectKeys })) {
+    if (!await repository.adoptBuildObjects({
+      buildId: build.id,
+      ownerToken,
+      campaignId: build.campaignId,
+      objectKeys,
+      orphanIds: objectKeys.map(() => idGenerator()),
+      adoptedAt: safeInstant(clock()),
+    })) {
       fail(409, 'version_build_owner_lost', 'Version build ownership was lost')
     }
   })
@@ -617,7 +724,7 @@ export function createVersionService({
       composition: await repository.findComposition(campaign.id, campaign.compositionId),
       template: await repository.findTemplate(build.plan.templateManifest.id, build.plan.templateManifest.version),
       previewAsset: await repository.findAsset(campaign.id, direction?.previewAssetId),
-      sourceAssets: await repository.findAssets(campaign.id, build.plan.sourceAssets.map((asset) => asset.id)),
+      sourceAssets: await repository.findAssetsForUpdate(campaign.id, build.plan.sourceAssets.map((asset) => asset.id)),
     }
     if (hashCanonical(currentContext.sourceAssets.map(immutableSourceAsset)) !== hashCanonical(build.plan.sourceAssets)) {
       fail(409, 'version_source_changed', 'Campaign content changed while the review version was being created')
@@ -647,6 +754,7 @@ export function createVersionService({
       actor,
       snapshot,
       contentHash,
+      sourceAssets: currentContext.sourceAssets,
       assets: rendered.assets.map(({ bytes: _bytes, ...asset }) => asset),
       reviewEventId: idGenerator(),
       auditId: idGenerator(),
