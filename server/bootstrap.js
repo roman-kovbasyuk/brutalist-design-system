@@ -7,6 +7,7 @@ import { createWorkflowService } from './services/workflowService.js'
 import { createGenerationService } from './services/generationService.js'
 import { createGenerationControlPlane } from './repositories/generationJobRepository.js'
 import { createMockProvider } from './providers/mockProvider.js'
+import { generationProviderRegistry } from './providers/registry.js'
 
 const productionDependencies = {
   buildApp,
@@ -17,6 +18,7 @@ const productionDependencies = {
   createGenerationControlPlane,
   createGenerationService,
   createMockProvider,
+  generationProviderRegistry,
   runMigrations,
 }
 
@@ -54,8 +56,13 @@ export async function createServerRuntime({ environment = process.env, dependenc
   try {
     await resolved.runMigrations({ pool })
     const workflowService = resolved.createWorkflowService({ pool })
-    generationProvider = resolved.createMockProvider()
-    const generationControlPlane = resolved.createGenerationControlPlane({ pool, providerNames: ['mock'] })
+    const mockConfiguration = resolved.generationProviderRegistry.mock?.[0]
+    if (!mockConfiguration) throw new Error('The mock generation provider is not registered')
+    generationProvider = resolved.createMockProvider(mockConfiguration)
+    const generationControlPlane = resolved.createGenerationControlPlane({
+      pool,
+      providerRegistry: resolved.generationProviderRegistry,
+    })
     const generationService = resolved.createGenerationService({
       pool,
       controlPlane: generationControlPlane,

@@ -14,6 +14,7 @@ describe('production server composition', () => {
       close: vi.fn(async () => { calls.push('provider.close') }),
     }
     const generationService = { kind: 'generation' }
+    const providerRegistry = { mock: [{ model: 'mock-v1', region: 'europe-west6' }] }
     const resolveActor = vi.fn()
     const dependencies = {
       createPool: vi.fn(() => pool),
@@ -22,6 +23,7 @@ describe('production server composition', () => {
       createGenerationControlPlane: vi.fn(() => generationControlPlane),
       createMockProvider: vi.fn(() => generationProvider),
       createGenerationService: vi.fn(() => generationService),
+      generationProviderRegistry: providerRegistry,
       createFirebaseTokenVerifier: vi.fn(() => verifier),
       createAuthenticator: vi.fn(() => resolveActor),
       buildApp: vi.fn((input) => { calls.push('buildApp'); return app }),
@@ -34,7 +36,8 @@ describe('production server composition', () => {
 
     expect(calls.slice(0, 2)).toEqual(['migrate', 'buildApp'])
     expect(dependencies.createWorkflowService).toHaveBeenCalledWith({ pool })
-    expect(dependencies.createGenerationControlPlane).toHaveBeenCalledWith({ pool, providerNames: ['mock'] })
+    expect(dependencies.createMockProvider).toHaveBeenCalledWith({ model: 'mock-v1', region: 'europe-west6' })
+    expect(dependencies.createGenerationControlPlane).toHaveBeenCalledWith({ pool, providerRegistry })
     expect(dependencies.createGenerationService).toHaveBeenCalledWith({
       pool, controlPlane: generationControlPlane, providers: { mock: generationProvider },
     })

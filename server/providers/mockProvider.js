@@ -1,4 +1,5 @@
 import { hashCanonical } from '../../shared/canonicalJson.js'
+import { deflateSync } from 'node:zlib'
 import {
   analyseBriefInputSchema,
   analyseBriefResultSchema,
@@ -10,7 +11,46 @@ import {
   generateImageResultSchema,
 } from '../../shared/contracts.js'
 
-const pngPixel = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
+const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+
+function crc32(buffer) {
+  let crc = 0xffffffff
+  for (const byte of buffer) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1))
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function pngChunk(type, data = Buffer.alloc(0)) {
+  const typeBytes = Buffer.from(type, 'ascii')
+  const output = Buffer.alloc(12 + data.length)
+  output.writeUInt32BE(data.length, 0)
+  typeBytes.copy(output, 4)
+  data.copy(output, 8)
+  output.writeUInt32BE(crc32(Buffer.concat([typeBytes, data])), 8 + data.length)
+  return output
+}
+
+function deterministicPng({ width, height, seed }) {
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header.set([8, 0, 0, 0, 0], 8)
+  const seedBytes = Buffer.from(seed, 'hex')
+  const scanlines = Buffer.alloc(height * (width + 1))
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * (width + 1)
+    scanlines[rowOffset] = 0
+    scanlines.fill((seedBytes[y % seedBytes.length] + y * 17) & 255, rowOffset + 1, rowOffset + width + 1)
+  }
+  return new Uint8Array(Buffer.concat([
+    pngSignature,
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(scanlines, { level: 9 })),
+    pngChunk('IEND'),
+  ]))
+}
 
 function abortIfNeeded(signal) {
   if (!(signal instanceof AbortSignal)) throw new TypeError('Mock provider requires an AbortSignal')
@@ -103,9 +143,10 @@ export function createMockProvider({ model = 'mock-v1', region = 'europe-west6' 
       abortIfNeeded(signal)
       const command = generateImageInputSchema.parse(input)
       if (isBlocked(command)) return generateImageResultSchema.parse(blockedResult(options, command))
+      const seed = hashCanonical(command)
       return generateImageResultSchema.parse({
         ...metadata({ ...options, input: command, outputUnits: command.width * command.height, actualCostMicrounits: 1_000 }),
-        image: { bytes: new Uint8Array(pngPixel), mimeType: 'image/png', width: command.width, height: command.height },
+        image: { bytes: deterministicPng({ width: command.width, height: command.height, seed }), mimeType: 'image/png', width: command.width, height: command.height },
       })
     },
   })

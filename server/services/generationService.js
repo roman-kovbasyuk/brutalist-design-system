@@ -6,6 +6,7 @@ import {
   directionGenerationRequestSchema,
   directionSelectionRequestSchema,
   imageGenerationRequestSchema,
+  imageResultSinkReceiptSchema,
 } from '../../shared/contracts.js'
 import { invokeProvider, validateGenerationProvider } from '../providers/provider.js'
 
@@ -79,8 +80,8 @@ function normalizedResult(step, result) {
   if (step === 'image') {
     return {
       status: 'succeeded',
-      resultMetadata: { image: { mimeType: result.image.mimeType, width: result.image.width, height: result.image.height, byteSize: result.image.bytes.byteLength } },
-      temporaryImage: result.image,
+      resultMetadata: null,
+      image: result.image,
     }
   }
   throw new TypeError(`Unknown generation step ${step}`)
@@ -95,6 +96,7 @@ export function createGenerationService({
   clock = () => new Date(),
   timeoutMs = 30_000,
   maximumCosts = defaultMaximumCosts,
+  imageResultSink,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   if (!controlPlane || typeof controlPlane.prepareGeneration !== 'function') throw new TypeError('A generation control plane is required')
@@ -104,12 +106,18 @@ export function createGenerationService({
   for (const [step, cost] of Object.entries(maximumCosts)) {
     if (!Number.isSafeInteger(cost) || cost < 0) throw new TypeError(`Maximum cost for ${step} must be a non-negative safe integer`)
   }
+  if (imageResultSink !== undefined && typeof imageResultSink?.accept !== 'function') {
+    throw new TypeError('An image result sink must implement accept')
+  }
 
   const execute = async ({ actor, campaignId, idempotencyKey, input, step, schema }) => {
     requireRole(actor, editorRoles)
     const command = validate(schema, input ?? {})
     validateIdempotencyKey(idempotencyKey)
     if (typeof campaignId !== 'string' || campaignId.trim().length === 0) throw new GenerationServiceError(400, 'invalid_campaign_id', 'Campaign id is required')
+    if (step === 'image' && !imageResultSink) {
+      throw new GenerationServiceError(503, 'image_storage_unavailable', 'Image generation is unavailable until durable storage is configured')
+    }
 
     const startedAt = safeInstant(clock(), 'Generation clock')
     const jobId = idGenerator()
@@ -189,6 +197,31 @@ export function createGenerationService({
     }
 
     const normalized = normalizedResult(step, result)
+    if (normalized.image) {
+      let receipt
+      try {
+        receipt = imageResultSinkReceiptSchema.parse(await imageResultSink.accept({
+          actor,
+          campaignId,
+          jobId: prepared.job.id,
+          image: normalized.image,
+          signal: abortController.signal,
+        }))
+        if (receipt.mimeType !== normalized.image.mimeType
+          || receipt.width !== normalized.image.width
+          || receipt.height !== normalized.image.height
+          || receipt.byteSize !== normalized.image.bytes.byteLength) {
+          throw new TypeError('Durable image receipt does not match the provider result')
+        }
+        normalized.resultMetadata = { image: receipt }
+      } catch {
+        return controlPlane.markUnknown({
+          jobId: prepared.job.id,
+          ownerToken: prepared.ownerToken,
+          reason: 'image_storage_ambiguous',
+        })
+      }
+    }
     const committed = await controlPlane.completeProviderResult({
       jobId: prepared.job.id,
       ownerToken: prepared.ownerToken,
@@ -200,7 +233,7 @@ export function createGenerationService({
       errorCode: normalized.errorCode ?? null,
       completedAt: safeInstant(clock(), 'Generation clock'),
     })
-    return { ...committed, ...(normalized.temporaryImage ? { temporaryImage: normalized.temporaryImage } : {}) }
+    return committed
   }
 
   return {

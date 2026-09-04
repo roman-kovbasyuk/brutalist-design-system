@@ -1,9 +1,36 @@
 import { describe, expect, test } from 'vitest'
+import { inflateSync } from 'node:zlib'
 import { createMockProvider } from './mockProvider.js'
 
 const briefA = {
   product: 'Nordic language course', audience: 'Busy adults', objective: 'Trial signups',
   offer: 'First week free', locale: 'en-GB', notes: 'Keep the tone direct.',
+}
+
+function decodeMockPng(bytes) {
+  const buffer = Buffer.from(bytes)
+  expect(buffer.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+  let offset = 8
+  let width
+  let height
+  const compressed = []
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset)
+    const type = buffer.toString('ascii', offset + 4, offset + 8)
+    const data = buffer.subarray(offset + 8, offset + 8 + length)
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0)
+      height = data.readUInt32BE(4)
+      expect([...data.subarray(8)]).toEqual([8, 0, 0, 0, 0])
+    }
+    if (type === 'IDAT') compressed.push(data)
+    offset += 12 + length
+    if (type === 'IEND') break
+  }
+  const pixels = inflateSync(Buffer.concat(compressed))
+  expect(pixels.byteLength).toBe(height * (width + 1))
+  for (let row = 0; row < height; row += 1) expect(pixels[row * (width + 1)]).toBe(0)
+  return { width, height }
 }
 
 describe('deterministic mock generation provider contract', () => {
@@ -34,6 +61,20 @@ describe('deterministic mock generation provider contract', () => {
     expect(directions.directions).toHaveLength(5)
     expect(image.image).toMatchObject({ mimeType: 'image/png', width: 1200, height: 628, bytes: expect.any(Uint8Array) })
     expect(JSON.stringify({ analysis, directions, image: { ...image, image: { ...image.image, bytes: [] } } })).not.toMatch(/jobId|video|live/i)
+  })
+
+  test('encodes deterministic valid PNG pixels at the requested dimensions', async () => {
+    const provider = createMockProvider()
+    const input = {
+      direction: { id: 'direction-1', title: 'Nordic focus', prompt: 'Soft daylight.', status: 'pending', previewAssetId: null },
+      width: 320,
+      height: 180,
+    }
+    const first = await provider.generateImage(input, new AbortController().signal)
+    const second = await provider.generateImage({ height: 180, width: 320, direction: input.direction }, new AbortController().signal)
+
+    expect(decodeMockPng(first.image.bytes)).toEqual({ width: 320, height: 180 })
+    expect(first.image.bytes).toEqual(second.image.bytes)
   })
 
   test('returns validated blocked metadata without unsafe bytes', async () => {

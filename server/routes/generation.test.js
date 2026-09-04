@@ -20,7 +20,7 @@ function makeApp({ role = 'marketer', generation = {} } = {}) {
     analyseBrief: vi.fn(async () => ({ status: 201, body: { job: { ...pendingJob, step: 'brief_analysis' } } })),
     generateCopy: vi.fn(async () => ({ status: 201, body: { job: pendingJob } })),
     generateDirections: vi.fn(async () => ({ status: 201, body: { job: { ...pendingJob, step: 'directions' } } })),
-    generateImage: vi.fn(async () => ({ status: 201, body: { job: { ...pendingJob, step: 'image', result: { image: { mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } } }, temporaryImage: { bytes: new Uint8Array([1, 2, 3]) } })),
+    generateImage: vi.fn(async () => ({ status: 201, body: { job: { ...pendingJob, step: 'image', result: { image: { assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } } } })),
     getJob: vi.fn(async () => pendingJob),
     selectCopy: vi.fn(async () => campaign),
     selectDirection: vi.fn(async () => ({ ...campaign, status: 'direction_selected', revision: 2, selectedDirectionId: 'direction-1' })),
@@ -69,7 +69,7 @@ describe('generation and selection routes', () => {
   })
 
   test('allows authenticated job reads but never serializes temporary image bytes', async () => {
-    const { app } = makeApp({ role: 'designer', generation: { getJob: vi.fn(async () => ({ ...pendingJob, step: 'image', result: { image: { mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } })) } })
+    const { app } = makeApp({ role: 'designer', generation: { getJob: vi.fn(async () => ({ ...pendingJob, step: 'image', result: { image: { assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } })) } })
     const response = await app.inject({ method: 'GET', url: '/api/v1/generation-jobs/job-1' })
 
     expect(response.statusCode).toBe(200)

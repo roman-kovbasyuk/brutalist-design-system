@@ -28,18 +28,33 @@ function harness(overrides = {}) {
     analyseBrief: vi.fn(), generateCopy: vi.fn(async () => copyResult), generateDirections: vi.fn(), generateImage: vi.fn(),
     ...overrides.provider,
   }
-  return {
-    service: createGenerationService({
+  const serviceOptions = {
       pool: { query: vi.fn() }, controlPlane, providers: { mock: provider },
       idGenerator: () => 'job-1', ownerTokenGenerator: () => 'owner-1', timeoutMs: 25,
       clock: () => new Date('2026-09-04T10:00:00.000Z'),
-    }),
+      ...(Object.hasOwn(overrides, 'imageResultSink') ? { imageResultSink: overrides.imageResultSink } : {}),
+    }
+  return {
+    service: createGenerationService(serviceOptions),
     controlPlane,
     provider,
   }
 }
 
 describe('generation service external-call recovery', () => {
+  test('rejects image generation before reservation when no durable image-result sink is installed', async () => {
+    const { service, controlPlane, provider } = harness()
+
+    await expect(service.generateImage({
+      actor, campaignId: 'campaign-1', idempotencyKey: 'image-key',
+      input: { directionId: 'direction-1', width: 1200, height: 628 },
+    })).rejects.toMatchObject({ code: 'image_storage_unavailable', statusCode: 503 })
+
+    expect(controlPlane.prepareGeneration).not.toHaveBeenCalled()
+    expect(controlPlane.markDispatched).not.toHaveBeenCalled()
+    expect(provider.generateImage).not.toHaveBeenCalled()
+  })
+
   test('reserves and persists dispatch before invoking a provider, then commits its validated result', async () => {
     const { service, controlPlane, provider } = harness()
     const outcome = await service.generateCopy({ actor, campaignId: 'campaign-1', idempotencyKey: 'copy-key', input: {} })
@@ -100,6 +115,7 @@ describe('generation service external-call recovery', () => {
     }
     const blockedJob = { ...job, step: 'image', status: 'blocked', safety: blockedResult.safety, errorCode: 'provider_blocked', actualCostMicrounits: 0 }
     const { service, provider, controlPlane } = harness({
+      imageResultSink: { accept: vi.fn() },
       provider: { generateImage: vi.fn(async () => blockedResult) },
       controlPlane: {
         prepareGeneration: vi.fn(async () => ({
@@ -117,14 +133,16 @@ describe('generation service external-call recovery', () => {
     expect(provider.generateImage).toHaveBeenCalledOnce()
   })
 
-  test('returns image bytes only as an ephemeral service boundary, never inside persisted job metadata', async () => {
+  test('commits image success only after a durable sink accepts bytes and returns stable asset metadata', async () => {
     const safeImage = {
       provider: 'mock', model: 'mock-v1', region: 'europe-west6', usage: { inputUnits: 10, outputUnits: 20 },
       actualCostMicrounits: 1_000, safety: { verdict: 'safe', categories: [] },
       image: { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png', width: 1200, height: 628 },
     }
-    const imageJob = { ...job, step: 'image', status: 'succeeded', result: { image: { mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } }
+    const imageJob = { ...job, step: 'image', status: 'succeeded', result: { image: { assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } }
+    const imageResultSink = { accept: vi.fn(async () => ({ assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 })) }
     const { service, controlPlane } = harness({
+      imageResultSink,
       provider: { generateImage: vi.fn(async () => safeImage) },
       controlPlane: {
         prepareGeneration: vi.fn(async () => ({ kind: 'owner', ownerToken: 'owner-1', job: { ...job, step: 'image' }, context: { direction: { id: 'direction-1', title: 'Scene', prompt: 'Clean scene', status: 'pending', previewAssetId: null } } })),
@@ -133,9 +151,35 @@ describe('generation service external-call recovery', () => {
     })
 
     const outcome = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'image-key', input: { directionId: 'direction-1', width: 1200, height: 628 } })
-    expect(outcome.temporaryImage.bytes).toEqual(new Uint8Array([1, 2, 3]))
-    expect(outcome.body.job.result).toEqual({ image: { mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } })
+    expect(outcome).not.toHaveProperty('temporaryImage')
+    expect(outcome.body.job.result).toEqual({ image: { assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } })
     expect(JSON.stringify(outcome.body)).not.toContain('bytes')
-    expect(controlPlane.completeProviderResult).toHaveBeenCalledWith(expect.objectContaining({ resultMetadata: { image: { mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } }))
+    expect(imageResultSink.accept).toHaveBeenCalledWith(expect.objectContaining({
+      actor, campaignId: 'campaign-1', jobId: 'job-1', image: safeImage.image,
+    }))
+    expect(imageResultSink.accept.mock.invocationCallOrder[0]).toBeLessThan(controlPlane.completeProviderResult.mock.invocationCallOrder[0])
+    expect(controlPlane.completeProviderResult).toHaveBeenCalledWith(expect.objectContaining({ resultMetadata: { image: { assetId: 'asset-1', mimeType: 'image/png', width: 1200, height: 628, byteSize: 3 } } }))
+  })
+
+  test('keeps the reservation unknown when durable image acceptance is ambiguous', async () => {
+    const safeImage = {
+      provider: 'mock', model: 'mock-v1', region: 'europe-west6', usage: { inputUnits: 10, outputUnits: 20 },
+      actualCostMicrounits: 1_000, safety: { verdict: 'safe', categories: [] },
+      image: { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png', width: 1200, height: 628 },
+    }
+    const imageResultSink = { accept: vi.fn(async () => { throw new Error('storage response lost') }) }
+    const { service, controlPlane } = harness({
+      imageResultSink,
+      provider: { generateImage: vi.fn(async () => safeImage) },
+      controlPlane: {
+        prepareGeneration: vi.fn(async () => ({ kind: 'owner', ownerToken: 'owner-1', job: { ...job, step: 'image' }, context: { direction: { id: 'direction-1', title: 'Scene', prompt: 'Clean scene', status: 'pending', previewAssetId: null } } })),
+      },
+    })
+
+    const outcome = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'image-key', input: { directionId: 'direction-1', width: 1200, height: 628 } })
+
+    expect(outcome.body.job.status).toBe('unknown')
+    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'image_storage_ambiguous' }))
+    expect(controlPlane.completeProviderResult).not.toHaveBeenCalled()
   })
 })

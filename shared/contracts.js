@@ -339,16 +339,19 @@ export const imageGenerationRequestSchema = z.strictObject({
 export const copySelectionRequestSchema = z.strictObject({ copyId: nonEmptyString })
 export const directionSelectionRequestSchema = z.strictObject({ directionId: nonEmptyString })
 
+export const imageResultSinkReceiptSchema = z.strictObject({
+  assetId: nonEmptyString,
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+  width: z.number().int().positive().max(4_096),
+  height: z.number().int().positive().max(4_096),
+  byteSize: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+})
+
 export const generationResultMetadataSchema = z.union([
   z.strictObject({ analysis: briefAnalysisSchema }),
   z.strictObject({ copySetId: nonEmptyString, copies: z.array(copyVariantSchema) }),
   z.strictObject({ directions: z.array(visualDirectionSchema) }),
-  z.strictObject({ image: z.strictObject({
-    mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
-    width: z.number().int().positive().max(4_096),
-    height: z.number().int().positive().max(4_096),
-    byteSize: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  }) }),
+  z.strictObject({ image: imageResultSinkReceiptSchema }),
 ])
 
 export const generationJobDetailsSchema = generationJobSchema.extend({

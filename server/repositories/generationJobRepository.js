@@ -6,6 +6,7 @@ import { withTransaction } from '../db/pool.js'
 import { createAuditRepository } from './auditRepository.js'
 import { createCampaignRepository } from './campaignRepository.js'
 import { createSettingsRepository } from './settingsRepository.js'
+import { assertProviderRegistry, generationProviderRegistry, providerTupleAllowed } from '../providers/registry.js'
 
 const maximumSafe = BigInt(Number.MAX_SAFE_INTEGER)
 const editableStatuses = new Set(['draft', 'copy_ready', 'direction_selected', 'composed'])
@@ -96,13 +97,16 @@ async function loadContext(client, campaign, step, input) {
   if (step === 'brief_analysis') return { brief: campaign.brief }
   if (step === 'copy') {
     const analysis = await client.query(
-      `SELECT result_metadata->'analysis' AS analysis
+      `SELECT result_metadata->'analysis' AS analysis, input_snapshot->'brief' AS analysed_brief
        FROM generation_jobs
        WHERE campaign_id = $1 AND step = 'brief_analysis' AND status = 'succeeded'
        ORDER BY created_at DESC, id DESC LIMIT 1`,
       [campaign.id],
     )
     if (!analysis.rows[0]?.analysis) throw providerContextError(step)
+    if (!analysis.rows[0].analysed_brief || hashCanonical(analysis.rows[0].analysed_brief) !== hashCanonical(campaign.brief)) {
+      throw new GenerationControlPlaneError(409, 'brief_analysis_stale', 'Analyse the current campaign brief before generating copy')
+    }
     return { brief: campaign.brief, analysis: analysis.rows[0].analysis }
   }
   if (step === 'directions') {
@@ -158,13 +162,13 @@ export function createGenerationControlPlane({
   transaction = withTransaction,
   idGenerator = randomUUID,
   clock = () => new Date(),
-  providerNames = ['mock'],
+  providerRegistry = generationProviderRegistry,
   wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
   pollIntervalMs = 10,
-  waitTimeoutMs = 2_000,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
-  const allowedProviders = new Set(providerNames)
+  assertProviderRegistry(providerRegistry)
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) throw new TypeError('Generation polling interval must be positive')
 
   return {
     async prepareGeneration({ actor, campaignId, step, input, idempotencyKey, jobId, ownerToken, maxCostMicrounits, startedAt, timeoutAt }) {
@@ -201,6 +205,10 @@ export function createGenerationControlPlane({
           if (existing.status !== 'pending' || existing.dispatch_state === 'dispatched') {
             return { kind: 'in_progress', job: mapJob(existing) }
           }
+          if (settings.generationDisabled) conflict('kill_switch_active', 'Generation is temporarily disabled', 503)
+          if (!providerTupleAllowed(providerRegistry, existing)) {
+            conflict('provider_unavailable', 'The reserved generation provider configuration is unavailable', 503)
+          }
           const reclaimed = await client.query(
             `UPDATE generation_jobs SET owner_token = $2, timeout_at = $3, updated_at = $4
              WHERE id = $1 AND status = 'pending' AND dispatch_state = 'not_dispatched'
@@ -212,7 +220,7 @@ export function createGenerationControlPlane({
 
         if (!editableStatuses.has(campaign.status)) conflict('campaign_locked', 'Campaign content is not editable in its current state')
         if (settings.generationDisabled) conflict('kill_switch_active', 'Generation is temporarily disabled', 503)
-        if (!allowedProviders.has(settings.provider)) conflict('provider_unavailable', 'The configured generation provider is unavailable', 503)
+        if (!providerTupleAllowed(providerRegistry, settings)) conflict('provider_unavailable', 'The configured generation provider is unavailable', 503)
         const cap = await client.query('SELECT count(*)::int AS count FROM generation_jobs WHERE campaign_id = $1 AND step = $2', [campaignId, step])
         if (cap.rows[0].count >= settings.perStepRegenerationLimit) {
           conflict('regeneration_cap_reached', 'The campaign regeneration limit has been reached', 429)
@@ -248,19 +256,30 @@ export function createGenerationControlPlane({
     },
 
     async waitForResult({ jobId }) {
-      const deadline = Date.now() + waitTimeoutMs
-      while (Date.now() < deadline) {
-        const result = await pool.query('SELECT * FROM generation_jobs WHERE id = $1', [jobId])
-        const row = result.rows[0]
-        if (!row) conflict('not_found', 'Generation job was not found', 404)
-        if (row.response_status != null && row.response_body != null) {
-          return { status: row.response_status, body: row.response_body }
-        }
-        await wait(pollIntervalMs)
+      while (true) {
+        const observation = await transaction(pool, async (client) => {
+          const result = await client.query('SELECT * FROM generation_jobs WHERE id = $1 FOR UPDATE', [jobId])
+          const row = result.rows[0]
+          if (!row) conflict('not_found', 'Generation job was not found', 404)
+          if (row.response_status != null && row.response_body != null) {
+            return { response: { status: row.response_status, body: row.response_body } }
+          }
+          const observedAt = clock()
+          if (row.status === 'pending' && row.dispatch_state === 'dispatched' && row.timeout_at <= observedAt) {
+            const expired = await client.query(
+              `UPDATE generation_jobs
+               SET status = 'unknown', unknown_reason = 'timeout_recovery', updated_at = $2
+               WHERE id = $1 AND status = 'pending' AND dispatch_state = 'dispatched'
+               RETURNING *`,
+              [jobId, observedAt],
+            )
+            if (expired.rowCount === 1) return { response: await storeResponse(client, expired.rows[0], 202) }
+          }
+          return { waitMs: Math.max(1, Math.min(pollIntervalMs, row.timeout_at.getTime() - observedAt.getTime())) }
+        })
+        if (observation.response) return observation.response
+        await wait(observation.waitMs)
       }
-      const result = await pool.query('SELECT * FROM generation_jobs WHERE id = $1', [jobId])
-      if (!result.rows[0]) conflict('not_found', 'Generation job was not found', 404)
-      return { status: 202, body: { job: mapJob(result.rows[0]) } }
     },
 
     async markDispatched({ jobId, ownerToken, dispatchedAt }) {
@@ -283,6 +302,9 @@ export function createGenerationControlPlane({
         const locked = await client.query('SELECT * FROM generation_jobs WHERE id = $1 FOR UPDATE', [jobId])
         const current = locked.rows[0]
         if (!current || current.owner_token !== ownerToken || current.status !== 'pending' || current.dispatch_state !== 'dispatched') {
+          if (current?.response_status != null && current?.response_body != null) {
+            return { status: current.response_status, body: current.response_body }
+          }
           conflict('generation_owner_lost', 'Generation result ownership was lost')
         }
         if (BigInt(actualCostMicrounits) > BigInt(current.reserved_cost_microunits)) {
@@ -333,7 +355,13 @@ export function createGenerationControlPlane({
            RETURNING *`,
           [jobId, ownerToken, reason, clock()],
         )
-        if (updated.rowCount === 0) conflict('generation_owner_lost', 'Generation result ownership was lost')
+        if (updated.rowCount === 0) {
+          const current = await client.query('SELECT response_status, response_body FROM generation_jobs WHERE id = $1', [jobId])
+          if (current.rows[0]?.response_status != null && current.rows[0]?.response_body != null) {
+            return { status: current.rows[0].response_status, body: current.rows[0].response_body }
+          }
+          conflict('generation_owner_lost', 'Generation result ownership was lost')
+        }
         return storeResponse(client, updated.rows[0], 202)
       })
     },
