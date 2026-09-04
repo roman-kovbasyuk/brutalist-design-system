@@ -4,6 +4,7 @@ import { createMockCampaignGateway } from './mockCampaignGateway.js'
 import { MvpShell } from './MvpShell.jsx'
 import { BriefStage } from './stages/BriefStage.jsx'
 import { CopyStage } from './stages/CopyStage.jsx'
+import '../styles/shadcn.css'
 import './mvp.css'
 
 const stageHeading = {

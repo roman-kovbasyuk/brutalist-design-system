@@ -18,7 +18,7 @@ export function MvpShell({ campaigns, activeCampaign, actor, onSelectCampaign, o
   const currentVersion = activeCampaign?.versions?.at(-1)
 
   return (
-    <div className="mvp-shell">
+    <div className="mvp-root mvp-shell">
       <header className="mvp-topbar">
         <div>
           <p className="mvp-eyebrow">Logic review build</p>

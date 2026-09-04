@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { AppShell } from './components/AppShell.jsx'
 import { campaignHistory } from './data/campaigns.js'
 import { DashboardScreen } from './screens/DashboardScreen.jsx'
@@ -6,7 +6,8 @@ import { DesignSystemScreen } from './screens/DesignSystemScreen.jsx'
 import { DesignerReviewScreen } from './screens/DesignerReviewScreen.jsx'
 import { TemplatesScreen } from './screens/TemplatesScreen.jsx'
 import { WorkflowScreen } from './screens/WorkflowScreen.jsx'
-import { MvpApp } from './mvp/MvpApp.jsx'
+
+const MvpApp = lazy(() => import('./mvp/MvpApp.jsx').then((module) => ({ default: module.MvpApp })))
 
 const defaultCampaignId = campaignHistory[0].id
 
@@ -16,8 +17,6 @@ export default function App() {
   const [requestedTemplate, setRequestedTemplate] = useState(null)
   const route = getRoute(pathname)
   const activeCampaignId = route.campaignId ?? campaignContextId
-
-  if (route.view === 'mvp') return <MvpApp />
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' })
@@ -45,6 +44,14 @@ export default function App() {
   function chooseTemplate(templateId) {
     setRequestedTemplate({ id: templateId, requestedAt: Date.now() })
     navigate(`/campaign/${activeCampaignId}`)
+  }
+
+  if (route.view === 'mvp') {
+    return (
+      <Suspense fallback={<div role="status">Loading Banner Studio…</div>}>
+        <MvpApp />
+      </Suspense>
+    )
   }
 
   return (
