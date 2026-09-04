@@ -29,8 +29,8 @@ const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studi
 const pools = new Set()
 const temporaryDirectories = new Set()
 
-function makePool() {
-  const pool = new Pool({ connectionString: databaseUrl, max: 4 })
+function makePool({ max = 4 } = {}) {
+  const pool = new Pool({ connectionString: databaseUrl, max })
   pools.add(pool)
   return pool
 }
@@ -1242,10 +1242,11 @@ describe('persisted generation control plane', () => {
     providerRegistry = { mock: [{ model: 'mock-v1', region: 'europe-west6' }] },
     controlPlaneOptions = {}, advanceClockOnWait = false,
     now = new Date('2026-09-04T10:00:00Z'), timeoutMs = 50,
+    poolMax = 4,
     assetStore,
     decorateControlPlane = (value) => value,
   } = {}) {
-    const pool = makePool()
+    const pool = makePool({ max: poolMax })
     const actorId = await insertUser(pool)
     const campaign = await insertCampaign(pool, actorId, { id: randomUUID() })
     await createSettingsRepository(pool).update({
@@ -1618,6 +1619,54 @@ describe('persisted generation control plane', () => {
     expect((await harness.pool.query('SELECT count(*)::int AS count FROM orphaned_uploads')).rows[0].count).toBe(0)
     await harness.pool.end()
     pools.delete(harness.pool)
+  })
+
+  test('bounds provider fallback recovery across an exhausted max-one pool checkout', async () => {
+    const observerPool = makePool()
+    const baseProvider = createMockProvider()
+    let harness
+    let blocker
+    const provider = {
+      ...baseProvider,
+      async generateImage() {
+        blocker = await harness.pool.connect()
+        throw new Error('provider acknowledgement is ambiguous')
+      },
+    }
+    harness = await generationHarness({
+      provider,
+      assetStore: createMemoryAssetStore(),
+      timeoutMs: 500,
+      now: new Date(),
+      poolMax: 1,
+      controlPlaneOptions: { recoveryTimeoutMs: 40 },
+    })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('pool-recovery-direction', $1, 'Clean focus', 'Soft daylight.', 'pending')`,
+      [harness.campaign.id],
+    )
+
+    const pending = harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'pool-recovery-image',
+      input: { directionId: 'pool-recovery-direction', width: 800, height: 800 },
+    })
+    const { observed, settled } = observeSettlementWithin(pending, 200)
+    const outcome = await observed
+    const rowWhileExhausted = (await observerPool.query(
+      `SELECT status, response_status FROM generation_jobs WHERE idempotency_key = 'pool-recovery-image'`,
+    )).rows[0]
+    blocker.release()
+    await settled
+
+    expect(outcome).toMatchObject({
+      kind: 'rejected',
+      error: { statusCode: 503, code: 'generation_recovery_unavailable' },
+    })
+    expect(rowWhileExhausted).toEqual({ status: 'pending', response_status: null })
+    await Promise.all([harness.pool.end(), observerPool.end()])
+    pools.delete(harness.pool)
+    pools.delete(observerPool)
   })
 
   test('re-checks asset references under the object lock before future orphan cleanup deletes bytes', async () => {

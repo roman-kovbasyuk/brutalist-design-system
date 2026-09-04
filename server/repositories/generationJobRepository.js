@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { hashCanonical } from '../../shared/canonicalJson.js'
 import { transitionCampaign } from '../../shared/workflowRules.js'
 import { copyVariantSchema, visualDirectionSchema } from '../../shared/contracts.js'
-import { withTransaction } from '../db/pool.js'
+import { withDeadlineTransaction, withTransaction } from '../db/pool.js'
 import { createAuditRepository } from './auditRepository.js'
 import { createCampaignRepository } from './campaignRepository.js'
 import { createSettingsRepository } from './settingsRepository.js'
@@ -214,15 +214,16 @@ export function createGenerationControlPlane({
   wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
   pollIntervalMs = 10,
   recoveryTimeoutMs = 250,
+  recoveryTransaction = withDeadlineTransaction,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   assertProviderRegistry(providerRegistry)
   if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) throw new TypeError('Generation polling interval must be positive')
   if (!Number.isSafeInteger(recoveryTimeoutMs) || recoveryTimeoutMs <= 0) throw new TypeError('Generation recovery timeout must be a positive integer')
 
-  const recoverGeneration = async ({ jobId, ownerToken, reason, orphan }) => transaction(pool, async (client) => {
+  const recoverGeneration = async ({ jobId, ownerToken, reason, orphan }) => recoveryTransaction(pool, async (client, deadline) => {
     const startedAt = await databaseClock(client)
-    const recoveryDeadline = new Date(startedAt.getTime() + recoveryTimeoutMs)
+    const recoveryDeadline = new Date(startedAt.getTime() + deadline.remainingMs())
     await setTransactionDeadline(client, recoveryDeadline, startedAt)
 
     const locked = await client.query('SELECT * FROM generation_jobs WHERE id = $1 FOR UPDATE', [jobId])
@@ -265,7 +266,7 @@ export function createGenerationControlPlane({
     if (updated.rowCount !== 1) conflict('generation_owner_lost', 'Generation result ownership was lost')
     await refreshTransactionDeadline(client, recoveryDeadline)
     return storeResponse(client, updated.rows[0], 202)
-  })
+  }, { timeoutMs: recoveryTimeoutMs })
 
   return {
     recoverGeneration,
