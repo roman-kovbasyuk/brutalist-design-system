@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest'
@@ -104,9 +104,9 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(1)
-    expect(tracked.rows[0].name).toBe('001_core.sql')
-    expect(tracked.rows[0].checksum).toMatch(/^[a-f0-9]{64}$/)
+    expect(tracked.rows).toHaveLength(2)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql'])
+    expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
     pools.delete(secondPool)
@@ -177,6 +177,53 @@ describe('migration runner', () => {
     await expect(runMigrations({ pool, directory })).rejects.toMatchObject({ code: '42703' })
     expect((await pool.query("SELECT to_regclass('rolled_back_table') AS name")).rows[0].name).toBeNull()
     expect((await pool.query('SELECT name FROM schema_migrations WHERE name = $1', ['2_broken.sql'])).rowCount).toBe(0)
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('upgrades an original Task 6 database without checksum failure or data loss', async () => {
+    await resetDatabase()
+    const pool = makePool()
+    const originalMigration = await readFile(join(process.cwd(), 'server/db/migrations/001_core.sql'), 'utf8')
+    const originalChecksum = createHash('sha256').update(originalMigration).digest('hex')
+    expect(originalChecksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
+    const baseDirectory = await makeMigrationDirectory({ '001_core.sql': originalMigration })
+    expect(await runMigrations({ pool, directory: baseDirectory })).toEqual({ applied: ['001_core.sql'] })
+
+    const actorId = await insertUser(pool, { id: 'upgrade-admin', role: 'admin' })
+    await pool.query(
+      'UPDATE settings SET daily_budget_microunits = $1, updated_by = $2 WHERE singleton = $3',
+      [5_000_000, actorId, true],
+    )
+    await pool.query(
+      `INSERT INTO templates (id, version, name, manifest, manifest_hash, created_by, created_at)
+       VALUES
+         ($1, '1.9.0', 'Upgrade template', $2, $3, $4, '2026-01-01T00:00:00Z'),
+         ($1, '1.10.0', 'Upgrade template', $5, $6, $4, '2026-01-01T00:00:00Z')`,
+      ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
+    )
+
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: [] })
+
+    const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql'])
+    expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
+    expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
+    expect(await createTemplateRepository(pool).listLatest())
+      .toEqual([expect.objectContaining({ id: 'upgrade-template', version: '1.10.0', manifest: { version: '1.10.0' } })])
+    const sequences = await pool.query(
+      'SELECT version, publication_sequence FROM templates WHERE id = $1 ORDER BY publication_sequence',
+      ['upgrade-template'],
+    )
+    expect(sequences.rows.map((row) => row.version)).toEqual(['1.9.0', '1.10.0'])
+    await expect(pool.query('UPDATE settings SET daily_budget_microunits = $1 WHERE singleton = $2', ['9007199254740992', true]))
+      .rejects.toMatchObject({ code: '23514' })
+    const indexes = await pool.query(
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'templates'",
+    )
+    expect(indexes.rows.some((row) => row.indexdef.includes('(id, publication_sequence DESC)'))).toBe(true)
+    expect(indexes.rows.some((row) => row.indexdef.includes('(id, created_at DESC)'))).toBe(false)
     await pool.end()
     pools.delete(pool)
   })

@@ -31,8 +31,7 @@ CREATE TABLE settings (
   provider text NOT NULL DEFAULT 'mock' CHECK (provider IN ('mock', 'gemini')),
   model text NOT NULL DEFAULT 'mock-v1' CHECK (length(btrim(model)) > 0),
   region text NOT NULL DEFAULT 'europe-west6' CHECK (length(btrim(region)) > 0),
-  daily_budget_microunits bigint NOT NULL DEFAULT 0
-    CHECK (daily_budget_microunits BETWEEN 0 AND 9007199254740991),
+  daily_budget_microunits bigint NOT NULL DEFAULT 0 CHECK (daily_budget_microunits >= 0),
   per_step_regeneration_limit integer NOT NULL DEFAULT 3 CHECK (per_step_regeneration_limit >= 0),
   generation_disabled boolean NOT NULL DEFAULT false,
   revision integer NOT NULL DEFAULT 0 CHECK (revision >= 0),
@@ -45,7 +44,6 @@ INSERT INTO settings (singleton) VALUES (true);
 CREATE TABLE templates (
   id text NOT NULL,
   version text NOT NULL,
-  publication_sequence bigint GENERATED ALWAYS AS IDENTITY NOT NULL UNIQUE,
   name text NOT NULL CHECK (length(btrim(name)) > 0),
   manifest jsonb NOT NULL CHECK (jsonb_typeof(manifest) = 'object'),
   manifest_hash text NOT NULL CHECK (manifest_hash ~ '^[a-f0-9]{64}$'),
