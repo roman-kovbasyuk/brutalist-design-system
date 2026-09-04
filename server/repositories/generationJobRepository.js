@@ -6,7 +6,12 @@ import { withTransaction } from '../db/pool.js'
 import { createAuditRepository } from './auditRepository.js'
 import { createCampaignRepository } from './campaignRepository.js'
 import { createSettingsRepository } from './settingsRepository.js'
-import { assertProviderRegistry, generationProviderRegistry, providerTupleAllowed } from '../providers/registry.js'
+import {
+  assertProviderRegistry,
+  generationProviderRegistry,
+  providerTupleAllowed,
+  resolveProviderConfiguration,
+} from '../providers/registry.js'
 
 const maximumSafe = BigInt(Number.MAX_SAFE_INTEGER)
 const editableStatuses = new Set(['draft', 'copy_ready', 'direction_selected', 'composed'])
@@ -241,7 +246,8 @@ export function createGenerationControlPlane({
 
         if (!editableStatuses.has(campaign.status)) conflict('campaign_locked', 'Campaign content is not editable in its current state')
         if (settings.generationDisabled) conflict('kill_switch_active', 'Generation is temporarily disabled', 503)
-        if (!providerTupleAllowed(providerRegistry, settings)) conflict('provider_unavailable', 'The configured generation provider is unavailable', 503)
+        const providerConfiguration = resolveProviderConfiguration(providerRegistry, settings, step)
+        if (!providerConfiguration) conflict('provider_unavailable', 'The configured generation provider is unavailable', 503)
         const cap = await client.query('SELECT count(*)::int AS count FROM generation_jobs WHERE campaign_id = $1 AND step = $2', [campaignId, step])
         if (cap.rows[0].count >= settings.perStepRegenerationLimit) {
           conflict('regeneration_cap_reached', 'The campaign regeneration limit has been reached', 429)
@@ -269,7 +275,7 @@ export function createGenerationControlPlane({
            VALUES ($1, $2, $3, 'POST', $4, $5, $6, $7, 'pending', 0,
                    $8, NULL, $9, $10, $11, 'not_dispatched', $12, $13, $14, $15, $15)
            RETURNING *`,
-          [jobId, campaignId, actor.id, step, settings.provider, settings.model, settings.region,
+          [jobId, campaignId, actor.id, step, providerConfiguration.provider, providerConfiguration.model, providerConfiguration.region,
             maxCostMicrounits, idempotencyKey, fingerprint, ownerToken, budgetDay, context, timeoutAt, startedAt],
         )
         return { kind: 'owner', ownerToken, job: mapJob(created.rows[0]), context }

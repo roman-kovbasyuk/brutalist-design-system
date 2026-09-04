@@ -99,20 +99,47 @@ describe('Banner Studio API shell', () => {
   test('fails invalid production configuration without echoing sensitive values', () => {
     const databaseUrl = 'postgres://banner:top-secret@db.example/banner'
 
-    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, FIREBASE_PROJECT_ID: 'banner-project' }))
+    const productionEnvironment = {
+      NODE_ENV: 'production',
+      DATABASE_URL: databaseUrl,
+      FIREBASE_PROJECT_ID: 'banner-project',
+      GENERATION_PROVIDER: 'gemini',
+      VERTEX_AI_PROJECT_ID: 'banner-project',
+    }
+
+    expect(() => loadConfig(productionEnvironment))
       .not.toThrow()
     expect(() => loadConfig({ NODE_ENV: 'production' }))
       .toThrow('DATABASE_URL is required in production')
     expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl }))
       .toThrow('FIREBASE_PROJECT_ID is required in production')
-    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, FIREBASE_PROJECT_ID: 'banner-project', PORT: 'invalid' }))
+    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, FIREBASE_PROJECT_ID: 'banner-project' }))
+      .toThrow('GENERATION_PROVIDER=gemini is required in production')
+    expect(() => loadConfig({ ...productionEnvironment, GENERATION_PROVIDER: 'mock' }))
+      .toThrow('GENERATION_PROVIDER=gemini is required in production')
+    expect(() => loadConfig({ ...productionEnvironment, VERTEX_AI_PROJECT_ID: '' }))
+      .toThrow('VERTEX_AI_PROJECT_ID is required for Gemini')
+    expect(() => loadConfig({ ...productionEnvironment, PORT: 'invalid' }))
       .toThrow('PORT must be an integer between 1 and 65535')
-    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, FIREBASE_PROJECT_ID: 'banner-project', PORT: databaseUrl }))
+    expect(() => loadConfig({ ...productionEnvironment, PORT: databaseUrl }))
       .toThrowError(/PORT must be an integer/)
   })
 
+  test.each([
+    ['VERTEX_AI_LOCATION', 'global'],
+    ['GEMINI_TEXT_MODEL', 'gemini-2.5-flash'],
+    ['GEMINI_IMAGE_MODEL', 'gemini-2.5-flash-image'],
+  ])('rejects unapproved Gemini configuration in %s', (key, value) => {
+    expect(() => loadConfig({
+      NODE_ENV: 'test',
+      GENERATION_PROVIDER: 'gemini',
+      VERTEX_AI_PROJECT_ID: 'banner-project',
+      [key]: value,
+    })).toThrow(/approved/i)
+  })
+
   test('returns an immutable configuration from only the supplied environment', () => {
-    const config = loadConfig({ NODE_ENV: 'test', HOST: '127.0.0.1', PORT: '4000' })
+    const config = loadConfig({ NODE_ENV: 'test', HOST: '127.0.0.1', PORT: '4000', GENERATION_PROVIDER: 'mock' })
 
     expect(config).toEqual({
       nodeEnv: 'test',
@@ -120,6 +147,13 @@ describe('Banner Studio API shell', () => {
       port: 4000,
       databaseUrl: undefined,
       firebaseProjectId: undefined,
+      generation: {
+        provider: 'mock',
+        projectId: undefined,
+        location: 'eu',
+        textModel: 'gemini-3.5-flash',
+        imageModel: 'gemini-3.1-flash-image',
+      },
     })
     expect(Object.isFrozen(config)).toBe(true)
   })

@@ -1104,7 +1104,7 @@ describe('idempotency coordination', () => {
 describe('persisted generation control plane', () => {
   async function generationHarness({
     budget = 1_000_000, limit = 3, disabled = false, provider = createMockProvider(),
-    model = 'mock-v1', region = 'europe-west6',
+    providerName = 'mock', model = 'mock-v1', region = 'europe-west6',
     providerRegistry = { mock: [{ model: 'mock-v1', region: 'europe-west6' }] },
     controlPlaneOptions = {}, advanceClockOnWait = false,
     now = new Date('2026-09-04T10:00:00Z'), timeoutMs = 50,
@@ -1113,7 +1113,7 @@ describe('persisted generation control plane', () => {
     const actorId = await insertUser(pool)
     const campaign = await insertCampaign(pool, actorId, { id: randomUUID() })
     await createSettingsRepository(pool).update({
-      expectedRevision: 0, provider: 'mock', model, region,
+      expectedRevision: 0, provider: providerName, model, region,
       dailyBudgetMicrounits: budget, perStepRegenerationLimit: limit, generationDisabled: disabled, updatedBy: actorId,
     })
     let currentTime = now
@@ -1127,13 +1127,56 @@ describe('persisted generation control plane', () => {
     } : {}
     const controlPlane = createGenerationControlPlane({ pool, clock: () => currentTime, providerRegistry, ...waitOptions, ...controlPlaneOptions })
     const service = createGenerationService({
-      pool, controlPlane, providers: { mock: provider }, timeoutMs, clock: () => currentTime,
+      pool, controlPlane, providers: { [providerName]: provider }, timeoutMs, clock: () => currentTime,
     })
     return {
       pool, actor: { id: actorId, role: 'marketer', disabled: false }, campaign, provider, service, controlPlane, waits,
       setTime(value) { currentTime = value },
     }
   }
+
+  test('resolves the persisted Gemini model by generation step before reservation', async () => {
+    const providerRegistry = {
+      gemini: [{ model: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu' }],
+    }
+    const harness = await generationHarness({
+      providerName: 'gemini', model: 'gemini-3.5-flash', region: 'eu', providerRegistry,
+    })
+    const common = {
+      actor: harness.actor,
+      campaignId: harness.campaign.id,
+      input: {},
+      maxCostMicrounits: 1_000,
+      startedAt: new Date('2026-09-04T10:00:00.000Z'),
+      timeoutAt: new Date('2026-09-04T10:00:00.050Z'),
+    }
+    const text = await harness.controlPlane.prepareGeneration({
+      ...common, step: 'brief_analysis', idempotencyKey: 'gemini-text', jobId: 'gemini-text-job', ownerToken: 'text-owner',
+    })
+    expect(text.job).toMatchObject({ provider: 'gemini', model: 'gemini-3.5-flash', region: 'eu' })
+
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('gemini-direction', $1, 'Clean focus', 'Soft daylight.', 'pending')`,
+      [harness.campaign.id],
+    )
+    const image = await harness.controlPlane.prepareGeneration({
+      ...common,
+      step: 'image',
+      input: { directionId: 'gemini-direction', width: 1200, height: 628 },
+      idempotencyKey: 'gemini-image', jobId: 'gemini-image-job', ownerToken: 'image-owner',
+      maxCostMicrounits: 250_000,
+    })
+    expect(image.job).toMatchObject({ provider: 'gemini', model: 'gemini-3.1-flash-image', region: 'eu' })
+
+    await expect(harness.controlPlane.prepareGeneration({
+      ...common, step: 'video', idempotencyKey: 'gemini-video', jobId: 'gemini-video-job', ownerToken: 'video-owner',
+    })).rejects.toMatchObject({ code: 'provider_unavailable' })
+    expect((await harness.pool.query('SELECT id FROM generation_jobs ORDER BY id')).rows.map((row) => row.id))
+      .toEqual(['gemini-image-job', 'gemini-text-job'])
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
 
   test('persists service-owned jobs, brief metadata, copy sets, and exact idempotent responses', async () => {
     const harness = await generationHarness()

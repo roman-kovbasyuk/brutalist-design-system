@@ -7,7 +7,8 @@ import { createWorkflowService } from './services/workflowService.js'
 import { createGenerationService } from './services/generationService.js'
 import { createGenerationControlPlane } from './repositories/generationJobRepository.js'
 import { createMockProvider } from './providers/mockProvider.js'
-import { generationProviderRegistry } from './providers/registry.js'
+import { createGeminiProvider } from './providers/geminiProvider.js'
+import { createGenerationProviderRegistry } from './providers/registry.js'
 
 const productionDependencies = {
   buildApp,
@@ -18,7 +19,8 @@ const productionDependencies = {
   createGenerationControlPlane,
   createGenerationService,
   createMockProvider,
-  generationProviderRegistry,
+  createGeminiProvider,
+  createGenerationProviderRegistry,
   runMigrations,
 }
 
@@ -56,17 +58,31 @@ export async function createServerRuntime({ environment = process.env, dependenc
   try {
     await resolved.runMigrations({ pool })
     const workflowService = resolved.createWorkflowService({ pool })
-    const mockConfiguration = resolved.generationProviderRegistry.mock?.[0]
-    if (!mockConfiguration) throw new Error('The mock generation provider is not registered')
-    generationProvider = resolved.createMockProvider(mockConfiguration)
+    const providerSelection = config.generation.provider === 'gemini'
+      ? {
+          provider: 'gemini',
+          textModel: config.generation.textModel,
+          imageModel: config.generation.imageModel,
+          region: config.generation.location,
+        }
+      : { provider: 'mock', textModel: 'mock-v1', imageModel: 'mock-v1', region: 'europe-west6' }
+    const providerRegistry = resolved.createGenerationProviderRegistry(providerSelection)
+    generationProvider = config.generation.provider === 'gemini'
+      ? resolved.createGeminiProvider({
+          project: config.generation.projectId,
+          location: config.generation.location,
+          textModel: config.generation.textModel,
+          imageModel: config.generation.imageModel,
+        })
+      : resolved.createMockProvider({ model: providerSelection.textModel, region: providerSelection.region })
     const generationControlPlane = resolved.createGenerationControlPlane({
       pool,
-      providerRegistry: resolved.generationProviderRegistry,
+      providerRegistry,
     })
     const generationService = resolved.createGenerationService({
       pool,
       controlPlane: generationControlPlane,
-      providers: { mock: generationProvider },
+      providers: { [config.generation.provider]: generationProvider },
     })
     tokenVerifier = resolved.createFirebaseTokenVerifier({ projectId: config.firebaseProjectId })
     const resolveActor = resolved.createAuthenticator({ pool, tokenVerifier })
