@@ -19,12 +19,13 @@ describe('production server composition', () => {
     }
 
     const runtime = await createServerRuntime({
-      environment: { NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio' },
+      environment: { NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio', FIREBASE_PROJECT_ID: 'banner-project' },
       dependencies,
     })
 
     expect(calls.slice(0, 2)).toEqual(['migrate', 'buildApp'])
     expect(dependencies.createWorkflowService).toHaveBeenCalledWith({ pool })
+    expect(dependencies.createFirebaseTokenVerifier).toHaveBeenCalledWith({ projectId: 'banner-project' })
     expect(dependencies.createAuthenticator).toHaveBeenCalledWith(expect.objectContaining({ pool, tokenVerifier: verifier }))
     expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService }))
     await runtime.close()
@@ -42,7 +43,7 @@ describe('production server composition', () => {
     }
 
     await expect(createServerRuntime({
-      environment: { NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio' },
+      environment: { NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio', FIREBASE_PROJECT_ID: 'banner-project' },
       dependencies,
     })).rejects.toThrow('migration failed')
     expect(pool.end).toHaveBeenCalledOnce()

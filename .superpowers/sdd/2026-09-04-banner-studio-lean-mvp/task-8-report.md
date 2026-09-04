@@ -75,3 +75,40 @@ Implemented and verified. Task 8 now has Firebase Admin token verification behin
 - `npm audit --omit=dev` reports nine production dependency advisories: one high-severity advisory family in the pre-existing `@fastify/static@8` dependency and moderate transitive advisories under `firebase-admin@13`. The requested Firebase major is installed; npm currently proposes an incompatible Firebase downgrade as its automated remedy. No audit fix was applied because that would violate the requested dependency constraint or introduce an unrelated Fastify major upgrade.
 - The VitePress build retains the existing large-chunk warning. It does not fail the build and is unrelated to backend authentication.
 - Firebase network calls are intentionally absent from tests; all authentication tests inject the verifier interface. Production credentials still need to be supplied through Firebase Application Default Credentials in the deployment environment.
+
+## Fix round 1: authentication rollout hardening
+
+Review findings were addressed with forward-only migration and focused lifecycle coverage.
+
+### Firebase project and lifecycle
+
+- Production configuration now requires `FIREBASE_PROJECT_ID` and passes its normalized value into the verifier factory.
+- The verifier no longer inspects the global app list. It uses only the deterministic `banner-studio-auth` app name or an explicitly injected app.
+- A reused or injected app must expose the configured project ID; a different project is rejected before Auth is constructed.
+- The Firebase SDK boundary is injectable for network-free tests.
+- Production still calls `verifyIdToken(token, true)`.
+- Only an app created by the verifier is owned and deleted, and deletion is idempotent. Reused named apps and injected apps are never deleted by the verifier.
+
+### Rolling and rollback-safe disabled state
+
+- Historical migration `005_authentication.sql` was not changed; its SHA-256 remains `cd4e787166cf62398ea2e8a37dd1d91f2865653d48b00e3b472ad8141f84b420`.
+- Forward migration `006_disabled_rollout_compatibility.sql` restores the legacy `users.disabled` boolean, backfills it from `disabled_at`, and adds a compatibility trigger that synchronizes boolean-only and timestamp-only writers in both directions.
+- New repository code dual-reads `disabled OR disabled_at IS NOT NULL` and dual-writes both fields.
+- Tests prove an old boolean writer is immediately enforced by the new authenticator, including re-enable, and a new repository writer remains visible to an old boolean reader.
+- Removal of the legacy boolean is intentionally deferred until every old application version has been retired and rollback is no longer required.
+
+### Invitation identity hardening
+
+- Accepted-user resolution now requires `invitations.email = users.email = normalized verified token email`, in addition to matching UID, accepted state, and non-revoked state.
+- A real accepted-then-revoked invitation test proves the next request receives safe `401 unauthorized` denial.
+- An adversarial concurrent first-login test uses two different Firebase UIDs for one invited email. Exactly one request succeeds, the other receives normalized `401 unauthorized`, and the database retains one unambiguous UID/user/invitation binding.
+
+### TDD evidence
+
+- Firebase/config/bootstrap red phase: 6 failures reproduced the missing project requirement, missing bootstrap propagation, nondeterministic real-SDK selection, wrong-project acceptance, and incorrect ownership behavior.
+- Firebase/config/bootstrap green phase: 3 files passed, 35 tests passed.
+- PostgreSQL red phase: the invitation-email mismatch incorrectly authenticated, and both compatibility tests failed because migration 005 had removed `users.disabled`; the revocation and competing-UID tests already confirmed the existing safe branches.
+- PostgreSQL focused green phase: 5 targeted adversarial/compatibility tests passed; full repository integration then passed 47/47.
+- Final focused auth/PostgreSQL/bootstrap/config run: 4 files passed, 83 tests passed.
+- Final server/shared run: 12 files passed, 178 tests passed.
+- Final `npm run build`: Vite and VitePress builds passed, retaining only the pre-existing VitePress chunk-size warning.

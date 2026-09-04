@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { deleteApp, getApps, initializeApp, applicationDefault } from 'firebase-admin/app'
+import { applicationDefault, deleteApp, getApp, initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { z } from 'zod'
 import { roleSchema } from '../../shared/contracts.js'
@@ -13,6 +13,9 @@ const verifiedIdentitySchema = z.strictObject({
   email_verified: z.literal(true),
   name: z.string().trim().optional(),
 }).passthrough()
+
+const firebaseAppName = 'banner-studio-auth'
+const defaultFirebaseSdk = { applicationDefault, deleteApp, getApp, getAuth, initializeApp }
 
 function bearerToken(request) {
   const authorization = request?.headers?.authorization
@@ -65,11 +68,29 @@ export function createAuthenticator({
   }
 }
 
-export function createFirebaseTokenVerifier({ firebaseApp } = {}) {
-  const existingApp = firebaseApp ?? getApps()[0]
-  const ownsApp = existingApp === undefined
-  const app = existingApp ?? initializeApp({ credential: applicationDefault() })
-  const auth = getAuth(app)
+export function createFirebaseTokenVerifier({ firebaseApp, projectId, sdk = defaultFirebaseSdk } = {}) {
+  const expectedProjectId = typeof projectId === 'string' ? projectId.trim() : ''
+  if (!expectedProjectId) throw new TypeError('A Firebase project ID is required')
+
+  let app = firebaseApp
+  let ownsApp = false
+  if (!app) {
+    try {
+      app = sdk.getApp(firebaseAppName)
+    } catch (error) {
+      if (error?.code !== 'app/no-app') throw error
+      app = sdk.initializeApp({
+        credential: sdk.applicationDefault(),
+        projectId: expectedProjectId,
+      }, firebaseAppName)
+      ownsApp = true
+    }
+  }
+  if (app?.options?.projectId !== expectedProjectId) {
+    throw new Error('Firebase app project does not match FIREBASE_PROJECT_ID')
+  }
+
+  const auth = sdk.getAuth(app)
   let closed = false
 
   return {
@@ -79,7 +100,7 @@ export function createFirebaseTokenVerifier({ firebaseApp } = {}) {
     async close() {
       if (!ownsApp || closed) return
       closed = true
-      await deleteApp(app)
+      await sdk.deleteApp(app)
     },
   }
 }

@@ -28,11 +28,16 @@ export function loadConfig(environment) {
   if (nodeEnv === 'production' && !databaseUrl) {
     throw new Error('DATABASE_URL is required in production')
   }
+  const firebaseProjectId = environment.FIREBASE_PROJECT_ID?.trim()
+  if (nodeEnv === 'production' && !firebaseProjectId) {
+    throw new Error('FIREBASE_PROJECT_ID is required in production')
+  }
 
   return Object.freeze({
     nodeEnv,
     host: environment.HOST ?? '0.0.0.0',
     port: parsePort(environment.PORT),
     databaseUrl,
+    firebaseProjectId,
   })
 }

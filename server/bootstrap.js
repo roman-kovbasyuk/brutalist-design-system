@@ -46,7 +46,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
   try {
     await resolved.runMigrations({ pool })
     const workflowService = resolved.createWorkflowService({ pool })
-    tokenVerifier = resolved.createFirebaseTokenVerifier()
+    tokenVerifier = resolved.createFirebaseTokenVerifier({ projectId: config.firebaseProjectId })
     const resolveActor = resolved.createAuthenticator({ pool, tokenVerifier })
     app = resolved.buildApp({
       readiness: async () => {

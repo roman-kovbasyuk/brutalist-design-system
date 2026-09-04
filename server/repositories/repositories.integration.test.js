@@ -109,8 +109,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(5)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql'])
+    expect(tracked.rows).toHaveLength(6)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -209,14 +209,15 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql'])
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
-    expect((await pool.query('SELECT disabled_at FROM users WHERE id = $1', [actorId])).rows[0].disabled_at).toBeInstanceOf(Date)
+    expect((await pool.query('SELECT disabled, disabled_at FROM users WHERE id = $1', [actorId])).rows[0])
+      .toMatchObject({ disabled: true, disabled_at: expect.any(Date) })
     expect(await createTemplateRepository(pool).listLatest())
       .toEqual([expect.objectContaining({ id: 'upgrade-template', version: '1.10.0', manifest: { version: '1.10.0' } })])
     const sequences = await pool.query(
@@ -596,6 +597,41 @@ describe('supporting repositories', () => {
     pools.delete(pool)
   })
 
+  test('denies one of two concurrent first sign-ins using different UIDs for one email', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'adversarial-race-invite', email: 'adversarial@example.test', role: 'designer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+    const authenticateAs = (firebaseUid, userId) => createAuthenticator({
+      pool,
+      tokenVerifier: { verify: async () => ({ uid: firebaseUid, email: 'adversarial@example.test', email_verified: true }) },
+      idGenerator: () => userId,
+    })({ headers: { authorization: 'Bearer token' } })
+
+    const outcomes = await Promise.allSettled([
+      authenticateAs('firebase-adversary-a', 'adversary-user-a'),
+      authenticateAs('firebase-adversary-b', 'adversary-user-b'),
+    ])
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toEqual([
+      expect.objectContaining({ reason: expect.objectContaining({ statusCode: 401, code: 'unauthorized', publicMessage: 'Authentication is required' }) }),
+    ])
+    const persisted = await pool.query(
+      `SELECT u.id, u.firebase_uid, i.accepted_user_id
+       FROM users u JOIN invitations i ON i.accepted_user_id = u.id
+       WHERE i.id = $1`,
+      ['adversarial-race-invite'],
+    )
+    expect(persisted.rows).toHaveLength(1)
+    expect(['firebase-adversary-a', 'firebase-adversary-b']).toContain(persisted.rows[0].firebase_uid)
+    expect(persisted.rows[0].accepted_user_id).toBe(persisted.rows[0].id)
+    await pool.end()
+    pools.delete(pool)
+  })
+
   test('requires the accepted invitation UID and verified email on later requests', async () => {
     const pool = makePool()
     const adminId = await insertUser(pool, { role: 'admin' })
@@ -620,6 +656,48 @@ describe('supporting repositories', () => {
     pools.delete(pool)
   })
 
+  test('requires the accepted invitation email to keep matching the persisted user and token', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'join-email-invite', email: 'join-email@example.test', role: 'marketer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+    const authenticate = createAuthenticator({
+      pool,
+      tokenVerifier: { verify: async () => ({ uid: 'firebase-join-email', email: 'join-email@example.test', email_verified: true }) },
+      idGenerator: () => 'join-email-user',
+    })
+    const authRequest = { headers: { authorization: 'Bearer token' } }
+    await expect(authenticate(authRequest)).resolves.toMatchObject({ id: 'join-email-user' })
+    await pool.query('UPDATE invitations SET email = $2 WHERE id = $1', ['join-email-invite', 'changed@example.test'])
+
+    await expect(authenticate(authRequest)).rejects.toMatchObject({ statusCode: 401, code: 'unauthorized' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('denies the next request when an accepted invitation is revoked', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'revoked-accepted-invite', email: 'revoked-accepted@example.test', role: 'designer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+    const authenticate = createAuthenticator({
+      pool,
+      tokenVerifier: { verify: async () => ({ uid: 'firebase-revoked-accepted', email: 'revoked-accepted@example.test', email_verified: true }) },
+      idGenerator: () => 'revoked-accepted-user',
+    })
+    const authRequest = { headers: { authorization: 'Bearer token' } }
+    await expect(authenticate(authRequest)).resolves.toMatchObject({ id: 'revoked-accepted-user' })
+    await pool.query('UPDATE invitations SET revoked_at = now() WHERE id = $1', ['revoked-accepted-invite'])
+
+    await expect(authenticate(authRequest)).rejects.toMatchObject({ statusCode: 401, code: 'unauthorized' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
   test('reloads role and disabled state from PostgreSQL for every authenticated request', async () => {
     const pool = makePool()
     const adminId = await insertUser(pool, { role: 'admin' })
@@ -639,6 +717,52 @@ describe('supporting repositories', () => {
     await expect(authenticate(authRequest)).resolves.toMatchObject({ role: 'admin', disabledAt: null })
     await pool.query('UPDATE users SET disabled_at = now() WHERE id = $1', ['live-role-user'])
     await expect(authenticate(authRequest)).rejects.toMatchObject({ statusCode: 403, code: 'user_disabled' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('lets a legacy boolean writer disable access for the new reader', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    const users = createUserRepository(pool)
+    const invitation = await users.createInvitation({
+      id: 'old-writer-invite', email: 'old-writer@example.test', role: 'designer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+    await users.acceptInvitation({
+      invitationId: invitation.id, userId: 'old-writer-user', firebaseUid: 'firebase-old-writer',
+      verifiedEmail: 'old-writer@example.test', displayName: 'Old Writer',
+    })
+    await pool.query('UPDATE users SET disabled = true WHERE id = $1', ['old-writer-user'])
+    const stored = (await pool.query('SELECT disabled, disabled_at FROM users WHERE id = $1', ['old-writer-user'])).rows[0]
+    expect(stored).toMatchObject({ disabled: true, disabled_at: expect.any(Date) })
+    const authenticate = createAuthenticator({
+      pool,
+      tokenVerifier: { verify: async () => ({ uid: 'firebase-old-writer', email: 'old-writer@example.test', email_verified: true }) },
+    })
+
+    await expect(authenticate({ headers: { authorization: 'Bearer token' } }))
+      .rejects.toMatchObject({ statusCode: 403, code: 'user_disabled' })
+    await pool.query('UPDATE users SET disabled = false WHERE id = $1', ['old-writer-user'])
+    expect((await pool.query('SELECT disabled, disabled_at FROM users WHERE id = $1', ['old-writer-user'])).rows[0])
+      .toEqual({ disabled: false, disabled_at: null })
+    await expect(authenticate({ headers: { authorization: 'Bearer token' } }))
+      .resolves.toMatchObject({ id: 'old-writer-user', disabled: false, disabledAt: null })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('dual-writes disabled state so a legacy boolean reader sees new writes', async () => {
+    const pool = makePool()
+    const userId = await insertUser(pool, { id: 'new-writer-user' })
+    const users = createUserRepository(pool)
+
+    await users.setDisabled({ id: userId, disabled: true })
+    expect((await pool.query('SELECT disabled, disabled_at FROM users WHERE id = $1', [userId])).rows[0])
+      .toMatchObject({ disabled: true, disabled_at: expect.any(Date) })
+    await users.setDisabled({ id: userId, disabled: false })
+    expect((await pool.query('SELECT disabled, disabled_at FROM users WHERE id = $1', [userId])).rows[0])
+      .toEqual({ disabled: false, disabled_at: null })
     await pool.end()
     pools.delete(pool)
   })

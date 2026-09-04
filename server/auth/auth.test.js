@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { createAuthenticator } from './verifyToken.js'
+import { createAuthenticator, createFirebaseTokenVerifier } from './verifyToken.js'
 import { createAuthorizer } from './authorize.js'
 import { transitionCampaign } from '../../shared/workflowRules.js'
 
@@ -180,5 +180,81 @@ describe('role authorization', () => {
       status: 403,
       message: 'The person who marked this version ready cannot approve it.',
     })
+  })
+})
+
+describe('production Firebase verifier lifecycle', () => {
+  function firebaseSdkHarness({ existingApp } = {}) {
+    const createdApp = { name: 'banner-studio-auth', options: { projectId: 'banner-project' } }
+    const verifyIdToken = vi.fn(async () => ({ uid: 'verified' }))
+    const sdk = {
+      applicationDefault: vi.fn(() => 'application-default-credential'),
+      getApp: vi.fn(() => {
+        if (existingApp) return existingApp
+        const error = new Error('no app')
+        error.code = 'app/no-app'
+        throw error
+      }),
+      initializeApp: vi.fn(() => createdApp),
+      getAuth: vi.fn(() => ({ verifyIdToken })),
+      deleteApp: vi.fn(async () => {}),
+    }
+    return { createdApp, sdk, verifyIdToken }
+  }
+
+  test('creates the deterministic named app for the configured project and checks revocation', async () => {
+    const { createdApp, sdk, verifyIdToken } = firebaseSdkHarness()
+    const verifier = createFirebaseTokenVerifier({ projectId: 'banner-project', sdk })
+
+    await expect(verifier.verify('firebase-token')).resolves.toEqual({ uid: 'verified' })
+    expect(sdk.getApp).toHaveBeenCalledWith('banner-studio-auth')
+    expect(sdk.initializeApp).toHaveBeenCalledWith({
+      credential: 'application-default-credential', projectId: 'banner-project',
+    }, 'banner-studio-auth')
+    expect(sdk.getAuth).toHaveBeenCalledWith(createdApp)
+    expect(verifyIdToken).toHaveBeenCalledWith('firebase-token', true)
+  })
+
+  test('rejects a deterministic named app belonging to another project', () => {
+    const { sdk } = firebaseSdkHarness({
+      existingApp: { name: 'banner-studio-auth', options: { projectId: 'other-project' } },
+    })
+
+    expect(() => createFirebaseTokenVerifier({ projectId: 'banner-project', sdk }))
+      .toThrow('Firebase app project does not match FIREBASE_PROJECT_ID')
+    expect(sdk.getAuth).not.toHaveBeenCalled()
+  })
+
+  test('reuses only the deterministic named app for the configured project without claiming ownership', async () => {
+    const existingApp = { name: 'banner-studio-auth', options: { projectId: 'banner-project' } }
+    const { sdk } = firebaseSdkHarness({ existingApp })
+    const verifier = createFirebaseTokenVerifier({ projectId: 'banner-project', sdk })
+
+    await verifier.close()
+    expect(sdk.getApp).toHaveBeenCalledWith('banner-studio-auth')
+    expect(sdk.initializeApp).not.toHaveBeenCalled()
+    expect(sdk.deleteApp).not.toHaveBeenCalled()
+  })
+
+  test('does not own or delete an explicitly injected app', async () => {
+    const firebaseApp = { name: 'injected', options: { projectId: 'banner-project' } }
+    const { sdk } = firebaseSdkHarness()
+    const verifier = createFirebaseTokenVerifier({ firebaseApp, projectId: 'banner-project', sdk })
+
+    await verifier.close()
+    await verifier.close()
+    expect(sdk.getApp).not.toHaveBeenCalled()
+    expect(sdk.initializeApp).not.toHaveBeenCalled()
+    expect(sdk.deleteApp).not.toHaveBeenCalled()
+  })
+
+  test('deletes only an app created by this verifier and only once', async () => {
+    const { createdApp, sdk } = firebaseSdkHarness()
+    const verifier = createFirebaseTokenVerifier({ projectId: 'banner-project', sdk })
+
+    await verifier.close()
+    await verifier.close()
+    expect(sdk.deleteApp).toHaveBeenCalledOnce()
+    expect(sdk.deleteApp).toHaveBeenCalledWith(createdApp)
   })
 })

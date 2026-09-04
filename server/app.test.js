@@ -99,13 +99,15 @@ describe('Banner Studio API shell', () => {
   test('fails invalid production configuration without echoing sensitive values', () => {
     const databaseUrl = 'postgres://banner:top-secret@db.example/banner'
 
-    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl }))
+    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, FIREBASE_PROJECT_ID: 'banner-project' }))
       .not.toThrow()
     expect(() => loadConfig({ NODE_ENV: 'production' }))
       .toThrow('DATABASE_URL is required in production')
-    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, PORT: 'invalid' }))
+    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl }))
+      .toThrow('FIREBASE_PROJECT_ID is required in production')
+    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, FIREBASE_PROJECT_ID: 'banner-project', PORT: 'invalid' }))
       .toThrow('PORT must be an integer between 1 and 65535')
-    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, PORT: databaseUrl }))
+    expect(() => loadConfig({ NODE_ENV: 'production', DATABASE_URL: databaseUrl, FIREBASE_PROJECT_ID: 'banner-project', PORT: databaseUrl }))
       .toThrowError(/PORT must be an integer/)
   })
 
@@ -117,6 +119,7 @@ describe('Banner Studio API shell', () => {
       host: '127.0.0.1',
       port: 4000,
       databaseUrl: undefined,
+      firebaseProjectId: undefined,
     })
     expect(Object.isFrozen(config)).toBe(true)
   })

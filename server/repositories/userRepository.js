@@ -21,7 +21,7 @@ function mapUser(row) {
     firebaseUid: row.firebase_uid,
     role: row.role,
     displayName: row.display_name,
-    disabled: row.disabled_at != null,
+    disabled: row.disabled === true || row.disabled_at != null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -35,6 +35,7 @@ function mapActor(row) {
     firebaseUid: row.firebase_uid,
     role: row.role,
     displayName: row.display_name,
+    disabled: row.disabled === true,
     disabledAt: row.disabled_at,
   }
 }
@@ -112,9 +113,11 @@ export function createUserRepository(client) {
          FROM users u
          JOIN invitations i ON i.accepted_user_id = u.id
          WHERE u.firebase_uid = $1
+           AND u.email = $2
+           AND i.email = $2
            AND i.accepted_at IS NOT NULL
            AND i.revoked_at IS NULL`,
-        [firebaseUid],
+        [firebaseUid, normalizedEmail],
       )
       if (byUid.rowCount > 0) {
         return byUid.rows[0].email === normalizedEmail ? mapActor(byUid.rows[0]) : null
@@ -195,7 +198,12 @@ export function createUserRepository(client) {
 
     async setDisabled({ id, disabled }) {
       const result = await client.query(
-        'UPDATE users SET disabled_at = CASE WHEN $2 THEN now() ELSE NULL END, updated_at = now() WHERE id = $1 RETURNING *',
+        `UPDATE users
+         SET disabled = $2,
+             disabled_at = CASE WHEN $2 THEN now() ELSE NULL END,
+             updated_at = now()
+         WHERE id = $1
+         RETURNING *`,
         [id, disabled],
       )
       return mapUser(result.rows[0])
