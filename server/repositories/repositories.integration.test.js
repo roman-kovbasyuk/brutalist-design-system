@@ -56,6 +56,24 @@ function observeSettlementWithin(promise, timeoutMs) {
   return { observed, settled }
 }
 
+function deferred() {
+  let resolve
+  const promise = new Promise((settle) => { resolve = settle })
+  return { promise, resolve }
+}
+
+async function waitForAdvisoryWait(pool, minimum = 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const result = await pool.query(
+      `SELECT count(*)::int AS count FROM pg_stat_activity
+       WHERE datname = current_database() AND wait_event = 'advisory'`,
+    )
+    if (result.rows[0].count >= minimum) return
+    await new Promise((resolve) => setTimeout(resolve, 2))
+  }
+  throw new Error(`Expected ${minimum} advisory-lock waiter(s)`)
+}
+
 async function resetDatabase() {
   const pool = makePool()
   const result = await pool.query('SELECT current_database() AS name')
@@ -2053,12 +2071,21 @@ async function immutableVersionHarness({
     body: 'Short, focused lessons built for busy adults.', offer: '', cta: 'Start learning',
     visualPrompt: 'A calm Norwegian learning scene',
   }
+  const copyJobId = `${campaign.id}:copy-job`
+  const directionsJobId = `${campaign.id}:directions-job`
+  const imageJobId = `${campaign.id}:image-job`
+  const copySetId = `${campaign.id}:copy-set`
+  const directionId = `${campaign.id}:direction-1`
+  const sourceAssetId = `${campaign.id}:source-asset`
   const now = new Date('2026-09-04T10:00:00.000Z')
   const timeout = new Date('2026-09-04T10:05:00.000Z')
   for (const [id, step, result] of [
-    ['copy-job', 'copy', { copies: [copy] }],
-    ['directions-job', 'directions', { directions: [] }],
-    ['image-job', 'image', { image: { asset: { id: 'source-asset', kind: 'direction', sha256: '0'.repeat(64) } } }],
+    ['copy-job', 'copy', { copySetId, copies: [copy] }],
+    ['directions-job', 'directions', { directions: [{
+      id: directionId, title: 'Nordic focus', prompt: 'A calm Norwegian learning scene',
+      status: 'pending', previewAssetId: null,
+    }] }],
+    ['image-job', 'image', { image: { asset: { id: sourceAssetId, kind: 'direction', sha256: '0'.repeat(64) } } }],
   ]) {
     await pool.query(
       `INSERT INTO generation_jobs
@@ -2073,12 +2100,6 @@ async function immutableVersionHarness({
         step === 'image' ? { direction: { id: `${campaign.id}:direction-1` } } : {}, result, timeout],
     )
   }
-  const copyJobId = `${campaign.id}:copy-job`
-  const directionsJobId = `${campaign.id}:directions-job`
-  const imageJobId = `${campaign.id}:image-job`
-  const copySetId = `${campaign.id}:copy-set`
-  const directionId = `${campaign.id}:direction-1`
-  const sourceAssetId = `${campaign.id}:source-asset`
   const sourceBytes = await sharp({ create: { width: 1000, height: 1000, channels: 4, background: '#db2777' } }).png().toBuffer()
   const sourceHash = createHash('sha256').update(sourceBytes).digest('hex')
   const sourceObjectKey = `campaigns/${createHash('sha256').update(campaign.id).digest('hex')}/generated/source.png`
@@ -2103,7 +2124,12 @@ async function immutableVersionHarness({
   )
   await pool.query(
     `UPDATE generation_jobs SET input_snapshot = $2, result_metadata = $3 WHERE id = $1`,
-    [imageJobId, { direction: { id: directionId } }, { image: { asset: { id: sourceAssetId, kind: 'direction', sha256: sourceHash } } }],
+    [imageJobId, { direction: { id: directionId } }, {
+      image: {
+        asset: { id: sourceAssetId, kind: 'direction', sha256: sourceHash },
+        mimeType: 'image/png', width: 1000, height: 1000, byteSize: sourceBytes.length,
+      },
+    }],
   )
   await pool.query(
     `UPDATE campaigns
@@ -2233,7 +2259,7 @@ describe('immutable review version workflow', () => {
     )
     await expect(harness.service.saveComposition({
       actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
-    })).rejects.toMatchObject({ code: 'composition_source_mismatch' })
+    })).rejects.toMatchObject({ code: 'direction_selection_invalid' })
     await harness.pool.query(
       `UPDATE generation_jobs SET safety = '{"verdict":"safe","categories":[]}' WHERE id = $1`,
       [`${harness.campaign.id}:directions-job`],
@@ -2487,6 +2513,64 @@ describe('immutable review version workflow', () => {
     pools.delete(harness.pool)
   })
 
+  test('keeps an exact reused object eligible for orphan recovery when its readback fails', async () => {
+    const backing = createMemoryAssetStore()
+    let failManifest = true
+    let failReusedReadback = false
+    let reusedKey
+    const store = {
+      delete: (input) => backing.delete(input),
+      close: () => backing.close(),
+      async put(input) {
+        if (failManifest && input.objectKey.includes('/versions/') && input.contentType === 'application/json') {
+          failManifest = false
+          throw Object.assign(new Error('manifest storage failed'), { code: 'storage_unavailable' })
+        }
+        try {
+          return await backing.put(input)
+        } catch (error) {
+          if (error?.code === 'object_exists' && input.objectKey.includes('/versions/')) {
+            reusedKey = input.objectKey
+            failReusedReadback = true
+          }
+          throw error
+        }
+      },
+      async get(input) {
+        if (failReusedReadback && input.objectKey === reusedKey) {
+          failReusedReadback = false
+          throw Object.assign(new Error('readback unavailable'), { code: 'storage_unavailable' })
+        }
+        return backing.get(input)
+      },
+    }
+    const harness = await immutableVersionHarness({ assetStore: store })
+    await harness.service.saveComposition({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
+    })
+    const command = {
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'reuse-readback-failure', input: {},
+    }
+
+    await expect(harness.service.createVersion(command)).rejects.toMatchObject({ code: 'asset_storage_unavailable' })
+    const build = (await harness.pool.query(
+      'SELECT plan FROM review_version_builds WHERE campaign_id = $1',
+      [harness.campaign.id],
+    )).rows[0]
+    const reviewKey = build.plan.ratioAssets[0].objectKey
+    expect(await backing.get({ objectKey: reviewKey })).not.toBeNull()
+
+    await expect(harness.service.createVersion(command)).rejects.toMatchObject({ code: 'asset_storage_unavailable' })
+    expect(reusedKey).toBe(reviewKey)
+    expect((await harness.pool.query(
+      'SELECT object_key FROM orphaned_uploads WHERE campaign_id = $1 ORDER BY object_key',
+      [harness.campaign.id],
+    )).rows.map((row) => row.object_key)).toContain(reviewKey)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
   test('registers every uploaded object as orphaned when the final database transaction rolls back', async () => {
     const identifiers = [
       'composition-id', 'composition-audit-id', 'command-owner', 'version-id', 'collision-review-asset',
@@ -2537,13 +2621,8 @@ describe('immutable review version workflow', () => {
         return backing.put(input)
       },
     }
-    let transactionCalls = 0
-    const transaction = async (...args) => {
-      transactionCalls += 1
-      if (transactionCalls === 3) throw new Error('recovery database unavailable')
-      return withTransaction(...args)
-    }
-    const harness = await immutableVersionHarness({ assetStore: failingStore, serviceOptions: { transaction } })
+    const recoveryTransaction = async () => { throw new Error('recovery database unavailable') }
+    const harness = await immutableVersionHarness({ assetStore: failingStore, serviceOptions: { recoveryTransaction } })
     await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
 
     await expect(harness.service.createVersion({
@@ -2578,6 +2657,459 @@ describe('immutable review version workflow', () => {
     await harness.pool.end()
     pools.delete(harness.pool)
   })
+
+  test('supports omitted optional image slots and multiple distinct campaign-bound image sources', async () => {
+    const optionalTemplate = structuredClone(pilotTemplateFixture)
+    optionalTemplate.version = '1.2.0'
+    optionalTemplate.slots.find((slot) => slot.id === 'image').required = false
+    const optional = await immutableVersionHarness({ templateManifest: optionalTemplate })
+    const optionalInput = structuredClone(optional.compositionInput)
+    delete optionalInput.slotValues.image
+    await optional.service.saveComposition({ actor: optional.actor, campaignId: optional.campaign.id, expectedRevision: 2, input: optionalInput })
+    const optionalVersion = await optional.service.createVersion({
+      actor: optional.actor, campaignId: optional.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'optional-image-omitted', input: {},
+    })
+    expect(optionalVersion.body.version.snapshot.assets.filter((asset) => ['direction', 'final_image'].includes(asset.kind))).toEqual([])
+    await optional.pool.end()
+    pools.delete(optional.pool)
+
+    await resetDatabase()
+    const migrationPool = makePool()
+    await runMigrations({ pool: migrationPool })
+    await migrationPool.end()
+    pools.delete(migrationPool)
+
+    const multiTemplate = structuredClone(pilotTemplateFixture)
+    multiTemplate.version = '1.3.0'
+    multiTemplate.slots.push({
+      ...structuredClone(multiTemplate.slots.find((slot) => slot.id === 'image')),
+      id: 'secondaryImage',
+    })
+    const realRenderer = createInProcessRenderer()
+    const renderComposition = vi.fn((input) => realRenderer.renderComposition(input))
+    const multi = await immutableVersionHarness({ templateManifest: multiTemplate, renderer: { renderComposition } })
+    const secondaryBytes = await sharp({ create: { width: 1000, height: 1000, channels: 4, background: '#0ea5e9' } }).png().toBuffer()
+    const secondaryHash = createHash('sha256').update(secondaryBytes).digest('hex')
+    const secondaryKey = `campaigns/${multi.campaign.id}/uploads/secondary.png`
+    await multi.assetStore.put({ objectKey: secondaryKey, bytes: secondaryBytes, contentType: 'image/png' })
+    await multi.pool.query(
+      `INSERT INTO generation_jobs
+         (id, campaign_id, actor_id, method, step, provider, model, region, status, attempts,
+          safety, usage, reserved_cost_microunits, actual_cost_microunits, idempotency_key,
+          request_fingerprint, owner_token, dispatch_state, dispatched_at, budget_day,
+          input_snapshot, result_metadata, timeout_at, completed_at, created_at, updated_at)
+       VALUES ('secondary-image-job', $1, $2, 'POST', 'image', 'mock', 'mock-v1', 'europe-west6', 'succeeded', 1,
+               '{"verdict":"safe","categories":[]}', '{}', 0, 0, 'secondary-image-key',
+               $3, 'secondary-image-owner', 'dispatched', $4, '2026-09-04', $5, $6, $7, $4, $4, $4)`,
+      [multi.campaign.id, multi.actor.id, hashCanonical({ id: 'secondary-image-job' }), new Date('2026-09-04T10:00:00.000Z'),
+        { direction: { id: multi.directionId } }, {
+          image: {
+            asset: { id: 'secondary-image', kind: 'final_image', sha256: secondaryHash },
+            mimeType: 'image/png', width: 1000, height: 1000, byteSize: secondaryBytes.length,
+          },
+        }, new Date('2026-09-04T10:05:00.000Z')],
+    )
+    await multi.pool.query(
+      `INSERT INTO assets
+         (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id)
+       VALUES ('secondary-image', $1, 'final_image', $2, 'image/png', $3, 1000, 1000, $4, 'generation', 'secondary-image-job')`,
+      [multi.campaign.id, secondaryKey, secondaryBytes.length, secondaryHash],
+    )
+    const multiInput = {
+      ...multi.compositionInput,
+      slotValues: { ...multi.compositionInput.slotValues, secondaryImage: 'secondary-image' },
+    }
+    await multi.service.saveComposition({ actor: multi.actor, campaignId: multi.campaign.id, expectedRevision: 2, input: multiInput })
+    const multiVersion = await multi.service.createVersion({
+      actor: multi.actor, campaignId: multi.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'multi-image', input: {},
+    })
+
+    expect(multiVersion.body.version.snapshot.assets.filter((asset) => ['direction', 'final_image'].includes(asset.kind)))
+      .toEqual(expect.arrayContaining([
+        { id: multi.sourceAssetId, kind: 'direction', sha256: multi.sourceHash },
+        { id: 'secondary-image', kind: 'final_image', sha256: secondaryHash },
+      ]))
+    expect(renderComposition).toHaveBeenCalledWith(expect.objectContaining({
+      slots: expect.objectContaining({
+        image: expect.objectContaining({ mimeType: 'image/png', bytes: expect.any(Buffer) }),
+        secondaryImage: expect.objectContaining({ mimeType: 'image/png', bytes: expect.any(Buffer) }),
+      }),
+    }))
+    await multi.pool.end()
+    pools.delete(multi.pool)
+  })
+
+  test.each([
+    ['copy job step', async (harness) => harness.pool.query('UPDATE generation_jobs SET step = \'directions\' WHERE id = $1', [`${harness.campaign.id}:copy-job`]), 'copy_selection_invalid'],
+    ['copy result', async (harness) => harness.pool.query("UPDATE generation_jobs SET result_metadata = '{\"copySetId\":\"other\",\"copies\":[]}' WHERE id = $1", [`${harness.campaign.id}:copy-job`]), 'copy_selection_invalid'],
+    ['direction result', async (harness) => harness.pool.query("UPDATE generation_jobs SET result_metadata = '{\"directions\":[]}' WHERE id = $1", [`${harness.campaign.id}:directions-job`]), 'direction_selection_invalid'],
+    ['image job step', async (harness) => harness.pool.query('UPDATE generation_jobs SET step = \'directions\' WHERE id = $1', [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
+    ['image input', async (harness) => harness.pool.query("UPDATE generation_jobs SET input_snapshot = '{\"direction\":{\"id\":\"wrong\"}}' WHERE id = $1", [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
+    ['image result', async (harness) => harness.pool.query("UPDATE generation_jobs SET result_metadata = '{\"image\":{\"asset\":{\"id\":\"wrong\",\"kind\":\"direction\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}' WHERE id = $1", [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
+  ])('rejects mismatched exact %s lineage', async (_case, mutate, code) => {
+    const harness = await immutableVersionHarness()
+    await harness.service.saveComposition({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
+    })
+    await mutate(harness)
+
+    await expect(harness.service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: `lineage-${_case.replaceAll(' ', '-')}`, input: {},
+    })).rejects.toMatchObject({ code })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM campaign_versions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test.each([
+    ['returned dimensions', async (valid) => ({ ...valid, width: valid.width - 1 })],
+    ['decoded dimensions', async (valid) => {
+      const bytes = await sharp({ create: { width: 64, height: 64, channels: 4, background: '#111827' } }).png().toBuffer()
+      return { ...valid, bytes, byteSize: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
+    }],
+    ['actual MIME', async (valid) => {
+      const bytes = await sharp({ create: { width: valid.width, height: valid.height, channels: 3, background: '#111827' } }).jpeg().toBuffer()
+      const sha256 = createHash('sha256').update(bytes).digest('hex')
+      return {
+        ...valid,
+        bytes,
+        byteSize: bytes.length,
+        sha256,
+        renderManifest: {
+          ...valid.renderManifest,
+          output: { ...valid.renderManifest.output, byteSize: bytes.length, sha256 },
+        },
+      }
+    }],
+    ['nested render manifest', async (valid) => ({
+      ...valid,
+      renderManifest: { ...valid.renderManifest, ratio: 'portrait' },
+    })],
+  ])('rejects renderer output that lies about %s', async (_case, lie) => {
+    const realRenderer = createInProcessRenderer()
+    const renderer = { renderComposition: async (input) => lie(await realRenderer.renderComposition(input)) }
+    const harness = await immutableVersionHarness({ renderer })
+    await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
+
+    await expect(harness.service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: `lying-renderer-${_case.replaceAll(' ', '-')}`, input: {},
+    })).rejects.toMatchObject({ code: 'renderer_integrity_failure' })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM campaign_versions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('serializes a pre-commit kill-switch change ahead of final version persistence', async () => {
+    const entered = deferred()
+    const release = deferred()
+    const realRenderer = createInProcessRenderer()
+    const renderer = {
+      async renderComposition(input) {
+        entered.resolve()
+        await release.promise
+        return realRenderer.renderComposition(input)
+      },
+    }
+    const harness = await immutableVersionHarness({ renderer, serviceOptions: { timeoutMs: 500 } })
+    await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
+    const creating = harness.service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'kill-switch-race', input: {},
+    })
+    await entered.promise
+    const settingsBlocker = await harness.pool.connect()
+    await settingsBlocker.query('BEGIN')
+    await settingsBlocker.query('SELECT singleton FROM settings WHERE singleton = true FOR UPDATE')
+    await settingsBlocker.query('UPDATE settings SET generation_disabled = true WHERE singleton = true')
+    release.resolve()
+
+    const early = await observeSettlementWithin(creating, 300).observed
+    expect(early).toEqual({ kind: 'deadline_ignored' })
+    await settingsBlocker.query('COMMIT')
+    settingsBlocker.release()
+    await expect(creating).rejects.toMatchObject({ code: 'generation_safety_unavailable' })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM campaign_versions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('holds the settings lock through final commit so budget reservations serialize behind it', async () => {
+    const settingsLocked = deferred()
+    const releaseFinal = deferred()
+    let safetyChecks = 0
+    const repositoryFactory = (client) => {
+      const repository = createVersionRepository(client)
+      return {
+        ...repository,
+        async generationSafetyAvailable() {
+          const available = await repository.generationSafetyAvailable()
+          safetyChecks += 1
+          if (safetyChecks === 2) {
+            settingsLocked.resolve()
+            await releaseFinal.promise
+          }
+          return available
+        },
+      }
+    }
+    const harness = await immutableVersionHarness()
+    await harness.pool.query('UPDATE settings SET daily_budget_microunits = 1000000 WHERE singleton = true')
+    await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
+    const service = createVersionService({
+      pool: harness.pool, assetStore: harness.assetStore, repositoryFactory, timeoutMs: 1_000,
+    })
+    const creating = service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'settings-serialization', input: {},
+    })
+    await settingsLocked.promise
+    const secondCampaign = await insertCampaign(harness.pool, harness.actor.id)
+    const controlPlane = createGenerationControlPlane({ pool: harness.pool })
+    const reserving = controlPlane.prepareGeneration({
+      actor: harness.actor, campaignId: secondCampaign.id, step: 'brief_analysis', input: {},
+      idempotencyKey: 'reservation-after-version', jobId: 'reservation-after-version-job', ownerToken: 'reservation-owner',
+      maxCostMicrounits: 1_000, startedAt: new Date(), timeoutAt: new Date(Date.now() + 1_000),
+    })
+
+    expect(await observeSettlementWithin(reserving, 50).observed).toEqual({ kind: 'deadline_ignored' })
+    expect((await harness.pool.query("SELECT count(*)::int AS count FROM generation_jobs WHERE id = 'reservation-after-version-job'")).rows[0].count).toBe(0)
+    releaseFinal.resolve()
+    const [created, reserved] = await Promise.all([creating, reserving])
+    expect(created.status).toBe(201)
+    expect(reserved.kind).toBe('owner')
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test.each(['source', 'renderer', 'upload', 'readback'])('bounds a non-settling %s phase with one version deadline', async (phase) => {
+    const backing = createMemoryAssetStore()
+    const gate = deferred()
+    let sourceKey
+    const store = {
+      delete: (input) => backing.delete(input),
+      close: () => backing.close(),
+      async put(input) {
+        if (phase === 'upload' && input.objectKey.includes('/versions/')) await gate.promise
+        return backing.put(input)
+      },
+      async get(input) {
+        if (phase === 'source' && input.objectKey === sourceKey) await gate.promise
+        if (phase === 'readback' && input.objectKey.includes('/versions/')) await gate.promise
+        return backing.get(input)
+      },
+    }
+    const realRenderer = createInProcessRenderer()
+    const renderer = {
+      async renderComposition(input) {
+        if (phase === 'renderer') await gate.promise
+        return realRenderer.renderComposition(input)
+      },
+    }
+    const harness = await immutableVersionHarness({ assetStore: store })
+    await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
+    sourceKey = (await harness.pool.query('SELECT object_key FROM assets WHERE id = $1', [harness.sourceAssetId])).rows[0].object_key
+    const service = createVersionService({
+      pool: harness.pool, assetStore: store, renderer, timeoutMs: 30, recoveryTimeoutMs: 60,
+    })
+    const pending = service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: `deadline-${phase}`, input: {},
+    })
+
+    const outcome = await observeSettlementWithin(pending, 250).observed
+    gate.resolve()
+    await pending.catch(() => {})
+    expect(outcome).toMatchObject({ kind: 'rejected', error: { statusCode: 503, code: 'version_operation_timeout' } })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM campaign_versions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('bounds a non-settling source read while a composition transaction holds the campaign lock', async () => {
+    const backing = createMemoryAssetStore()
+    const gate = deferred()
+    let sourceKey
+    const store = {
+      put: (input) => backing.put(input),
+      delete: (input) => backing.delete(input),
+      async get(input) {
+        if (input.objectKey === sourceKey) await gate.promise
+        return backing.get(input)
+      },
+    }
+    const harness = await immutableVersionHarness({ assetStore: store })
+    sourceKey = (await harness.pool.query('SELECT object_key FROM assets WHERE id = $1', [harness.sourceAssetId])).rows[0].object_key
+    const service = createVersionService({ pool: harness.pool, assetStore: store, timeoutMs: 30, recoveryTimeoutMs: 60 })
+    const pending = service.saveComposition({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
+    })
+
+    const outcome = await observeSettlementWithin(pending, 250).observed
+    gate.resolve()
+    await pending.catch(() => {})
+    expect(outcome).toMatchObject({ kind: 'rejected', error: { statusCode: 503, code: 'version_operation_timeout' } })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM compositions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('bounds final persistence and uses a separate recovery budget after the main deadline', async () => {
+    const entered = deferred()
+    const release = deferred()
+    const realRenderer = createInProcessRenderer()
+    const renderer = {
+      async renderComposition(input) {
+        entered.resolve()
+        await release.promise
+        return realRenderer.renderComposition(input)
+      },
+    }
+    const harness = await immutableVersionHarness({ renderer })
+    await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
+    const service = createVersionService({
+      pool: harness.pool, assetStore: harness.assetStore, renderer, timeoutMs: 80, recoveryTimeoutMs: 250,
+    })
+    const pending = service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'final-deadline', input: {},
+    })
+    await entered.promise
+    const blocker = await harness.pool.connect()
+    await blocker.query('BEGIN')
+    await blocker.query('SELECT id FROM campaigns WHERE id = $1 FOR UPDATE', [harness.campaign.id])
+    release.resolve()
+
+    const outcome = await observeSettlementWithin(pending, 500).observed
+    await blocker.query('ROLLBACK')
+    blocker.release()
+    await pending.catch(() => {})
+    expect(outcome).toMatchObject({
+      kind: 'rejected',
+      error: { statusCode: 503, code: expect.stringMatching(/version_operation_timeout|version_recovery_unavailable/) },
+    })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM campaign_versions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('bounds pool checkout and a separately blocked recovery transaction', async () => {
+    const harness = await immutableVersionHarness()
+    await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
+    const service = createVersionService({
+      pool: harness.pool, assetStore: harness.assetStore, timeoutMs: 30, recoveryTimeoutMs: 40,
+    })
+    const checkedOut = await Promise.all(Array.from({ length: 8 }, () => harness.pool.connect()))
+    const checkoutPending = service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'pool-deadline', input: {},
+    })
+    const checkoutOutcome = await observeSettlementWithin(checkoutPending, 200).observed
+    for (const client of checkedOut) client.release()
+    await checkoutPending.catch(() => {})
+    expect(checkoutOutcome).toMatchObject({ kind: 'rejected', error: { statusCode: 503, code: 'version_operation_timeout' } })
+
+    const gate = deferred()
+    const releaseFailure = deferred()
+    const failingStore = {
+      get: (input) => harness.assetStore.get(input),
+      delete: (input) => harness.assetStore.delete(input),
+      async put(input) {
+        if (input.objectKey.includes('/versions/')) {
+          gate.resolve()
+          await releaseFailure.promise
+          throw Object.assign(new Error('storage unavailable'), { code: 'storage_unavailable' })
+        }
+        return harness.assetStore.put(input)
+      },
+    }
+    const recoveryService = createVersionService({
+      pool: harness.pool, assetStore: failingStore, timeoutMs: 500, recoveryTimeoutMs: 40,
+    })
+    const recoveryPending = recoveryService.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'recovery-deadline', input: {},
+    })
+    await gate.promise
+    const idempotencyBlocker = await harness.pool.connect()
+    await idempotencyBlocker.query('BEGIN')
+    await idempotencyBlocker.query(
+      `SELECT key FROM idempotency_records
+       WHERE actor_id = $1 AND method = 'POST' AND resource_id = $2 AND key = 'recovery-deadline'
+       FOR UPDATE`,
+      [harness.actor.id, harness.campaign.id],
+    )
+    releaseFailure.resolve()
+    const recoveryOutcome = await observeSettlementWithin(recoveryPending, 250).observed
+    await idempotencyBlocker.query('ROLLBACK')
+    idempotencyBlocker.release()
+    await recoveryPending.catch(() => {})
+    expect(recoveryOutcome).toMatchObject({ kind: 'rejected', error: { statusCode: 503, code: 'version_recovery_unavailable' } })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('adopts retry objects before readback so cleanup cannot delete between verification and commit or deadlock', async () => {
+    const backing = createMemoryAssetStore()
+    let failManifest = true
+    const store = {
+      get: (input) => backing.get(input),
+      delete: (input) => backing.delete(input),
+      close: () => backing.close(),
+      async put(input) {
+        if (failManifest && input.objectKey.includes('/versions/') && input.contentType === 'application/json') {
+          failManifest = false
+          await backing.put(input)
+          throw Object.assign(new Error('manifest storage failed'), { code: 'storage_unavailable' })
+        }
+        return backing.put(input)
+      },
+    }
+    const harness = await immutableVersionHarness({ assetStore: store, serviceOptions: { timeoutMs: 5_000, recoveryTimeoutMs: 500 } })
+    await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
+    const command = {
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'cleanup-adoption-race', input: {},
+    }
+    await expect(harness.service.createVersion(command)).rejects.toMatchObject({ code: 'asset_storage_unavailable' })
+    const build = (await harness.pool.query('SELECT plan FROM review_version_builds WHERE campaign_id = $1', [harness.campaign.id])).rows[0]
+    const keys = [...build.plan.ratioAssets.map((asset) => asset.objectKey), build.plan.manifestAsset.objectKey].sort()
+    const orphans = (await harness.pool.query(
+      'SELECT id, object_key FROM orphaned_uploads WHERE campaign_id = $1 ORDER BY object_key',
+      [harness.campaign.id],
+    )).rows
+    const cleanupTarget = orphans.find((orphan) => orphan.object_key === keys[0])
+    expect(cleanupTarget).toBeTruthy()
+    expect(await backing.get({ objectKey: cleanupTarget.object_key })).not.toBeNull()
+
+    const blocker = await harness.pool.connect()
+    await blocker.query('BEGIN')
+    for (const objectKey of keys) {
+      await blocker.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+    }
+    const retry = harness.service.createVersion(command)
+    await waitForAdvisoryWait(harness.pool, 1)
+    const controlPlane = createGenerationControlPlane({ pool: harness.pool })
+    const cleanup = controlPlane.cleanupOrphanUpload({
+      orphanId: cleanupTarget.id,
+      deleteObject: (input) => store.delete(input),
+      cleanedAt: new Date('2026-09-04T10:01:00.000Z'),
+    })
+    await waitForAdvisoryWait(harness.pool, 2)
+    await blocker.query('COMMIT')
+    blocker.release()
+
+    const [retried, cleaned] = await Promise.all([retry, cleanup])
+    expect(retried.status).toBe(201)
+    expect(cleaned).toEqual({ kind: 'missing' })
+    expect(await backing.get({ objectKey: cleanupTarget.object_key })).not.toBeNull()
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM assets WHERE version_id = $1', [retried.body.version.id])).rows[0].count).toBe(2)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  }, 10_000)
 
   test('creates version N+1 after a reopened edit without mutating version N', async () => {
     const harness = await immutableVersionHarness()

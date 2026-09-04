@@ -1,5 +1,6 @@
 import { createCampaignRepository } from './campaignRepository.js'
 import { createAuditRepository } from './auditRepository.js'
+import { createSettingsRepository } from './settingsRepository.js'
 
 function safeNumber(value, field) {
   const parsed = Number(value)
@@ -52,6 +53,7 @@ function mapAsset(row) {
     generationStep: row.generation_step,
     generationSafety: row.generation_safety,
     generationInput: row.generation_input,
+    generationResult: row.generation_result,
   }
 }
 
@@ -70,6 +72,10 @@ function mapBuild(row) {
     expectedRevision: row.expected_revision,
     plan: row.plan,
   }
+}
+
+function sortedObjectKeys(values) {
+  return [...new Set(values)].sort()
 }
 
 function campaignUpdateInput(campaign, changes) {
@@ -109,7 +115,8 @@ export function createVersionRepository(client) {
     async findSelectedCopy(campaignId, copySetId) {
       if (!copySetId) return null
       const result = await client.query(
-        `SELECT cs.*, gj.status AS generation_status, gj.safety AS generation_safety
+        `SELECT cs.*, gj.step AS generation_step, gj.status AS generation_status,
+                gj.safety AS generation_safety, gj.result_metadata AS generation_result
          FROM copy_sets cs
          LEFT JOIN generation_jobs gj ON gj.id = cs.generation_job_id AND gj.campaign_id = cs.campaign_id
          WHERE cs.campaign_id = $1 AND cs.id = $2`,
@@ -121,16 +128,20 @@ export function createVersionRepository(client) {
         id: row.id,
         selectedCandidateId: row.selected_candidate_id,
         selectedCopy: row.candidates?.find((candidate) => candidate.id === row.selected_candidate_id) ?? null,
+        candidates: row.candidates,
         stale: row.stale,
+        generationStep: row.generation_step,
         generationStatus: row.generation_status,
         generationSafety: row.generation_safety,
+        generationResult: row.generation_result,
       }
     },
 
     async findSelectedDirection(campaignId, directionId) {
       if (!directionId) return null
       const result = await client.query(
-        `SELECT vd.*, gj.status AS generation_status, gj.safety AS generation_safety
+        `SELECT vd.*, gj.step AS generation_step, gj.status AS generation_status,
+                gj.safety AS generation_safety, gj.result_metadata AS generation_result
          FROM visual_directions vd
          LEFT JOIN generation_jobs gj ON gj.id = vd.generation_job_id AND gj.campaign_id = vd.campaign_id
          WHERE vd.campaign_id = $1 AND vd.id = $2`,
@@ -141,7 +152,8 @@ export function createVersionRepository(client) {
       return {
         id: row.id, title: row.title, prompt: row.prompt, status: row.status,
         previewAssetId: row.preview_asset_id, stale: row.stale,
-        generationStatus: row.generation_status, generationSafety: row.generation_safety,
+        generationStep: row.generation_step, generationStatus: row.generation_status,
+        generationSafety: row.generation_safety, generationResult: row.generation_result,
       }
     },
 
@@ -149,13 +161,29 @@ export function createVersionRepository(client) {
       if (!assetId) return null
       const result = await client.query(
         `SELECT a.*, gj.status AS generation_status, gj.step AS generation_step,
-                gj.safety AS generation_safety, gj.input_snapshot AS generation_input
+                gj.safety AS generation_safety, gj.input_snapshot AS generation_input,
+                gj.result_metadata AS generation_result
          FROM assets a
          LEFT JOIN generation_jobs gj ON gj.id = a.generation_job_id AND gj.campaign_id = a.campaign_id
          WHERE a.campaign_id = $1 AND a.id = $2`,
         [campaignId, assetId],
       )
       return mapAsset(result.rows[0])
+    },
+
+    async findAssets(campaignId, assetIds) {
+      if (!Array.isArray(assetIds) || assetIds.length === 0) return []
+      const result = await client.query(
+        `SELECT a.*, gj.status AS generation_status, gj.step AS generation_step,
+                gj.safety AS generation_safety, gj.input_snapshot AS generation_input,
+                gj.result_metadata AS generation_result
+         FROM assets a
+         LEFT JOIN generation_jobs gj ON gj.id = a.generation_job_id AND gj.campaign_id = a.campaign_id
+         WHERE a.campaign_id = $1 AND a.id = ANY($2::text[])
+         ORDER BY a.id`,
+        [campaignId, assetIds],
+      )
+      return result.rows.map(mapAsset)
     },
 
     async findComposition(campaignId, compositionId) {
@@ -168,15 +196,14 @@ export function createVersionRepository(client) {
     },
 
     async generationSafetyAvailable() {
-      const settings = await client.query('SELECT generation_disabled, daily_budget_microunits FROM settings WHERE singleton = true')
-      const row = settings.rows[0]
-      if (!row || row.generation_disabled) return false
+      const settings = await createSettingsRepository(client).getForUpdate()
+      if (!settings || settings.generationDisabled) return false
       const spent = await client.query(
         `SELECT COALESCE(sum(CASE WHEN status IN ('pending', 'unknown')
                   THEN reserved_cost_microunits ELSE COALESCE(actual_cost_microunits, reserved_cost_microunits) END), 0)::text AS used
          FROM generation_jobs WHERE budget_day = ((clock_timestamp() AT TIME ZONE 'UTC')::date)`,
       )
-      return BigInt(spent.rows[0].used) <= BigInt(row.daily_budget_microunits)
+      return BigInt(spent.rows[0].used) <= BigInt(settings.dailyBudgetMicrounits)
     },
 
     async insertComposition({ composition, campaign, actor, createdAt }) {
@@ -261,9 +288,24 @@ export function createVersionRepository(client) {
       return mapBuild(result.rows[0])
     },
 
+    async adoptBuildObjects({ buildId, ownerToken, objectKeys }) {
+      const ownership = await client.query(
+        'SELECT owner_token, state FROM review_version_builds WHERE id = $1 FOR UPDATE',
+        [buildId],
+      )
+      const build = ownership.rows[0]
+      if (!build || build.owner_token !== ownerToken || build.state !== 'in_progress') return false
+      for (const objectKey of sortedObjectKeys(objectKeys)) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+        await client.query('DELETE FROM orphaned_uploads WHERE object_key = $1', [objectKey])
+      }
+      return true
+    },
+
     async finalizeBuild({ build, campaign, actor, snapshot, contentHash, assets, reviewEventId, auditId, createdAt }) {
-      for (const asset of assets) {
-        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [asset.objectKey])
+      const objectKeys = sortedObjectKeys(assets.map((asset) => asset.objectKey))
+      for (const objectKey of objectKeys) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
       }
       const versionResult = await client.query(
         `INSERT INTO campaign_versions
@@ -311,7 +353,9 @@ export function createVersionRepository(client) {
          WHERE id = $1 AND owner_token = $3 AND state = 'in_progress'`,
         [build.id, createdAt, build.ownerToken],
       )
-      await client.query('DELETE FROM orphaned_uploads WHERE object_key = ANY($1::text[])', [assets.map((asset) => asset.objectKey)])
+      for (const objectKey of objectKeys) {
+        await client.query('DELETE FROM orphaned_uploads WHERE object_key = $1', [objectKey])
+      }
       return { version: mapVersion(versionResult.rows[0]), campaign: updated }
     },
 
@@ -324,14 +368,16 @@ export function createVersionRepository(client) {
         const row = ownership.rows[0]
         if (!row || row.owner_token !== ownerToken || row.state !== 'in_progress') return { owned: false }
       }
-      for (const [index, objectKey] of objectKeys.entries()) {
+      const recoveries = objectKeys.map((objectKey, index) => ({ objectKey, orphanId: orphanIds[index] }))
+        .sort((left, right) => left.objectKey.localeCompare(right.objectKey))
+      for (const { objectKey, orphanId } of recoveries) {
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
         await client.query(
           `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason, created_at)
            SELECT $1, $2, $3, $4, $5
            WHERE NOT EXISTS (SELECT 1 FROM assets WHERE object_key = $2)
            ON CONFLICT (object_key) DO NOTHING`,
-          [orphanIds[index], objectKey, campaignId, reason, failedAt],
+          [orphanId, objectKey, campaignId, reason, failedAt],
         )
       }
       if (buildId) {

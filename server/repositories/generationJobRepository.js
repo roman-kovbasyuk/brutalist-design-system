@@ -556,15 +556,22 @@ export function createGenerationControlPlane({
     async cleanupOrphanUpload({ orphanId, deleteObject, cleanedAt }) {
       if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
       return transaction(pool, async (client) => {
+        const observed = await client.query(
+          `SELECT id, object_key FROM orphaned_uploads
+           WHERE id = $1 AND status <> 'cleaned'`,
+          [orphanId],
+        )
+        const candidate = observed.rows[0]
+        if (!candidate) return { kind: 'missing' }
+        await lockAssetObjectKey(client, candidate.object_key)
         const selected = await client.query(
           `SELECT id, object_key FROM orphaned_uploads
-           WHERE id = $1 AND status <> 'cleaned'
+           WHERE id = $1 AND object_key = $2 AND status <> 'cleaned'
            FOR UPDATE`,
-          [orphanId],
+          [orphanId, candidate.object_key],
         )
         const orphan = selected.rows[0]
         if (!orphan) return { kind: 'missing' }
-        await lockAssetObjectKey(client, orphan.object_key)
         const referenced = await client.query('SELECT 1 FROM assets WHERE object_key = $1', [orphan.object_key])
         if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
         await deleteObject({ objectKey: orphan.object_key })

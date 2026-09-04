@@ -13,7 +13,7 @@ import {
 import { canonicalJson, hashCanonical } from '../../shared/canonicalJson.js'
 import { validateComposition } from '../../shared/templateManifest.js'
 import { transitionCampaign } from '../../shared/workflowRules.js'
-import { withTransaction } from '../db/pool.js'
+import { withDeadlineTransaction } from '../db/pool.js'
 import { decodeGeneratedImage } from '../images/imageDecoder.js'
 import { validateBannerRenderer } from '../rendering/bannerRenderer.js'
 import { createInProcessRenderer } from '../rendering/inProcessRenderer.js'
@@ -74,34 +74,142 @@ function isSafeGeneration(value) {
   return value?.generationStatus === 'succeeded' && value?.generationSafety?.verdict === 'safe'
 }
 
+function operationTimeout() {
+  return new VersionServiceError(503, 'version_operation_timeout', 'Review version creation exceeded its deadline')
+}
+
+function recoveryTimeout() {
+  return new VersionServiceError(503, 'version_recovery_unavailable', 'Review version recovery is temporarily unavailable')
+}
+
+function millisecondsRemaining(deadlineAt) {
+  return Math.max(0, Math.ceil(deadlineAt - Date.now()))
+}
+
+async function beforeDeadline(deadlineAt, operation, timeoutFactory = operationTimeout) {
+  const remaining = millisecondsRemaining(deadlineAt)
+  if (remaining <= 0) throw timeoutFactory()
+  let timer
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => operation(remaining)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(timeoutFactory()), remaining)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function verifyTemplate(template) {
   if (!template || hashCanonical(template.manifest) !== template.manifestHash) {
     fail(409, 'template_integrity_failure', 'The selected template version is unavailable or invalid')
   }
 }
 
-function verifySelectionLineage({ copy, direction, sourceAsset }) {
-  if (!copy?.selectedCopy || copy.stale || !isSafeGeneration(copy)) {
+function verifyCopyLineage(copy) {
+  if (!copy?.selectedCopy || copy.stale || copy.generationStep !== 'copy' || !isSafeGeneration(copy)
+    || copy.generationResult?.copySetId !== copy.id
+    || !Array.isArray(copy.generationResult?.copies) || !Array.isArray(copy.candidates)
+    || hashCanonical(copy.generationResult?.copies) !== hashCanonical(copy.candidates)
+    || !copy.generationResult.copies.some((candidate) => (
+      candidate.id === copy.selectedCandidateId && hashCanonical(candidate) === hashCanonical(copy.selectedCopy)
+    ))) {
     fail(409, 'copy_selection_invalid', 'The selected copy is stale, unsafe, or unavailable')
   }
-  if (!direction || direction.stale || direction.status !== 'ready' || !direction.previewAssetId || !isSafeGeneration(direction)) {
+}
+
+function verifyDirectionLineage(direction) {
+  const generated = Array.isArray(direction?.generationResult?.directions)
+    ? direction.generationResult.directions.find((candidate) => candidate.id === direction.id)
+    : null
+  if (!direction || direction.stale || direction.status !== 'ready' || !direction.previewAssetId
+    || direction.generationStep !== 'directions' || !isSafeGeneration(direction)
+    || !generated || generated.title !== direction.title || generated.prompt !== direction.prompt) {
     fail(409, 'direction_selection_invalid', 'The selected direction is stale, unsafe, or unavailable')
   }
-  if (!sourceAsset || sourceAsset.id !== direction.previewAssetId
-    || !['direction', 'final_image'].includes(sourceAsset.kind)
-    || sourceAsset.source !== 'generation'
-    || sourceAsset.generationStep !== 'image'
-    || !isSafeGeneration(sourceAsset)
-    || sourceAsset.generationInput?.direction?.id !== direction.id) {
+}
+
+function matchesGeneratedAssetResult(asset) {
+  const image = asset.generationResult?.image
+  return image?.asset?.id === asset.id
+    && image.asset.kind === asset.kind
+    && image.asset.sha256 === asset.sha256
+    && image.mimeType === asset.mimeType
+    && image.width === asset.width
+    && image.height === asset.height
+    && image.byteSize === asset.byteSize
+}
+
+function verifyImageAssetLineage(asset, direction, { requireGenerated = false } = {}) {
+  const validShape = asset && ['direction', 'final_image'].includes(asset.kind)
+    && Number.isSafeInteger(asset.byteSize) && asset.byteSize > 0
+    && Number.isSafeInteger(asset.width) && asset.width > 0
+    && Number.isSafeInteger(asset.height) && asset.height > 0
+    && typeof asset.sha256 === 'string' && /^[a-f0-9]{64}$/.test(asset.sha256)
+  const generated = asset?.source === 'generation'
+    && asset.generationStep === 'image'
+    && isSafeGeneration(asset)
+    && asset.generationInput?.direction?.id === direction.id
+    && matchesGeneratedAssetResult(asset)
+  const uploaded = asset?.source === 'upload' && asset.generationJobId == null
+  if (!validShape || (requireGenerated ? !generated : !(generated || uploaded))) {
     fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
   }
 }
 
-async function readVerifiedImage(assetStore, asset) {
+function referencedImageAssetIds(manifest, slotValues) {
+  return [...new Set(manifest.slots
+    .filter((slot) => slot.type === 'image')
+    .map((slot) => slotValues[slot.id])
+    .filter((value) => typeof value === 'string' && value.trim().length > 0))].sort()
+}
+
+function immutableSourceAsset(asset) {
+  return {
+    id: asset.id, kind: asset.kind, objectKey: asset.objectKey,
+    mimeType: asset.mimeType, byteSize: asset.byteSize, width: asset.width,
+    height: asset.height, sha256: asset.sha256,
+  }
+}
+
+function verifyCompositionSources({ template, composition, direction, previewAsset, sourceAssets }) {
+  verifyDirectionLineage(direction)
+  verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
+  if (previewAsset.id !== direction.previewAssetId) {
+    fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
+  }
+  const referencedIds = referencedImageAssetIds(template.manifest, composition.slotValues)
+  if (referencedIds.length > 0 && !referencedIds.includes(direction.previewAssetId)) {
+    fail(409, 'composition_source_mismatch', 'The composition must include the selected direction preview')
+  }
+  if (sourceAssets.length !== referencedIds.length
+    || sourceAssets.some((asset, index) => asset.id !== referencedIds[index])) {
+    fail(409, 'composition_source_mismatch', 'Every composition image must be bound to this campaign')
+  }
+  for (const asset of sourceAssets) verifyImageAssetLineage(asset, direction)
+  const validation = validateComposition(template.manifest, {
+    ratioIds: composition.ratioIds,
+    slotValues: composition.slotValues,
+    assetMetadata: Object.fromEntries(sourceAssets.map((asset) => [asset.id, {
+      width: asset.width, height: asset.height, mimeType: asset.mimeType,
+    }])),
+  })
+  if (!validation.valid || hashCanonical(validation) !== hashCanonical(composition.validation)) {
+    fail(409, 'composition_invalid', 'The selected composition is stale or invalid')
+  }
+}
+
+async function readVerifiedImage(assetStore, asset, deadlineAt) {
   let stored
   try {
-    stored = await assetStore.get({ objectKey: asset.objectKey, maxBytes: asset.byteSize })
-  } catch {
+    stored = await beforeDeadline(deadlineAt, (timeoutMs) => assetStore.get({
+      objectKey: asset.objectKey, maxBytes: asset.byteSize, timeoutMs,
+    }))
+  } catch (error) {
+    if (error instanceof VersionServiceError && error.code === 'version_operation_timeout') throw error
+    if (error?.code === 'storage_timeout') throw operationTimeout()
     fail(502, 'asset_bytes_missing', 'Source asset bytes are unavailable')
   }
   if (stored == null) fail(502, 'asset_bytes_missing', 'Source asset bytes are unavailable')
@@ -112,8 +220,9 @@ async function readVerifiedImage(assetStore, asset) {
   }
   let decoded
   try {
-    decoded = await decodeGeneratedImage(bytes, asset.mimeType)
-  } catch {
+    decoded = await beforeDeadline(deadlineAt, () => decodeGeneratedImage(bytes, asset.mimeType))
+  } catch (error) {
+    if (error instanceof VersionServiceError && error.code === 'version_operation_timeout') throw error
     fail(502, 'asset_integrity_failure', 'Source asset integrity verification failed')
   }
   if (!decoded || decoded.mimeType !== asset.mimeType || decoded.width !== asset.width || decoded.height !== asset.height) {
@@ -135,7 +244,7 @@ function immutableObjectKey(campaignId, versionId, leaf) {
   return `campaigns/${campaign}/versions/${version}/${leaf}`
 }
 
-function validatePreparedContext({ campaign, copy, direction, composition, template, sourceAsset, expectedRevision }) {
+function validatePreparedContext({ campaign, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision }) {
   if (!campaign) fail(404, 'not_found', 'Campaign was not found')
   if (campaign.revision !== expectedRevision) fail(409, 'revision_conflict', 'The resource changed since it was loaded')
   if (campaign.openVersionId) fail(409, 'open_version_conflict', 'The campaign already has an open review version')
@@ -147,27 +256,24 @@ function validatePreparedContext({ campaign, copy, direction, composition, templ
   if (composition.templateId !== template.id || composition.templateVersion !== template.version) {
     fail(409, 'template_mismatch', 'The composition does not match its immutable template version')
   }
-  verifySelectionLineage({ copy, direction, sourceAsset })
+  verifyCopyLineage(copy)
+  verifyCompositionSources({ template, composition, direction, previewAsset, sourceAssets })
 }
 
-function contextMatchesPlan({ copy, direction, composition, template, sourceAsset }, plan) {
-  const plannedSource = plan.sourceAssets[0]
-  const source = sourceAsset && {
-    id: sourceAsset.id, kind: sourceAsset.kind, objectKey: sourceAsset.objectKey,
-    mimeType: sourceAsset.mimeType, byteSize: sourceAsset.byteSize, width: sourceAsset.width,
-    height: sourceAsset.height, sha256: sourceAsset.sha256,
-  }
+function contextMatchesPlan({ copy, direction, composition, template, sourceAssets }, plan) {
+  const sources = sourceAssets.map(immutableSourceAsset)
   return hashCanonical(copy.selectedCopy) === hashCanonical(plan.selectedCopy)
     && hashCanonical(publicDirection(direction)) === hashCanonical(plan.selectedDirection)
     && hashCanonical(composition) === hashCanonical(plan.composition)
     && hashCanonical(template.manifest) === hashCanonical(plan.templateManifest)
     && template.manifestHash === plan.templateManifestHash
-    && hashCanonical(source) === hashCanonical(plannedSource)
+    && hashCanonical(sources) === hashCanonical(plan.sourceAssets)
 }
 
 function normalizeStoreFailure(error) {
   if (error instanceof VersionServiceError) return error
   if (error?.code === 'object_exists') return error
+  if (error?.code === 'storage_timeout') return operationTimeout()
   return new VersionServiceError(503, 'asset_storage_unavailable', 'Review asset storage is unavailable')
 }
 
@@ -175,7 +281,8 @@ export function createVersionService({
   pool,
   assetStore,
   renderer = createInProcessRenderer(),
-  transaction = withTransaction,
+  transaction = withDeadlineTransaction,
+  recoveryTransaction = transaction,
   repositoryFactory = createVersionRepository,
   idempotencyRepositoryFactory = createIdempotencyRepository,
   idGenerator = randomUUID,
@@ -183,21 +290,45 @@ export function createVersionService({
   wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
   leaseMs = 120_000,
   pollIntervalMs = 10,
-  waitTimeoutMs = 5_000,
+  timeoutMs = 30_000,
+  recoveryTimeoutMs = 250,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   validateAssetStore(assetStore)
   validateBannerRenderer(renderer)
-  if (typeof transaction !== 'function' || typeof repositoryFactory !== 'function' || typeof idempotencyRepositoryFactory !== 'function') {
+  if (typeof transaction !== 'function' || typeof recoveryTransaction !== 'function'
+    || typeof repositoryFactory !== 'function' || typeof idempotencyRepositoryFactory !== 'function') {
     throw new TypeError('Version persistence dependencies are required')
   }
-  const coordinator = idempotencyRepositoryFactory(pool)
+  if (![leaseMs, pollIntervalMs, timeoutMs, recoveryTimeoutMs].every((duration) => Number.isSafeInteger(duration) && duration > 0)) {
+    throw new TypeError('Version lease, polling, operation, and recovery timeouts must be positive safe integers')
+  }
+  const mainTransaction = (deadlineAt, operation) => beforeDeadline(
+    deadlineAt,
+    (remaining) => transaction(pool, operation, { timeoutMs: remaining }),
+  ).catch((error) => {
+    if (error?.code === 'transaction_deadline_exceeded') throw operationTimeout()
+    throw error
+  })
+
+  const boundedRecoveryTransaction = (operation) => {
+    const deadlineAt = Date.now() + recoveryTimeoutMs
+    return beforeDeadline(
+      deadlineAt,
+      (remaining) => recoveryTransaction(pool, operation, { timeoutMs: remaining }),
+      recoveryTimeout,
+    ).catch((error) => {
+      if (error?.code === 'transaction_deadline_exceeded') throw recoveryTimeout()
+      throw error
+    })
+  }
 
   const saveComposition = async ({ actor, campaignId, expectedRevision, input }) => {
     requireRole(actor, editors)
     validateRevision(expectedRevision)
     const command = parse(saveCompositionRequestSchema, input)
-    return transaction(pool, async (client) => {
+    const deadlineAt = Date.now() + timeoutMs
+    return mainTransaction(deadlineAt, async (client) => {
       const repository = repositoryFactory(client)
       const campaign = await repository.lockCampaign(campaignId)
       if (!campaign) fail(404, 'not_found', 'Campaign was not found')
@@ -208,27 +339,30 @@ export function createVersionService({
       const template = await repository.findTemplate(command.templateId, command.templateVersion)
       verifyTemplate(template)
       const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
-      const sourceAsset = await repository.findAsset(campaign.id, direction?.previewAssetId)
-      if (!direction || !sourceAsset) fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
-      if (direction.stale || direction.status !== 'ready' || !isSafeGeneration(direction) || sourceAsset.id !== direction.previewAssetId
-        || sourceAsset.source !== 'generation' || sourceAsset.generationStep !== 'image'
-        || !isSafeGeneration(sourceAsset) || sourceAsset.generationInput?.direction?.id !== direction.id) {
-        fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
+      verifyDirectionLineage(direction)
+      const previewAsset = await repository.findAsset(campaign.id, direction.previewAssetId)
+      verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
+      const sourceIds = referencedImageAssetIds(template.manifest, command.slotValues)
+      if (sourceIds.length > 0 && !sourceIds.includes(direction.previewAssetId)) {
+        fail(409, 'composition_source_mismatch', 'The composition must include the selected direction preview')
       }
-      const imageSlotIds = template.manifest.slots.filter((slot) => slot.type === 'image').map((slot) => slot.id)
-      if (imageSlotIds.some((slotId) => command.slotValues[slotId] !== direction.previewAssetId)) {
-        fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
+      const sourceAssets = await repository.findAssets(campaign.id, sourceIds)
+      if (sourceAssets.length !== sourceIds.length
+        || sourceAssets.some((asset, index) => asset.id !== sourceIds[index])) {
+        fail(409, 'composition_source_mismatch', 'Every composition image must be bound to this campaign')
       }
-      const sourceBytes = await readVerifiedImage(assetStore, sourceAsset)
+      for (const asset of sourceAssets) {
+        verifyImageAssetLineage(asset, direction)
+        await readVerifiedImage(assetStore, asset, deadlineAt)
+      }
       const validation = validateComposition(template.manifest, {
         ratioIds: command.ratioIds,
         slotValues: command.slotValues,
-        assetMetadata: {
-          [sourceAsset.id]: { width: sourceAsset.width, height: sourceAsset.height, mimeType: sourceAsset.mimeType },
-        },
+        assetMetadata: Object.fromEntries(sourceAssets.map((asset) => [asset.id, {
+          width: asset.width, height: asset.height, mimeType: asset.mimeType,
+        }])),
       })
       if (!validation.valid) fail(400, 'invalid_composition', 'Composition validation failed', validation.errors)
-      if (sourceBytes.length < 1) fail(502, 'asset_integrity_failure', 'Source asset integrity verification failed')
       const composition = compositionSchema.parse({ id: idGenerator(), ...command, validation, stale: false })
       const transition = transitionCampaign({ campaign, action: 'save_composition', actor, input: { composition } })
       if (!transition.ok) fail(transition.status, transition.code, transition.message)
@@ -238,13 +372,16 @@ export function createVersionService({
     })
   }
 
-  const prepareBuild = async ({ actor, campaignId, expectedRevision, key, fingerprint, ownerToken }) => transaction(pool, async (client) => {
+  const prepareBuild = ({ actor, campaignId, expectedRevision, key, fingerprint, ownerToken, deadlineAt }) => mainTransaction(deadlineAt, async (client) => {
     const idempotency = idempotencyRepositoryFactory(client)
     const lockedOwner = await idempotency.lockOwner({
       actorId: actor.id, method: 'POST', resourceId: campaignId, key, fingerprint, ownerToken, now: safeInstant(clock()),
     })
     if (!lockedOwner) fail(409, 'idempotency_owner_lost', 'Version command ownership was lost')
     const repository = repositoryFactory(client)
+    if (!await repository.generationSafetyAvailable()) {
+      fail(409, 'generation_safety_unavailable', 'Generation safety or budget controls do not allow review')
+    }
     const campaign = await repository.lockCampaign(campaignId)
     if (!campaign) fail(404, 'not_found', 'Campaign was not found')
     if (campaign.revision !== expectedRevision) fail(409, 'revision_conflict', 'The resource changed since it was loaded')
@@ -263,19 +400,18 @@ export function createVersionService({
         existing = await repository.takeOverBuild({ id: existing.id, ownerToken })
         if (!existing) fail(409, 'version_build_in_progress', 'Another review version is being created')
       }
+      const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
       const currentContext = {
         copy: await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId),
-        direction: await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId),
+        direction,
         composition: await repository.findComposition(campaign.id, campaign.compositionId),
         template: await repository.findTemplate(existing.plan.templateManifest.id, existing.plan.templateManifest.version),
-        sourceAsset: await repository.findAsset(campaign.id, existing.plan.sourceAssets[0].id),
+        previewAsset: await repository.findAsset(campaign.id, direction?.previewAssetId),
+        sourceAssets: await repository.findAssets(campaign.id, existing.plan.sourceAssets.map((asset) => asset.id)),
       }
       validatePreparedContext({ campaign, ...currentContext, expectedRevision })
       if (!contextMatchesPlan(currentContext, existing.plan)) {
         fail(409, 'version_source_changed', 'The selected source changed while the review version was being created')
-      }
-      if (!await repository.generationSafetyAvailable()) {
-        fail(409, 'generation_safety_unavailable', 'Generation safety or budget controls do not allow review')
       }
       return existing
     }
@@ -286,11 +422,10 @@ export function createVersionService({
     const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
     const composition = await repository.findComposition(campaign.id, campaign.compositionId)
     const template = composition ? await repository.findTemplate(composition.templateId, composition.templateVersion) : null
-    const sourceAsset = await repository.findAsset(campaign.id, direction?.previewAssetId)
-    validatePreparedContext({ campaign, copy, direction, composition, template, sourceAsset, expectedRevision })
-    if (!await repository.generationSafetyAvailable()) {
-      fail(409, 'generation_safety_unavailable', 'Generation safety or budget controls do not allow review')
-    }
+    const previewAsset = await repository.findAsset(campaign.id, direction?.previewAssetId)
+    const sourceIds = composition && template ? referencedImageAssetIds(template.manifest, composition.slotValues) : []
+    const sourceAssets = await repository.findAssets(campaign.id, sourceIds)
+    validatePreparedContext({ campaign, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision })
     const versionId = idGenerator()
     const ratioAssets = composition.ratioIds.map((ratioId) => {
       const id = idGenerator()
@@ -309,11 +444,7 @@ export function createVersionService({
       composition: compositionSchema.parse(composition),
       templateManifest: template.manifest,
       templateManifestHash: template.manifestHash,
-      sourceAssets: [{
-        id: sourceAsset.id, kind: sourceAsset.kind, objectKey: sourceAsset.objectKey,
-        mimeType: sourceAsset.mimeType, byteSize: sourceAsset.byteSize, width: sourceAsset.width,
-        height: sourceAsset.height, sha256: sourceAsset.sha256,
-      }],
+      sourceAssets: sourceAssets.map(immutableSourceAsset),
       ratioAssets,
       manifestAsset: {
         id: manifestAssetId,
@@ -334,25 +465,56 @@ export function createVersionService({
     })
   })
 
-  const loadRenderSource = async (plan) => {
-    const asset = plan.sourceAssets[0]
-    const bytes = await readVerifiedImage(assetStore, asset)
-    return { ...asset, bytes }
+  const loadRenderSources = async (plan, deadlineAt) => {
+    const sources = []
+    for (const asset of plan.sourceAssets) {
+      sources.push({ ...asset, bytes: await readVerifiedImage(assetStore, asset, deadlineAt) })
+    }
+    return sources
   }
 
-  const renderBuild = async (build) => {
-    const source = await loadRenderSource(build.plan)
+  const renderBuild = async (build, deadlineAt) => {
+    const sources = await loadRenderSources(build.plan, deadlineAt)
+    const sourceById = new Map(sources.map((source) => [source.id, source]))
     const renderSlots = Object.fromEntries(Object.entries(build.plan.composition.slotValues).map(([slotId, value]) => (
-      value === source.id ? [slotId, { bytes: source.bytes, mimeType: source.mimeType }] : [slotId, value]
+      sourceById.has(value)
+        ? [slotId, { bytes: sourceById.get(value).bytes, mimeType: sourceById.get(value).mimeType }]
+        : [slotId, value]
     )))
     const renders = []
     for (const planned of build.plan.ratioAssets) {
-      const rendered = await renderer.renderComposition({
+      const rendered = await beforeDeadline(deadlineAt, () => renderer.renderComposition({
         manifest: build.plan.templateManifest, slots: renderSlots, ratio: planned.ratioId,
-      })
-      const bytes = Buffer.from(rendered.bytes)
+      }))
+      let bytes
+      try {
+        bytes = Buffer.from(rendered.bytes)
+      } catch {
+        fail(502, 'renderer_integrity_failure', 'Rendered review asset failed integrity verification')
+      }
       const sha256 = createHash('sha256').update(bytes).digest('hex')
-      if (rendered.mimeType !== 'image/png' || rendered.byteSize !== bytes.length || rendered.sha256 !== sha256) {
+      const decoded = await beforeDeadline(deadlineAt, () => decodeGeneratedImage(bytes, 'image/png'))
+      const ratio = build.plan.templateManifest.ratios.find((candidate) => candidate.id === planned.ratioId)
+      const nested = rendered.renderManifest
+      const exactKeys = (value, keys) => value && typeof value === 'object'
+        && hashCanonical(Object.keys(value).sort()) === hashCanonical([...keys].sort())
+      if (!ratio || !decoded
+        || rendered.mimeType !== 'image/png' || rendered.byteSize !== bytes.length || rendered.sha256 !== sha256
+        || rendered.width !== ratio.width || rendered.height !== ratio.height
+        || decoded.mimeType !== 'image/png' || decoded.width !== ratio.width || decoded.height !== ratio.height
+        || !exactKeys(nested, ['schemaVersion', 'template', 'ratio', 'canvas', 'slots', 'output'])
+        || nested.schemaVersion !== 1 || !Array.isArray(nested.slots)
+        || !exactKeys(nested.template, ['id', 'version', 'sha256'])
+        || nested.template.id !== build.plan.templateManifest.id
+        || nested.template.version !== build.plan.templateManifest.version
+        || nested.template.sha256 !== build.plan.templateManifestHash
+        || nested.ratio !== planned.ratioId
+        || !exactKeys(nested.canvas, ['width', 'height'])
+        || nested.canvas.width !== ratio.width || nested.canvas.height !== ratio.height
+        || !exactKeys(nested.output, ['mimeType', 'width', 'height', 'byteSize', 'sha256'])
+        || nested.output.mimeType !== 'image/png'
+        || nested.output.width !== ratio.width || nested.output.height !== ratio.height
+        || nested.output.byteSize !== bytes.length || nested.output.sha256 !== sha256) {
         fail(502, 'renderer_integrity_failure', 'Rendered review asset failed integrity verification')
       }
       renders.push({
@@ -380,23 +542,37 @@ export function createVersionService({
       mimeType: 'application/json', byteSize: manifestBytes.length, width: null, height: null,
       sha256: createHash('sha256').update(manifestBytes).digest('hex'), bytes: manifestBytes,
     }
-    return { source, renders, renderManifest, manifest, assets: [...renders.map((entry) => entry.asset), manifest] }
+    return { sources, renders, renderManifest, manifest, assets: [...renders.map((entry) => entry.asset), manifest] }
   }
 
-  const storeBuild = async (rendered, possiblyCreated) => {
+  const adoptBuildObjects = (build, ownerToken, deadlineAt) => mainTransaction(deadlineAt, async (client) => {
+    const repository = repositoryFactory(client)
+    const objectKeys = [
+      ...build.plan.ratioAssets.map((asset) => asset.objectKey),
+      build.plan.manifestAsset.objectKey,
+    ]
+    if (!await repository.adoptBuildObjects({ buildId: build.id, ownerToken, objectKeys })) {
+      fail(409, 'version_build_owner_lost', 'Version build ownership was lost')
+    }
+  })
+
+  const storeBuild = async (rendered, possiblyCreated, deadlineAt) => {
     for (const asset of rendered.assets) {
       possiblyCreated.add(asset.objectKey)
       let created = true
       try {
-        await assetStore.put({ objectKey: asset.objectKey, bytes: asset.bytes, contentType: asset.mimeType })
+        await beforeDeadline(deadlineAt, (timeoutMs) => assetStore.put({
+          objectKey: asset.objectKey, bytes: asset.bytes, contentType: asset.mimeType, timeoutMs,
+        }))
       } catch (error) {
         if (error?.code !== 'object_exists') throw normalizeStoreFailure(error)
         created = false
-        possiblyCreated.delete(asset.objectKey)
       }
       let stored
       try {
-        stored = await assetStore.get({ objectKey: asset.objectKey, maxBytes: asset.byteSize })
+        stored = await beforeDeadline(deadlineAt, (timeoutMs) => assetStore.get({
+          objectKey: asset.objectKey, maxBytes: asset.byteSize, timeoutMs,
+        }))
       } catch (error) {
         throw normalizeStoreFailure(error)
       }
@@ -410,13 +586,16 @@ export function createVersionService({
     }
   }
 
-  const finalizeBuild = async ({ actor, campaignId, expectedRevision, key, fingerprint, ownerToken, build, rendered }) => transaction(pool, async (client) => {
+  const finalizeBuild = ({ actor, campaignId, expectedRevision, key, fingerprint, ownerToken, build, rendered, deadlineAt }) => mainTransaction(deadlineAt, async (client) => {
     const idempotency = idempotencyRepositoryFactory(client)
     const lockedOwner = await idempotency.lockOwner({
       actorId: actor.id, method: 'POST', resourceId: campaignId, key, fingerprint, ownerToken, now: safeInstant(clock()),
     })
     if (!lockedOwner) fail(409, 'idempotency_owner_lost', 'Version command ownership was lost')
     const repository = repositoryFactory(client)
+    if (!await repository.generationSafetyAvailable()) {
+      fail(409, 'generation_safety_unavailable', 'Generation safety or budget controls do not allow review')
+    }
     const campaign = await repository.lockCampaign(campaignId)
     if (!campaign) fail(404, 'not_found', 'Campaign was not found')
     const lockedBuild = await repository.findBuildForUpdate({ actorId: actor.id, campaignId, key })
@@ -431,19 +610,21 @@ export function createVersionService({
       || campaign.currentVersionNumber !== build.plan.binding.currentVersionNumber) {
       fail(409, 'version_source_changed', 'Campaign content changed while the review version was being created')
     }
+    const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
     const currentContext = {
       copy: await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId),
-      direction: await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId),
+      direction,
       composition: await repository.findComposition(campaign.id, campaign.compositionId),
       template: await repository.findTemplate(build.plan.templateManifest.id, build.plan.templateManifest.version),
-      sourceAsset: await repository.findAsset(campaign.id, build.plan.sourceAssets[0].id),
+      previewAsset: await repository.findAsset(campaign.id, direction?.previewAssetId),
+      sourceAssets: await repository.findAssets(campaign.id, build.plan.sourceAssets.map((asset) => asset.id)),
+    }
+    if (hashCanonical(currentContext.sourceAssets.map(immutableSourceAsset)) !== hashCanonical(build.plan.sourceAssets)) {
+      fail(409, 'version_source_changed', 'Campaign content changed while the review version was being created')
     }
     validatePreparedContext({ campaign, ...currentContext, expectedRevision })
     if (!contextMatchesPlan(currentContext, build.plan)) {
       fail(409, 'version_source_changed', 'Campaign content changed while the review version was being created')
-    }
-    if (!await repository.generationSafetyAvailable()) {
-      fail(409, 'generation_safety_unavailable', 'Generation safety or budget controls do not allow review')
     }
     const assetReferences = [
       ...build.plan.sourceAssets.map((asset) => ({ id: asset.id, kind: asset.kind, sha256: asset.sha256 })),
@@ -482,7 +663,7 @@ export function createVersionService({
     return { status: 201, body, replayed: false }
   })
 
-  const recoverFailure = ({ actor, campaignId, key, fingerprint, ownerToken, build, objectKeys, error }) => transaction(pool, async (client) => {
+  const recoverFailure = ({ actor, campaignId, key, fingerprint, ownerToken, build, objectKeys, error }) => boundedRecoveryTransaction(async (client) => {
     const idempotency = idempotencyRepositoryFactory(client)
     await idempotency.lockOwner({
       actorId: actor.id, method: 'POST', resourceId: campaignId, key, fingerprint, ownerToken, now: safeInstant(clock()),
@@ -519,19 +700,18 @@ export function createVersionService({
     const command = parse(createCampaignVersionRequestSchema, input ?? {})
     const fingerprint = hashCanonical({ expectedRevision, input: command })
     const scope = { actorId: actor.id, method: 'POST', resourceId: campaignId, key: idempotencyKey }
-    const waitDeadline = safeInstant(clock()).getTime() + waitTimeoutMs
+    const deadlineAt = Date.now() + timeoutMs
 
     while (true) {
       const ownerToken = idGenerator()
       const now = safeInstant(clock())
-      const claim = await coordinator.claim({
+      const claim = await mainTransaction(deadlineAt, (client) => idempotencyRepositoryFactory(client).claim({
         ...scope, fingerprint, ownerToken, now, leaseExpiresAt: new Date(now.getTime() + leaseMs),
-      })
+      }))
       if (claim.kind === 'conflict') fail(409, 'idempotency_conflict', 'This idempotency key was already used with a different request')
       if (claim.kind === 'replay') return { status: claim.responseStatus, body: claim.responseBody, replayed: true }
       if (claim.kind === 'in_progress') {
-        if (safeInstant(clock()).getTime() >= waitDeadline) fail(409, 'idempotency_in_progress', 'The original request is still in progress')
-        await wait(pollIntervalMs)
+        await beforeDeadline(deadlineAt, (remaining) => wait(Math.min(pollIntervalMs, remaining)))
         continue
       }
       if (claim.kind !== 'owner') throw new TypeError(`Unknown idempotency claim result: ${claim.kind}`)
@@ -540,12 +720,16 @@ export function createVersionService({
       const possiblyCreated = new Set()
       try {
         build = await prepareBuild({
-          actor, campaignId, expectedRevision, key: idempotencyKey, fingerprint, ownerToken,
+          actor, campaignId, expectedRevision, key: idempotencyKey, fingerprint, ownerToken, deadlineAt,
         })
-        const rendered = await renderBuild(build)
-        await storeBuild(rendered, possiblyCreated)
+        for (const objectKey of [
+          ...build.plan.ratioAssets.map((asset) => asset.objectKey), build.plan.manifestAsset.objectKey,
+        ]) possiblyCreated.add(objectKey)
+        await adoptBuildObjects(build, ownerToken, deadlineAt)
+        const rendered = await renderBuild(build, deadlineAt)
+        await storeBuild(rendered, possiblyCreated, deadlineAt)
         return await finalizeBuild({
-          actor, campaignId, expectedRevision, key: idempotencyKey, fingerprint, ownerToken, build, rendered,
+          actor, campaignId, expectedRevision, key: idempotencyKey, fingerprint, ownerToken, build, rendered, deadlineAt,
         })
       } catch (error) {
         let replay
