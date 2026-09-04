@@ -15,6 +15,7 @@ describe('production server composition', () => {
     }
     const generationService = { kind: 'generation' }
     const assetService = { kind: 'asset-service' }
+    const versionService = { kind: 'version-service' }
     const assetStore = { close: vi.fn(async () => { calls.push('assetStore.close') }) }
     const providerRegistry = { gemini: [{ model: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu' }] }
     const resolveActor = vi.fn()
@@ -29,6 +30,7 @@ describe('production server composition', () => {
       createGcsAssetStore: vi.fn(() => assetStore),
       createMemoryAssetStore: vi.fn(() => { throw new Error('production must not create memory storage') }),
       createAssetService: vi.fn(() => assetService),
+      createVersionService: vi.fn(() => versionService),
       createGenerationProviderRegistry: vi.fn(() => providerRegistry),
       reconcileGenerationSettings: vi.fn(async () => { calls.push('reconcile') }),
       createFirebaseTokenVerifier: vi.fn(() => verifier),
@@ -65,9 +67,10 @@ describe('production server composition', () => {
     expect(dependencies.createGcsAssetStore).toHaveBeenCalledWith({ bucketName: 'banner-private-assets', projectId: 'banner-project' })
     expect(dependencies.createMemoryAssetStore).not.toHaveBeenCalled()
     expect(dependencies.createAssetService).toHaveBeenCalledWith({ pool, assetStore })
+    expect(dependencies.createVersionService).toHaveBeenCalledWith({ pool, assetStore })
     expect(dependencies.createFirebaseTokenVerifier).toHaveBeenCalledWith({ projectId: 'banner-project' })
     expect(dependencies.createAuthenticator).toHaveBeenCalledWith(expect.objectContaining({ pool, tokenVerifier: verifier }))
-    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService, generationService, assetService }))
+    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService, generationService, assetService, versionService }))
     await runtime.close()
     await runtime.close()
     expect(app.close).toHaveBeenCalledOnce()
@@ -92,6 +95,7 @@ describe('production server composition', () => {
       createAuthenticator: vi.fn(() => vi.fn()), buildApp: vi.fn(() => app),
       reconcileGenerationSettings: vi.fn(),
       createMemoryAssetStore: vi.fn(() => assetStore), createGcsAssetStore: vi.fn(), createAssetService: vi.fn(() => ({})),
+      createVersionService: vi.fn(() => ({})),
     }
 
     const runtime = await createServerRuntime({ environment: { NODE_ENV: 'test', GENERATION_PROVIDER: 'mock' }, dependencies })

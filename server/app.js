@@ -7,6 +7,7 @@ import { registerSettingsRoutes } from './routes/settings.js'
 import { registerSessionRoute } from './routes/session.js'
 import { registerGenerationRoutes } from './routes/generation.js'
 import { registerAssetRoutes } from './routes/assets.js'
+import { registerVersionRoutes } from './routes/versions.js'
 import { apiErrorResponseSchema } from '../shared/contracts.js'
 import { createAuthorizer } from './auth/authorize.js'
 
@@ -30,7 +31,7 @@ function errorEnvelope(code, message, requestId, details) {
   }
 }
 
-export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService } = {}) {
+export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService, versionService } = {}) {
   const app = Fastify({
     logger: false,
     requestIdHeader: false,
@@ -76,6 +77,7 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
     registerSettingsRoutes(app, dependencies)
     if (generationService) registerGenerationRoutes(app, { requireRole, generationService })
     if (assetService) registerAssetRoutes(app, { requireRole, assetService })
+    if (versionService) registerVersionRoutes(app, { requireRole, versionService })
   }
 
   app.setNotFoundHandler((request, reply) => reply.code(404).send(apiErrorResponseSchema.parse(errorEnvelope(

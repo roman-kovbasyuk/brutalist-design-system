@@ -13,6 +13,7 @@ import { reconcileGenerationSettings } from './services/generationSettingsServic
 import { createMemoryAssetStore } from './storage/memoryAssetStore.js'
 import { createGcsAssetStore } from './storage/gcsAssetStore.js'
 import { createAssetService } from './services/assetService.js'
+import { createVersionService } from './services/versionService.js'
 
 const productionDependencies = {
   buildApp,
@@ -29,6 +30,7 @@ const productionDependencies = {
   createMemoryAssetStore,
   createGcsAssetStore,
   createAssetService,
+  createVersionService,
   runMigrations,
 }
 
@@ -98,6 +100,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       ? resolved.createGcsAssetStore({ bucketName: config.assetStorage.bucket, projectId: config.assetStorage.projectId })
       : resolved.createMemoryAssetStore()
     const assetService = resolved.createAssetService({ pool, assetStore })
+    const versionService = resolved.createVersionService({ pool, assetStore })
     const generationService = resolved.createGenerationService({
       pool,
       controlPlane: generationControlPlane,
@@ -115,6 +118,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       workflowService,
       generationService,
       assetService,
+      versionService,
     })
     return { app, close, config }
   } catch (error) {

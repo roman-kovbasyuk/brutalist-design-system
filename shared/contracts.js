@@ -217,6 +217,13 @@ export const compositionSchema = z.strictObject({
   stale: z.boolean(),
 })
 
+export const saveCompositionRequestSchema = z.strictObject({
+  templateId: nonEmptyString,
+  templateVersion: nonEmptyString,
+  ratioIds: z.array(nonEmptyString).min(1).refine((values) => new Set(values).size === values.length, 'Ratio ids must be unique'),
+  slotValues: z.record(z.string(), z.string()),
+})
+
 export const assetReferenceSchema = z.strictObject({
   id: nonEmptyString,
   kind: z.enum(['direction', 'final_image', 'review_png', 'manifest', 'delivery_zip']),
@@ -240,6 +247,50 @@ export const campaignVersionSnapshotSchema = z.strictObject({
   if (snapshot.composition.templateVersion !== snapshot.templateManifest.version) {
     context.addIssue({ code: 'custom', path: ['composition', 'templateVersion'], message: 'Composition template version must match its manifest.' })
   }
+})
+
+const campaignVersionFields = {
+  id: nonEmptyString,
+  campaignId: nonEmptyString,
+  versionNumber: z.number().int().positive(),
+  snapshot: campaignVersionSnapshotSchema,
+  contentHash: assetHashSchema,
+  createdBy: nonEmptyString,
+  createdAt: timestampSchema,
+}
+
+export const campaignVersionRecordSchema = z.strictObject(campaignVersionFields).superRefine((version, context) => {
+  if (version.contentHash !== hashCanonical(version.snapshot)) {
+    context.addIssue({ code: 'custom', path: ['contentHash'], message: 'Version content hash must match its canonical snapshot.' })
+  }
+})
+
+export const createCampaignVersionRequestSchema = z.strictObject({})
+
+export const compositionCommandResponseSchema = z.strictObject({
+  composition: compositionSchema,
+  campaign: campaignRecordSchema,
+  requestId: requestIdSchema,
+})
+
+export const campaignVersionCommandResponseSchema = z.strictObject({
+  version: campaignVersionRecordSchema,
+  campaign: campaignRecordSchema,
+  requestId: requestIdSchema,
+})
+
+export const campaignVersionResponseSchema = z.strictObject({
+  ...campaignVersionFields,
+  requestId: requestIdSchema,
+}).superRefine((version, context) => {
+  if (version.contentHash !== hashCanonical(version.snapshot)) {
+    context.addIssue({ code: 'custom', path: ['contentHash'], message: 'Version content hash must match its canonical snapshot.' })
+  }
+})
+
+export const campaignVersionListResponseSchema = z.strictObject({
+  versions: z.array(campaignVersionRecordSchema),
+  requestId: requestIdSchema,
 })
 
 export const campaignSchema = z.strictObject({
