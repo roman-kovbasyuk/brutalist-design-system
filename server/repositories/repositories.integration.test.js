@@ -164,8 +164,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(13)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql'])
+    expect(tracked.rows).toHaveLength(14)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -280,11 +280,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'])
     expect((await pool.query("SELECT budget_day::text AS day FROM generation_jobs WHERE id = 'legacy-generation-job'")).rows[0].day).toBe('2025-12-31')
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
@@ -2317,6 +2317,44 @@ async function immutableVersionHarness({
   }
 }
 
+async function insertLegacyFinalImage(harness, {
+  jobId, assetId, associatedObjectName, color, fingerprintDimensions = { width: 1000, height: 1000 },
+}) {
+  const bytes = await sharp({ create: { width: 1000, height: 1000, channels: 4, background: color } }).png().toBuffer()
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  const objectKey = `campaigns/${harness.campaign.id}/uploads/${associatedObjectName}.png`
+  const direction = {
+    id: harness.directionId, title: 'Nordic focus', prompt: 'A calm Norwegian learning scene',
+    status: 'pending', previewAssetId: null,
+  }
+  await harness.assetStore.put({ objectKey, bytes, contentType: 'image/png' })
+  await harness.pool.query(
+    `INSERT INTO generation_jobs
+       (id, campaign_id, actor_id, method, step, provider, model, region, status, attempts,
+        safety, usage, reserved_cost_microunits, actual_cost_microunits, idempotency_key,
+        request_fingerprint, owner_token, dispatch_state, dispatched_at, budget_day,
+        input_snapshot, result_metadata, timeout_at, completed_at, created_at, updated_at)
+     VALUES ($1, $2, $3, 'POST', 'image', 'mock', 'mock-v1', 'europe-west6', 'succeeded', 1,
+             '{"verdict":"safe","categories":[]}', '{}', 0, 0, $4, $5, $6, 'dispatched', $7,
+             '2026-09-04', $8, $9, $10, $7, $7, $7)`,
+    [jobId, harness.campaign.id, harness.actor.id, `${jobId}-key`, hashCanonical({
+      step: 'image', input: { directionId: harness.directionId, ...fingerprintDimensions },
+    }), `${jobId}-owner`, new Date('2026-09-04T10:00:00.000Z'), { direction }, {
+      image: {
+        asset: { id: assetId, kind: 'final_image', sha256 },
+        mimeType: 'image/png', width: 1000, height: 1000, byteSize: bytes.length,
+      },
+    }, new Date('2026-09-04T10:05:00.000Z')],
+  )
+  await harness.pool.query(
+    `INSERT INTO assets
+       (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id)
+     VALUES ($1, $2, 'final_image', $3, 'image/png', $4, 1000, 1000, $5, 'generation', $6)`,
+    [assetId, harness.campaign.id, objectKey, bytes.length, sha256, jobId],
+  )
+  return { bytes, sha256, objectKey }
+}
+
 describe('immutable review version workflow', () => {
   test('requires the idempotency lease to outlive the full operation and recovery budget', () => {
     expect(() => createVersionService({
@@ -2368,12 +2406,13 @@ describe('immutable review version workflow', () => {
     const imageJobId = `${harness.campaign.id}:image-job`
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [imageJobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
     expect((await harness.pool.query('SELECT input_snapshot FROM generation_jobs WHERE id = $1', [imageJobId])).rows[0].input_snapshot)
       .toMatchObject({ width: 1000, height: 1000 })
     expect((await harness.pool.query('SELECT status, selected_direction_id FROM campaigns WHERE id = $1', [harness.campaign.id])).rows[0])
       .toMatchObject({ status: 'direction_selected', selected_direction_id: harness.directionId })
+    expect((await harness.pool.query("SELECT count(*)::int AS count FROM audit_events WHERE action LIKE 'migration.%'")).rows[0].count).toBe(0)
 
     const saved = await harness.service.saveComposition({
       actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
@@ -2407,7 +2446,7 @@ describe('immutable review version workflow', () => {
       [imageJobId],
     )
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
     expect((await harness.pool.query(
       'SELECT status, error_code, response_status, response_body FROM generation_jobs WHERE id = $1',
       [imageJobId],
@@ -2421,6 +2460,17 @@ describe('immutable review version workflow', () => {
       'SELECT status, revision, selected_direction_id, composition_id FROM campaigns WHERE id = $1',
       [harness.campaign.id],
     )).rows[0]).toEqual({ status: 'copy_ready', revision: 4, selected_direction_id: null, composition_id: null })
+    expect((await harness.pool.query(
+      `SELECT action, actor_id, actor_role, entity_type, entity_id, payload
+       FROM audit_events WHERE action = 'migration.legacy_image_provenance_fenced'`,
+    )).rows).toEqual([expect.objectContaining({
+      action: 'migration.legacy_image_provenance_fenced', actor_id: harness.actor.id,
+      actor_role: 'marketer', entity_type: 'campaign', entity_id: harness.campaign.id,
+      payload: expect.objectContaining({
+        jobId: imageJobId, campaignId: harness.campaign.id,
+        reason: 'legacy_image_provenance_unresolved', responseStatus: 201,
+      }),
+    })])
 
     await expect(harness.service.createVersion({
       actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 4,
@@ -2468,13 +2518,22 @@ describe('immutable review version workflow', () => {
     await harness.controlPlane.markDispatched({ jobId, ownerToken, dispatchedAt: now })
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [jobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
     expect((await harness.pool.query(
       'SELECT status, unknown_reason, response_status, response_body FROM generation_jobs WHERE id = $1', [jobId],
     )).rows[0]).toMatchObject({
       status: 'unknown', unknown_reason: 'legacy_image_dimensions_unavailable', response_status: 202,
       response_body: { job: { status: 'unknown' } },
     })
+    expect((await harness.pool.query(
+      `SELECT action, payload FROM audit_events
+       WHERE action = 'migration.legacy_image_provenance_fenced' AND payload->>'jobId' = $1`, [jobId],
+    )).rows).toEqual([expect.objectContaining({
+      payload: expect.objectContaining({
+        jobId, campaignId: harness.campaign.id,
+        reason: 'legacy_image_dimensions_unavailable', responseStatus: 202,
+      }),
+    })])
     await expect(harness.controlPlane.completeGeneratedImage({
       jobId, ownerToken, directionId, requestedWidth: 1200, requestedHeight: 628,
       asset: {
@@ -2491,6 +2550,150 @@ describe('immutable review version workflow', () => {
       [jobId],
     )).rejects.toMatchObject({ code: '23514' })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('migration 014 restores only associated legacy final-image provenance and audits every fence', async () => {
+    await resetDatabase()
+    const stagedPool = makePool()
+    await runMigrations({ pool: stagedPool, directory: await migrationDirectoryThrough(12) })
+    await stagedPool.end()
+    pools.delete(stagedPool)
+
+    const multiTemplate = structuredClone(pilotTemplateFixture)
+    multiTemplate.version = '1.4.0'
+    multiTemplate.slots.push({
+      ...structuredClone(multiTemplate.slots.find((slot) => slot.id === 'image')),
+      id: 'secondaryImage',
+    })
+    const harness = await immutableVersionHarness({ templateManifest: multiTemplate })
+    const secondary = await insertLegacyFinalImage(harness, {
+      jobId: 'secondary-image-job', assetId: 'secondary-image', associatedObjectName: 'secondary', color: '#0ea5e9',
+    })
+    await insertLegacyFinalImage(harness, {
+      jobId: 'unassociated-image-job', assetId: 'unassociated-image', associatedObjectName: 'unassociated', color: '#f97316',
+    })
+    await insertLegacyFinalImage(harness, {
+      jobId: 'mismatched-image-job', assetId: 'mismatched-image', associatedObjectName: 'mismatched', color: '#a855f7',
+      fingerprintDimensions: { width: 999, height: 1000 },
+    })
+    const compositionInput = {
+      ...harness.compositionInput,
+      slotValues: { ...harness.compositionInput.slotValues, secondaryImage: 'secondary-image' },
+    }
+    const saved = await harness.service.saveComposition({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: compositionInput,
+    })
+    await harness.pool.query(
+      `INSERT INTO compositions
+         (id, campaign_id, template_id, template_version, ratio_ids, slot_values, validation, stale, created_at)
+       VALUES ('mismatched-associated-composition', $1, $2, $3, $4, $5, $6, false, $7)`,
+      [harness.campaign.id, multiTemplate.id, multiTemplate.version, JSON.stringify(saved.composition.ratioIds),
+        JSON.stringify({ ...saved.composition.slotValues, secondaryImage: 'mismatched-image' }), saved.composition.validation,
+        new Date('2026-09-04T10:01:00.000Z')],
+    )
+
+    expect((await harness.pool.query("SELECT count(*)::int AS count FROM audit_events WHERE action LIKE 'migration.%'")).rows[0].count).toBe(0)
+    expect(await runMigrations({ pool: harness.pool })).toEqual({
+      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'],
+    })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
+
+    expect((await harness.pool.query(
+      'SELECT status, input_snapshot, error_code, response_status, response_body FROM generation_jobs WHERE id = $1',
+      ['secondary-image-job'],
+    )).rows[0]).toMatchObject({
+      status: 'succeeded', input_snapshot: { width: 1000, height: 1000 }, error_code: null, response_status: 201,
+      response_body: { job: { status: 'succeeded', errorCode: null } },
+    })
+    expect((await harness.pool.query(
+      'SELECT status, input_snapshot, error_code, response_status FROM generation_jobs WHERE id = $1',
+      ['unassociated-image-job'],
+    )).rows[0]).toMatchObject({
+      status: 'failed', input_snapshot: { direction: expect.any(Object) },
+      error_code: 'legacy_image_provenance_unresolved', response_status: 201,
+    })
+    expect((await harness.pool.query(
+      'SELECT status, input_snapshot, error_code FROM generation_jobs WHERE id = $1', ['mismatched-image-job'],
+    )).rows[0]).toMatchObject({
+      status: 'failed', input_snapshot: { direction: expect.any(Object) },
+      error_code: 'legacy_image_provenance_unresolved',
+    })
+    expect((await harness.pool.query('SELECT stale FROM visual_directions WHERE id = $1', [harness.directionId])).rows[0].stale).toBe(false)
+    expect((await harness.pool.query('SELECT stale FROM compositions WHERE id = $1', [saved.composition.id])).rows[0].stale).toBe(true)
+    const restoredCampaign = (await harness.pool.query(
+      'SELECT status, revision, selected_direction_id, composition_id FROM campaigns WHERE id = $1',
+      [harness.campaign.id],
+    )).rows[0]
+    expect(restoredCampaign).toMatchObject({
+      status: 'composed', revision: 5, selected_direction_id: harness.directionId,
+      composition_id: expect.stringMatching(/^migration-014-composition:/),
+    })
+    expect((await harness.pool.query('SELECT stale FROM compositions WHERE id = $1', [restoredCampaign.composition_id])).rows[0].stale).toBe(false)
+
+    const migrationAudits = (await harness.pool.query(
+      `SELECT id, actor_id, actor_role, action, entity_type, entity_id, before_status, after_status, payload
+       FROM audit_events WHERE action LIKE 'migration.%' ORDER BY created_at, id`,
+    )).rows
+    expect(migrationAudits).toHaveLength(4)
+    expect(migrationAudits.map((event) => event.action)).toEqual([
+      'migration.legacy_image_provenance_fenced',
+      'migration.legacy_image_provenance_fenced',
+      'migration.legacy_image_provenance_fenced',
+      'migration.legacy_image_provenance_restored',
+    ])
+    expect(migrationAudits).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'migration-013-image-fence:secondary-image-job', actor_id: harness.actor.id,
+        actor_role: 'marketer', entity_type: 'campaign', entity_id: harness.campaign.id,
+        payload: expect.objectContaining({ jobId: 'secondary-image-job', reason: 'legacy_image_provenance_unresolved' }),
+      }),
+      expect.objectContaining({
+        id: 'migration-013-image-fence:unassociated-image-job',
+        payload: expect.objectContaining({ jobId: 'unassociated-image-job', reason: 'legacy_image_provenance_unresolved' }),
+      }),
+      expect.objectContaining({
+        id: 'migration-013-image-fence:mismatched-image-job',
+        payload: expect.objectContaining({ jobId: 'mismatched-image-job', reason: 'legacy_image_provenance_unresolved' }),
+      }),
+      expect.objectContaining({
+        id: 'migration-014-image-restore:secondary-image-job', before_status: 'copy_ready', after_status: 'composed',
+        payload: expect.objectContaining({
+          jobId: 'secondary-image-job', assetId: 'secondary-image', compositionId: restoredCampaign.composition_id,
+          sourceCompositionId: saved.composition.id,
+          reason: 'provable_legacy_final_image', campaignRevision: 5,
+        }),
+      }),
+    ]))
+    expect(migrationAudits.some((event) => event.payload.jobId === `${harness.campaign.id}:image-job`)).toBe(false)
+    await expect(harness.pool.query('UPDATE audit_events SET payload = payload || $2 WHERE id = $1', [
+      migrationAudits[0].id, { tampered: true },
+    ])).rejects.toMatchObject({ code: '55000' })
+    await expect(createGenerationControlPlane({ pool: harness.pool }).preflightGeneration({
+      actor: harness.actor, campaignId: harness.campaign.id, step: 'image',
+      input: { directionId: harness.directionId, width: 1000, height: 1000 },
+      idempotencyKey: 'secondary-image-job-key',
+    })).resolves.toMatchObject({
+      kind: 'replay', response: { status: 201, body: { job: { id: 'secondary-image-job', status: 'succeeded' } } },
+    })
+
+    const created = await harness.service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 5,
+      idempotencyKey: 'migrated-secondary-version', input: {},
+    })
+    expect(created).toMatchObject({ status: 201, body: { campaign: { status: 'in_review' } } })
+    expect(created.body.version.snapshot.assets).toContainEqual({
+      id: 'secondary-image', kind: 'final_image', sha256: secondary.sha256,
+    })
+    expect((await harness.pool.query(
+      `SELECT asset_id, asset_sha256 FROM campaign_version_source_assets
+       WHERE version_id = $1 AND asset_id = 'secondary-image'`, [created.body.version.id],
+    )).rows).toEqual([{ asset_id: 'secondary-image', asset_sha256: secondary.sha256 }])
+    await expect(harness.pool.query("UPDATE assets SET sha256 = $1 WHERE id = 'secondary-image'", [
+      'f'.repeat(64),
+    ])).rejects.toMatchObject({ code: '55000' })
+
     await harness.pool.end()
     pools.delete(harness.pool)
   })
