@@ -163,8 +163,7 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
     return lines
   }
 
-  return Object.freeze({
-    async renderComposition(input) {
+  async function compileInput(input, { createComposites }) {
       if (!plainObject(input) || Object.keys(input).some((key) => !['manifest', 'slots', 'ratio'].includes(key))) {
         fail('invalid_input', 'Renderer input is invalid')
       }
@@ -209,10 +208,12 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
             width: roundCoordinate(placement.width / scale),
             height: roundCoordinate(placement.height / scale),
           }
-          const image = await sharp(sourceBytes).resize(placement.width, placement.height, {
-            fit: 'cover', position: 'centre', kernel: sharp.kernel.lanczos3,
-          }).png({ compressionLevel: 9, adaptiveFiltering: false, palette: false, progressive: false }).toBuffer()
-          composites.push({ input: image, left: placement.x, top: placement.y })
+          if (createComposites) {
+            const image = await sharp(sourceBytes).resize(placement.width, placement.height, {
+              fit: 'cover', position: 'centre', kernel: sharp.kernel.lanczos3,
+            }).png({ compressionLevel: 9, adaptiveFiltering: false, palette: false, progressive: false }).toBuffer()
+            composites.push({ input: image, left: placement.x, top: placement.y })
+          }
           compiledSlots.push({
             id: slot.id, type: 'image', placement,
             source: { mimeType: decoded.mimeType, width: decoded.width, height: decoded.height, sha256: sourceSha256 },
@@ -228,17 +229,28 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
         }
         if (slot.fontSize < slot.minFontSize) fail('minimum_font_size', `Slot ${slot.id} is below its minimum font size`)
         const lines = await wrapText(value, slot, placement)
-        composites.push({
-          input: textLayer({ lines, placement, fontSize: slot.fontSize, font: fonts[slot.fontWeight] }),
-          left: placement.x,
-          top: placement.y,
-        })
+        if (createComposites) {
+          composites.push({
+            input: textLayer({ lines, placement, fontSize: slot.fontSize, font: fonts[slot.fontWeight] }),
+            left: placement.x,
+            top: placement.y,
+          })
+        }
         compiledSlots.push({
           id: slot.id, type: slot.type, lines, placement,
           font: { family: 'Inter', weight: slot.fontWeight, size: slot.fontSize },
         })
       }
 
+      return { manifest, ratio, compiledSlots, composites }
+  }
+
+  return Object.freeze({
+    async compileSlotProvenance(input) {
+      return (await compileInput(input, { createComposites: false })).compiledSlots
+    },
+    async renderComposition(input) {
+      const { manifest, ratio, compiledSlots, composites } = await compileInput(input, { createComposites: true })
       const output = await sharp({ create: { width: ratio.width, height: ratio.height, channels: 4, background: '#ffffff' } })
         .composite(composites)
         .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false, progressive: false })
@@ -262,3 +274,4 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
 
 const defaultRenderer = createInProcessRenderer()
 export const renderComposition = (input) => defaultRenderer.renderComposition(input)
+export const compileRenderSlotProvenance = (input) => defaultRenderer.compileSlotProvenance(input)

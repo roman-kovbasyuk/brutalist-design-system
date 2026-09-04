@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { hashCanonical } from '../../shared/canonicalJson.js'
 import { transitionCampaign } from '../../shared/workflowRules.js'
-import { copyVariantSchema, visualDirectionSchema } from '../../shared/contracts.js'
+import { copyVariantSchema, generateImageInputSchema, visualDirectionSchema } from '../../shared/contracts.js'
 import { withDeadlineTransaction, withTransaction } from '../db/pool.js'
 import { createAuditRepository } from './auditRepository.js'
 import { createCampaignRepository } from './campaignRepository.js'
@@ -175,6 +175,8 @@ async function loadContext(client, campaign, step, input) {
         status: selected.rows[0].status,
         previewAssetId: selected.rows[0].preview_asset_id,
       }),
+      width: input.width,
+      height: input.height,
     }
   }
   throw new TypeError(`Unknown generation step ${step}`)
@@ -492,7 +494,9 @@ export function createGenerationControlPlane({
         if (current.step !== 'image' || current.campaign_id !== asset.campaignId || current.id !== asset.generationJobId) {
           conflict('generation_asset_mismatch', 'Generated asset does not match its image job')
         }
-        if (current.input_snapshot?.direction?.id !== directionId) {
+        const imageInput = generateImageInputSchema.safeParse(current.input_snapshot)
+        if (!imageInput.success || imageInput.data.direction.id !== directionId
+          || imageInput.data.width !== asset.width || imageInput.data.height !== asset.height) {
           conflict('generation_direction_mismatch', 'Generated image direction does not match its job snapshot')
         }
         if (BigInt(actualCostMicrounits) > BigInt(current.reserved_cost_microunits)) {
@@ -557,12 +561,35 @@ export function createGenerationControlPlane({
       if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
       return transaction(pool, async (client) => {
         const observed = await client.query(
-          `SELECT id, object_key FROM orphaned_uploads
-           WHERE id = $1 AND status <> 'cleaned'`,
+          `SELECT o.id, o.object_key, o.claimed_build_id,
+                  b.actor_id, b.method, b.campaign_id, b.idempotency_key
+           FROM orphaned_uploads o
+           LEFT JOIN review_version_builds b ON b.id = o.claimed_build_id
+           WHERE o.id = $1 AND o.status <> 'cleaned'`,
           [orphanId],
         )
         const candidate = observed.rows[0]
         if (!candidate) return { kind: 'missing' }
+
+        let idempotency = null
+        let build = null
+        if (candidate.claimed_build_id) {
+          const lockedIdempotency = await client.query(
+            `SELECT state, owner_token, fingerprint, lease_expires_at, clock_timestamp() AS observed_at
+             FROM idempotency_records
+             WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
+             FOR UPDATE`,
+            [candidate.actor_id, candidate.method, candidate.campaign_id, candidate.idempotency_key],
+          )
+          idempotency = lockedIdempotency.rows[0] ?? null
+          const lockedBuild = await client.query(
+            `SELECT id, state, owner_token, request_fingerprint
+             FROM review_version_builds WHERE id = $1 FOR UPDATE`,
+            [candidate.claimed_build_id],
+          )
+          build = lockedBuild.rows[0] ?? null
+        }
+
         await lockAssetObjectKey(client, candidate.object_key)
         const selected = await client.query(
           `SELECT id, object_key, claimed_build_id FROM orphaned_uploads
@@ -572,7 +599,38 @@ export function createGenerationControlPlane({
         )
         const orphan = selected.rows[0]
         if (!orphan) return { kind: 'missing' }
-        if (orphan.claimed_build_id) return { kind: 'claimed', objectKey: orphan.object_key }
+        if (orphan.claimed_build_id) {
+          if (!build || build.id !== orphan.claimed_build_id) return { kind: 'claimed', objectKey: orphan.object_key }
+          const activeLease = idempotency?.state === 'in_progress'
+            && idempotency.lease_expires_at > idempotency.observed_at
+          if (activeLease) return { kind: 'claimed', objectKey: orphan.object_key }
+          if (idempotency?.state === 'completed' || build.state === 'completed') {
+            return { kind: 'claimed', objectKey: orphan.object_key }
+          } else {
+            if (idempotency?.state === 'in_progress') {
+              await client.query(
+                `UPDATE idempotency_records
+                 SET state = 'failed', failed_at = clock_timestamp(), failure_code = 'stale_version_intent_cleanup'
+                 WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
+                   AND state = 'in_progress' AND owner_token = $5 AND lease_expires_at <= clock_timestamp()`,
+                [candidate.actor_id, candidate.method, candidate.campaign_id, candidate.idempotency_key, idempotency.owner_token],
+              )
+            }
+            await client.query(
+              `UPDATE review_version_builds
+               SET state = 'failed', updated_at = clock_timestamp()
+               WHERE id = $1 AND state = 'in_progress' AND owner_token = $2`,
+              [build.id, build.owner_token],
+            )
+            await client.query(
+              `UPDATE orphaned_uploads
+               SET claimed_build_id = NULL, reason = 'stale_version_intent_cleanup',
+                   status = 'pending', last_error = NULL, cleaned_at = NULL
+               WHERE id = $1 AND claimed_build_id = $2`,
+              [orphan.id, build.id],
+            )
+          }
+        }
         const referenced = await client.query('SELECT 1 FROM assets WHERE object_key = $1', [orphan.object_key])
         if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
         await deleteObject({ objectKey: orphan.object_key })

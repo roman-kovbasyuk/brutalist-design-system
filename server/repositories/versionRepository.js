@@ -112,6 +112,26 @@ export function createVersionRepository(client) {
       } : null
     },
 
+    async findLatestBriefAnalysis(campaignId) {
+      const result = await client.query(
+        `SELECT id, step, status, safety, input_snapshot, result_metadata
+         FROM generation_jobs
+         WHERE campaign_id = $1 AND step = 'brief_analysis' AND status = 'succeeded'
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+        [campaignId],
+      )
+      const row = result.rows[0]
+      return row ? {
+        id: row.id,
+        generationStep: row.step,
+        generationStatus: row.status,
+        generationSafety: row.safety,
+        generationInput: row.input_snapshot,
+        generationResult: row.result_metadata,
+      } : null
+    },
+
     async findSelectedCopy(campaignId, copySetId) {
       if (!copySetId) return null
       const result = await client.query(

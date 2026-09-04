@@ -1,11 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
+  analyseBriefInputSchema,
+  briefAnalysisSchema,
   campaignRecordSchema,
   campaignVersionRecordSchema,
   campaignVersionSnapshotSchema,
   compositionSchema,
   copyVariantSchema,
   createCampaignVersionRequestSchema,
+  generateCopyInputSchema,
+  generateDirectionsInputSchema,
+  generateImageInputSchema,
   roleSchema,
   saveCompositionRequestSchema,
   visualDirectionSchema,
@@ -16,7 +21,7 @@ import { transitionCampaign } from '../../shared/workflowRules.js'
 import { withDeadlineTransaction } from '../db/pool.js'
 import { decodeGeneratedImage } from '../images/imageDecoder.js'
 import { validateBannerRenderer } from '../rendering/bannerRenderer.js'
-import { createInProcessRenderer } from '../rendering/inProcessRenderer.js'
+import { compileRenderSlotProvenance, createInProcessRenderer } from '../rendering/inProcessRenderer.js'
 import { createIdempotencyRepository } from '../repositories/idempotencyRepository.js'
 import { createVersionRepository } from '../repositories/versionRepository.js'
 import { validateAssetStore } from '../storage/assetStore.js'
@@ -108,10 +113,18 @@ function verifyTemplate(template) {
   }
 }
 
-function verifyCopyLineage(copy, campaignBrief) {
+function verifyCopyLineage(copy, campaignBrief, analysis) {
+  const copyInput = generateCopyInputSchema.safeParse(copy?.generationInput)
+  const analysisInput = analyseBriefInputSchema.safeParse(analysis?.generationInput)
+  const analysisResult = briefAnalysisSchema.safeParse(analysis?.generationResult?.analysis)
   if (!copy?.selectedCopy || copy.stale || copy.generationStep !== 'copy' || !isSafeGeneration(copy)
-    || copy.generationInput?.brief == null
-    || hashCanonical(copy.generationInput.brief) !== hashCanonical(campaignBrief)
+    || !copyInput.success
+    || hashCanonical(copyInput.data.brief) !== hashCanonical(campaignBrief)
+    || !analysis || analysis.generationStep !== 'brief_analysis' || !isSafeGeneration(analysis)
+    || !analysisInput.success || !analysisResult.success
+    || !exactObjectKeys(analysis.generationResult, ['analysis'])
+    || hashCanonical(analysisInput.data.brief) !== hashCanonical(campaignBrief)
+    || hashCanonical(copyInput.data.analysis) !== hashCanonical(analysisResult.data)
     || copy.generationResult?.copySetId !== copy.id
     || !Array.isArray(copy.generationResult?.copies) || !Array.isArray(copy.candidates)
     || hashCanonical(copy.generationResult?.copies) !== hashCanonical(copy.candidates)
@@ -122,14 +135,16 @@ function verifyCopyLineage(copy, campaignBrief) {
   }
 }
 
-function verifyDirectionLineage(direction, selectedCopy) {
+function verifyDirectionLineage(direction, selectedCopy, campaignBrief) {
+  const directionInput = generateDirectionsInputSchema.safeParse(direction?.generationInput)
   const generated = Array.isArray(direction?.generationResult?.directions)
     ? direction.generationResult.directions.find((candidate) => candidate.id === direction.id)
     : null
   if (!direction || direction.stale || direction.status !== 'ready' || !direction.previewAssetId
     || direction.generationStep !== 'directions' || !isSafeGeneration(direction)
-    || direction.generationInput?.copy == null
-    || hashCanonical(direction.generationInput.copy) !== hashCanonical(selectedCopy)
+    || !directionInput.success
+    || hashCanonical(directionInput.data.brief) !== hashCanonical(campaignBrief)
+    || hashCanonical(directionInput.data.copy) !== hashCanonical(selectedCopy)
     || !generated || hashCanonical(generated) !== hashCanonical({
       id: direction.id,
       title: direction.title,
@@ -153,6 +168,7 @@ function matchesGeneratedAssetResult(asset) {
 }
 
 function verifyImageAssetLineage(asset, direction, { requireGenerated = false } = {}) {
+  const imageInput = generateImageInputSchema.safeParse(asset?.generationInput)
   const validShape = asset && ['direction', 'final_image'].includes(asset.kind)
     && Number.isSafeInteger(asset.byteSize) && asset.byteSize > 0
     && Number.isSafeInteger(asset.width) && asset.width > 0
@@ -161,14 +177,16 @@ function verifyImageAssetLineage(asset, direction, { requireGenerated = false } 
   const generated = asset?.source === 'generation'
     && asset.generationStep === 'image'
     && isSafeGeneration(asset)
-    && asset.generationInput?.direction != null
-    && hashCanonical(asset.generationInput.direction) === hashCanonical({
+    && imageInput.success
+    && hashCanonical(imageInput.data.direction) === hashCanonical({
       id: direction.id,
       title: direction.title,
       prompt: direction.prompt,
       status: 'pending',
       previewAssetId: null,
     })
+    && imageInput.data.width === asset.width
+    && imageInput.data.height === asset.height
     && matchesGeneratedAssetResult(asset)
   const uploaded = asset?.source === 'upload' && asset.generationJobId == null
   if (!validShape || (requireGenerated ? !generated : !(generated || uploaded))) {
@@ -183,6 +201,13 @@ function referencedImageAssetIds(manifest, slotValues) {
     .filter((value) => typeof value === 'string' && value.trim().length > 0))].sort()
 }
 
+function provenanceImageAssetIds(manifest, slotValues, previewAssetId) {
+  return [...new Set([
+    previewAssetId,
+    ...referencedImageAssetIds(manifest, slotValues),
+  ].filter((value) => typeof value === 'string' && value.length > 0))].sort()
+}
+
 function immutableSourceAsset(asset) {
   return {
     id: asset.id, kind: asset.kind, objectKey: asset.objectKey,
@@ -191,18 +216,15 @@ function immutableSourceAsset(asset) {
   }
 }
 
-function verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets }) {
-  verifyDirectionLineage(direction, copy.selectedCopy)
+function verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets, campaignBrief }) {
+  verifyDirectionLineage(direction, copy.selectedCopy, campaignBrief)
   verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
   if (previewAsset.id !== direction.previewAssetId) {
     fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
   }
-  const referencedIds = referencedImageAssetIds(template.manifest, composition.slotValues)
-  if (referencedIds.length > 0 && !referencedIds.includes(direction.previewAssetId)) {
-    fail(409, 'composition_source_mismatch', 'The composition must include the selected direction preview')
-  }
-  if (sourceAssets.length !== referencedIds.length
-    || sourceAssets.some((asset, index) => asset.id !== referencedIds[index])) {
+  const sourceIds = provenanceImageAssetIds(template.manifest, composition.slotValues, direction.previewAssetId)
+  if (sourceAssets.length !== sourceIds.length
+    || sourceAssets.some((asset, index) => asset.id !== sourceIds[index])) {
     fail(409, 'composition_source_mismatch', 'Every composition image must be bound to this campaign')
   }
   for (const asset of sourceAssets) verifyImageAssetLineage(asset, direction)
@@ -261,7 +283,7 @@ function immutableObjectKey(campaignId, versionId, leaf) {
   return `campaigns/${campaign}/versions/${version}/${leaf}`
 }
 
-function validatePreparedContext({ campaign, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision }) {
+function validatePreparedContext({ campaign, analysis, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision }) {
   if (!campaign) fail(404, 'not_found', 'Campaign was not found')
   if (campaign.revision !== expectedRevision) fail(409, 'revision_conflict', 'The resource changed since it was loaded')
   if (campaign.openVersionId) fail(409, 'open_version_conflict', 'The campaign already has an open review version')
@@ -273,8 +295,8 @@ function validatePreparedContext({ campaign, copy, direction, composition, templ
   if (composition.templateId !== template.id || composition.templateVersion !== template.version) {
     fail(409, 'template_mismatch', 'The composition does not match its immutable template version')
   }
-  verifyCopyLineage(copy, campaign.brief)
-  verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets })
+  verifyCopyLineage(copy, campaign.brief, analysis)
+  verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets, campaignBrief: campaign.brief })
 }
 
 function exactObjectKeys(value, keys) {
@@ -282,80 +304,18 @@ function exactObjectKeys(value, keys) {
     && hashCanonical(Object.keys(value).sort()) === hashCanonical([...keys].sort())
 }
 
-function roundCoordinate(value) {
-  return Math.round(value * 1_000_000) / 1_000_000
-}
-
-function validRenderedTextLines(value, lines, maxLines) {
-  if (!Array.isArray(lines) || lines.length < 1 || lines.length > maxLines
-    || lines.some((line) => typeof line !== 'string')) return false
-  const paragraphs = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')
-    .map((paragraph) => paragraph.trim().split(/[\t\f\v ]+/).filter(Boolean))
-  let lineIndex = 0
-  for (const paragraph of paragraphs) {
-    if (paragraph.length === 0) {
-      if (lines[lineIndex] !== '') return false
-      lineIndex += 1
-      continue
-    }
-    let wordIndex = 0
-    while (wordIndex < paragraph.length) {
-      const line = lines[lineIndex]
-      if (typeof line !== 'string' || line.length === 0) return false
-      const words = line.trim().split(/[\t\f\v ]+/).filter(Boolean)
-      if (line !== words.join(' ') || words.length === 0) return false
-      for (const word of words) {
-        if (word !== paragraph[wordIndex]) return false
-        wordIndex += 1
-      }
-      lineIndex += 1
-    }
+function immutableBriefAnalysis(analysis) {
+  return {
+    id: analysis.id,
+    input: analyseBriefInputSchema.parse(analysis.generationInput),
+    result: { analysis: briefAnalysisSchema.parse(analysis.generationResult.analysis) },
   }
-  return lineIndex === lines.length
 }
 
-function validRenderedSlotProvenance({ renderedSlots, manifest, composition, sourceAssets, ratioId }) {
-  if (!Array.isArray(renderedSlots)) return false
-  const presentSlots = manifest.slots.filter((slot) => Object.hasOwn(composition.slotValues, slot.id))
-  if (renderedSlots.length !== presentSlots.length) return false
-  const sourceById = new Map(sourceAssets.map((asset) => [asset.id, asset]))
-  for (const [index, definition] of presentSlots.entries()) {
-    const rendered = renderedSlots[index]
-    const placement = definition.placements[ratioId]
-    if (!rendered || rendered.id !== definition.id || rendered.type !== definition.type
-      || !exactObjectKeys(rendered.placement, ['x', 'y', 'width', 'height'])
-      || hashCanonical(rendered.placement) !== hashCanonical(placement)) return false
-    if (definition.type === 'image') {
-      const source = sourceById.get(composition.slotValues[definition.id])
-      if (!source || !exactObjectKeys(rendered, ['id', 'type', 'placement', 'source', 'crop'])
-        || !exactObjectKeys(rendered.source, ['mimeType', 'width', 'height', 'sha256'])
-        || rendered.source.mimeType !== source.mimeType
-        || rendered.source.width !== source.width || rendered.source.height !== source.height
-        || rendered.source.sha256 !== source.sha256
-        || !exactObjectKeys(rendered.crop, ['x', 'y', 'width', 'height'])) return false
-      const scale = Math.max(placement.width / source.width, placement.height / source.height)
-      const expectedCrop = {
-        x: roundCoordinate((source.width - placement.width / scale) / 2),
-        y: roundCoordinate((source.height - placement.height / scale) / 2),
-        width: roundCoordinate(placement.width / scale),
-        height: roundCoordinate(placement.height / scale),
-      }
-      if (hashCanonical(rendered.crop) !== hashCanonical(expectedCrop)) return false
-      continue
-    }
-    if (!exactObjectKeys(rendered, ['id', 'type', 'lines', 'placement', 'font'])
-      || !exactObjectKeys(rendered.font, ['family', 'weight', 'size'])
-      || rendered.font.family !== definition.fontFamily
-      || rendered.font.weight !== definition.fontWeight
-      || rendered.font.size !== definition.fontSize
-      || !validRenderedTextLines(composition.slotValues[definition.id], rendered.lines, definition.maxLines)) return false
-  }
-  return true
-}
-
-function contextMatchesPlan({ copy, direction, composition, template, sourceAssets }, plan) {
+function contextMatchesPlan({ analysis, copy, direction, composition, template, sourceAssets }, plan) {
   const sources = sourceAssets.map(immutableSourceAsset)
-  return hashCanonical(copy.selectedCopy) === hashCanonical(plan.selectedCopy)
+  return hashCanonical(immutableBriefAnalysis(analysis)) === hashCanonical(plan.briefAnalysis)
+    && hashCanonical(copy.selectedCopy) === hashCanonical(plan.selectedCopy)
     && hashCanonical(publicDirection(direction)) === hashCanonical(plan.selectedDirection)
     && hashCanonical(composition) === hashCanonical(plan.composition)
     && hashCanonical(template.manifest) === hashCanonical(plan.templateManifest)
@@ -396,6 +356,9 @@ export function createVersionService({
   if (![leaseMs, pollIntervalMs, timeoutMs, recoveryTimeoutMs].every((duration) => Number.isSafeInteger(duration) && duration > 0)) {
     throw new TypeError('Version lease, polling, operation, and recovery timeouts must be positive safe integers')
   }
+  if (leaseMs <= timeoutMs + recoveryTimeoutMs) {
+    throw new TypeError('Version lease must exceed the operation and recovery deadlines')
+  }
   const mainTransaction = (deadlineAt, operation) => beforeDeadline(
     deadlineAt,
     (remaining) => transaction(pool, operation, { timeoutMs: remaining }),
@@ -431,16 +394,14 @@ export function createVersionService({
       }
       const template = await repository.findTemplate(command.templateId, command.templateVersion)
       verifyTemplate(template)
+      const analysis = await repository.findLatestBriefAnalysis(campaign.id)
       const copy = await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId)
-      verifyCopyLineage(copy, campaign.brief)
+      verifyCopyLineage(copy, campaign.brief, analysis)
       const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
-      verifyDirectionLineage(direction, copy.selectedCopy)
+      verifyDirectionLineage(direction, copy.selectedCopy, campaign.brief)
       const previewAsset = await repository.findAsset(campaign.id, direction.previewAssetId)
       verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
-      const sourceIds = referencedImageAssetIds(template.manifest, command.slotValues)
-      if (sourceIds.length > 0 && !sourceIds.includes(direction.previewAssetId)) {
-        fail(409, 'composition_source_mismatch', 'The composition must include the selected direction preview')
-      }
+      const sourceIds = provenanceImageAssetIds(template.manifest, command.slotValues, direction.previewAssetId)
       const sourceAssets = await repository.findAssets(campaign.id, sourceIds)
       if (sourceAssets.length !== sourceIds.length
         || sourceAssets.some((asset, index) => asset.id !== sourceIds[index])) {
@@ -497,6 +458,7 @@ export function createVersionService({
       }
       const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
       const currentContext = {
+        analysis: await repository.findLatestBriefAnalysis(campaign.id),
         copy: await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId),
         direction,
         composition: await repository.findComposition(campaign.id, campaign.compositionId),
@@ -513,14 +475,17 @@ export function createVersionService({
 
     const active = await repository.findActiveBuildForUpdate(campaignId)
     if (active) fail(409, 'version_build_in_progress', 'Another review version is being created')
+    const analysis = await repository.findLatestBriefAnalysis(campaign.id)
     const copy = await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId)
     const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
     const composition = await repository.findComposition(campaign.id, campaign.compositionId)
     const template = composition ? await repository.findTemplate(composition.templateId, composition.templateVersion) : null
     const previewAsset = await repository.findAsset(campaign.id, direction?.previewAssetId)
-    const sourceIds = composition && template ? referencedImageAssetIds(template.manifest, composition.slotValues) : []
+    const sourceIds = composition && template
+      ? provenanceImageAssetIds(template.manifest, composition.slotValues, direction?.previewAssetId)
+      : []
     const sourceAssets = await repository.findAssets(campaign.id, sourceIds)
-    validatePreparedContext({ campaign, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision })
+    validatePreparedContext({ campaign, analysis, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision })
     const versionId = idGenerator()
     const ratioAssets = composition.ratioIds.map((ratioId) => {
       const id = idGenerator()
@@ -534,6 +499,7 @@ export function createVersionService({
         compositionId: campaign.compositionId,
         currentVersionNumber: campaign.currentVersionNumber,
       },
+      briefAnalysis: immutableBriefAnalysis(analysis),
       selectedCopy: copyVariantSchema.parse(copy.selectedCopy),
       selectedDirection: publicDirection(direction),
       composition: compositionSchema.parse(composition),
@@ -581,6 +547,15 @@ export function createVersionService({
       const rendered = await beforeDeadline(deadlineAt, () => renderer.renderComposition({
         manifest: build.plan.templateManifest, slots: renderSlots, ratio: planned.ratioId,
       }))
+      let trustedSlots
+      try {
+        trustedSlots = await beforeDeadline(deadlineAt, () => compileRenderSlotProvenance({
+          manifest: build.plan.templateManifest, slots: renderSlots, ratio: planned.ratioId,
+        }))
+      } catch (error) {
+        if (error instanceof VersionServiceError && error.code === 'version_operation_timeout') throw error
+        fail(502, 'renderer_integrity_failure', 'Rendered review asset failed integrity verification')
+      }
       let bytes
       try {
         bytes = Buffer.from(rendered.bytes)
@@ -608,13 +583,7 @@ export function createVersionService({
         || nested.output.mimeType !== 'image/png'
         || nested.output.width !== ratio.width || nested.output.height !== ratio.height
         || nested.output.byteSize !== bytes.length || nested.output.sha256 !== sha256
-        || !validRenderedSlotProvenance({
-          renderedSlots: nested.slots,
-          manifest: build.plan.templateManifest,
-          composition: build.plan.composition,
-          sourceAssets: build.plan.sourceAssets,
-          ratioId: planned.ratioId,
-        })) {
+        || hashCanonical(nested.slots) !== hashCanonical(trustedSlots)) {
         fail(502, 'renderer_integrity_failure', 'Rendered review asset failed integrity verification')
       }
       renders.push({
@@ -719,6 +688,7 @@ export function createVersionService({
     }
     const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
     const currentContext = {
+      analysis: await repository.findLatestBriefAnalysis(campaign.id),
       copy: await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId),
       direction,
       composition: await repository.findComposition(campaign.id, campaign.compositionId),

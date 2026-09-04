@@ -155,8 +155,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(11)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql'])
+    expect(tracked.rows).toHaveLength(12)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -271,11 +271,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql'])
     expect((await pool.query("SELECT budget_day::text AS day FROM generation_jobs WHERE id = 'legacy-generation-job'")).rows[0].day).toBe('2025-12-31')
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
@@ -331,7 +331,7 @@ describe('migration runner', () => {
     pools.delete(pool)
   })
 
-  test('backfills only historical source provenance whose snapshot hash still matches the asset', async () => {
+  test('fails the exact-provenance migration on unresolved historical source hashes', async () => {
     await resetDatabase()
     const pool = makePool()
     const migrationFiles = {}
@@ -362,12 +362,14 @@ describe('migration runner', () => {
       snapshot: { assets: [{ id: 'mismatched-source', kind: 'direction', sha256: 'b'.repeat(64) }] },
     })
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['011_immutable_version_provenance.sql'] })
+    await expect(runMigrations({ pool })).rejects.toMatchObject({ code: '23514' })
     expect((await pool.query(
       'SELECT version_id, asset_id, asset_sha256 FROM campaign_version_source_assets ORDER BY version_id',
     )).rows).toEqual([{
       version_id: 'matching-history', asset_id: 'matching-source', asset_sha256: 'a'.repeat(64),
     }])
+    expect((await pool.query('SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1')).rows[0].name)
+      .toBe('011_immutable_version_provenance.sql')
     await pool.end()
     pools.delete(pool)
   })
@@ -1372,6 +1374,16 @@ describe('persisted generation control plane', () => {
       maxCostMicrounits: 250_000,
     })
     expect(image.job).toMatchObject({ provider: 'gemini', model: 'gemini-3.1-flash-image', region: 'eu' })
+    expect((await harness.pool.query(
+      'SELECT input_snapshot FROM generation_jobs WHERE id = $1',
+      ['gemini-image-job'],
+    )).rows[0].input_snapshot).toEqual({
+      direction: {
+        id: 'gemini-direction', title: 'Clean focus', prompt: 'Soft daylight.', status: 'pending', previewAssetId: null,
+      },
+      width: 1200,
+      height: 628,
+    })
 
     await expect(harness.controlPlane.prepareGeneration({
       ...common, step: 'video', idempotencyKey: 'gemini-video', jobId: 'gemini-video-job', ownerToken: 'video-owner',
@@ -2112,6 +2124,12 @@ async function immutableVersionHarness({
     body: 'Short, focused lessons built for busy adults.', offer: '', cta: 'Start learning',
     visualPrompt: 'A calm Norwegian learning scene',
   }
+  const analysis = {
+    summary: 'A focused language-learning course for busy adults.',
+    themes: ['clarity', 'confidence'],
+    warnings: [],
+  }
+  const analysisJobId = `${campaign.id}:brief-analysis-job`
   const copyJobId = `${campaign.id}:copy-job`
   const directionsJobId = `${campaign.id}:directions-job`
   const imageJobId = `${campaign.id}:image-job`
@@ -2125,6 +2143,7 @@ async function immutableVersionHarness({
   const now = new Date('2026-09-04T10:00:00.000Z')
   const timeout = new Date('2026-09-04T10:05:00.000Z')
   for (const [id, step, result] of [
+    ['brief-analysis-job', 'brief_analysis', { analysis }],
     ['copy-job', 'copy', { copySetId, copies: [copy] }],
     ['directions-job', 'directions', { directions: [pendingDirection] }],
     ['image-job', 'image', { image: { asset: { id: sourceAssetId, kind: 'direction', sha256: '0'.repeat(64) } } }],
@@ -2139,9 +2158,10 @@ async function immutableVersionHarness({
                '{"verdict":"safe","categories":[]}', '{}', 0, 0, $5,
                $6, $7, 'dispatched', $8, '2026-09-04', $9, $10, $11, $8, $8, $8)`,
       [`${campaign.id}:${id}`, campaign.id, marketerId, step, `${id}-key`, hashCanonical({ id }), `${id}-owner`, now,
-        step === 'copy' ? { brief: campaign.brief }
-          : step === 'directions' ? { copy }
-            : { direction: pendingDirection }, result, timeout],
+        step === 'brief_analysis' ? { brief: campaign.brief }
+          : step === 'copy' ? { brief: campaign.brief, analysis }
+            : step === 'directions' ? { brief: campaign.brief, copy }
+              : { direction: pendingDirection, width: 1000, height: 1000 }, result, timeout],
     )
   }
   const sourceBytes = await sharp({ create: { width: 1000, height: 1000, channels: 4, background: '#db2777' } }).png().toBuffer()
@@ -2168,7 +2188,7 @@ async function immutableVersionHarness({
   )
   await pool.query(
     `UPDATE generation_jobs SET input_snapshot = $2, result_metadata = $3 WHERE id = $1`,
-    [imageJobId, { direction: pendingDirection }, {
+    [imageJobId, { direction: pendingDirection, width: 1000, height: 1000 }, {
       image: {
         asset: { id: sourceAssetId, kind: 'direction', sha256: sourceHash },
         mimeType: 'image/png', width: 1000, height: 1000, byteSize: sourceBytes.length,
@@ -2185,7 +2205,7 @@ async function immutableVersionHarness({
   return {
     pool, service, assetStore, actor, designer: { id: designerId, role: 'designer', disabled: false },
     campaign: { ...campaign, status: 'direction_selected', revision: 2, selectedCopyId: copySetId, selectedDirectionId: directionId },
-    copy, directionId, sourceAssetId, sourceBytes, sourceHash,
+    analysis, analysisJobId, copy, directionId, sourceAssetId, sourceBytes, sourceHash,
     compositionInput: {
       templateId: templateManifest.id, templateVersion: templateManifest.version,
       ratioIds: templateManifest.ratios.map((ratio) => ratio.id),
@@ -2195,6 +2215,16 @@ async function immutableVersionHarness({
 }
 
 describe('immutable review version workflow', () => {
+  test('requires the idempotency lease to outlive the full operation and recovery budget', () => {
+    expect(() => createVersionService({
+      pool: { query() {} },
+      assetStore: createMemoryAssetStore(),
+      timeoutMs: 1_000,
+      recoveryTimeoutMs: 250,
+      leaseMs: 1_250,
+    })).toThrow('Version lease must exceed the operation and recovery deadlines')
+  })
+
   test('saves a server-owned valid composition and creates version 1 with exact stored review bytes', async () => {
     const harness = await immutableVersionHarness()
     const saved = await harness.service.saveComposition({
@@ -2285,6 +2315,108 @@ describe('immutable review version workflow', () => {
       'DELETE FROM campaign_version_source_assets WHERE version_id = $1',
       [created.body.version.id],
     )).rejects.toMatchObject({ code: '55000' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rejects a direct version insert whose snapshot source has no SQL association', async () => {
+    const harness = await immutableVersionHarness()
+    const snapshot = {
+      assets: [{ id: harness.sourceAssetId, kind: 'direction', sha256: harness.sourceHash }],
+    }
+    await expect(harness.pool.query(
+      `INSERT INTO campaign_versions
+         (id, campaign_id, version_number, snapshot, content_hash, created_by)
+       VALUES ('missing-source-association', $1, 50, $2, $3, $4)`,
+      [harness.campaign.id, snapshot, hashCanonical(snapshot), harness.actor.id],
+    )).rejects.toMatchObject({ code: '23514' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rejects an empty source set that omits the selected direction preview', async () => {
+    const harness = await immutableVersionHarness()
+    const snapshot = {
+      selectedDirection: { previewAssetId: harness.sourceAssetId },
+      assets: [],
+    }
+    await expect(harness.pool.query(
+      `INSERT INTO campaign_versions
+         (id, campaign_id, version_number, snapshot, content_hash, created_by)
+       VALUES ('missing-preview-provenance', $1, 53, $2, $3, $4)`,
+      [harness.campaign.id, snapshot, hashCanonical(snapshot), harness.actor.id],
+    )).rejects.toMatchObject({ code: '23514' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rejects an association that is extra relative to an immutable version snapshot', async () => {
+    const harness = await immutableVersionHarness()
+    await harness.service.saveComposition({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
+    })
+    const created = await harness.service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'extra-source-association-version', input: {},
+    })
+    await harness.pool.query(
+      `INSERT INTO assets
+         (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source)
+       VALUES ('unreferenced-source', $1, 'direction', 'uploads/unreferenced-source.png',
+               'image/png', 1, 1, 1, $2, 'upload')`,
+      [harness.campaign.id, 'd'.repeat(64)],
+    )
+    await expect(harness.pool.query(
+      `INSERT INTO campaign_version_source_assets
+         (campaign_id, version_id, asset_id, asset_sha256)
+       VALUES ($1, $2, 'unreferenced-source', $3)`,
+      [harness.campaign.id, created.body.version.id, 'd'.repeat(64)],
+    )).rejects.toMatchObject({ code: '23514' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rejects a source association whose hash differs from the version snapshot', async () => {
+    const harness = await immutableVersionHarness()
+    const snapshot = {
+      assets: [{ id: harness.sourceAssetId, kind: 'direction', sha256: 'e'.repeat(64) }],
+    }
+    await expect(withTransaction(harness.pool, async (client) => {
+      await client.query(
+        `INSERT INTO campaign_versions
+           (id, campaign_id, version_number, snapshot, content_hash, created_by)
+         VALUES ('mismatched-source-association', $1, 51, $2, $3, $4)`,
+        [harness.campaign.id, snapshot, hashCanonical(snapshot), harness.actor.id],
+      )
+      await client.query(
+        `INSERT INTO campaign_version_source_assets
+           (campaign_id, version_id, asset_id, asset_sha256)
+         VALUES ($1, 'mismatched-source-association', $2, $3)`,
+        [harness.campaign.id, harness.sourceAssetId, harness.sourceHash],
+      )
+    })).rejects.toMatchObject({ code: '23514' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rejects duplicate source references hidden inside a version snapshot', async () => {
+    const harness = await immutableVersionHarness()
+    const source = { id: harness.sourceAssetId, kind: 'direction', sha256: harness.sourceHash }
+    const snapshot = { assets: [source, source] }
+    await expect(withTransaction(harness.pool, async (client) => {
+      await client.query(
+        `INSERT INTO campaign_versions
+           (id, campaign_id, version_number, snapshot, content_hash, created_by)
+         VALUES ('duplicate-snapshot-source', $1, 52, $2, $3, $4)`,
+        [harness.campaign.id, snapshot, hashCanonical(snapshot), harness.actor.id],
+      )
+      await client.query(
+        `INSERT INTO campaign_version_source_assets
+           (campaign_id, version_id, asset_id, asset_sha256)
+         VALUES ($1, 'duplicate-snapshot-source', $2, $3)`,
+        [harness.campaign.id, harness.sourceAssetId, harness.sourceHash],
+      )
+    })).rejects.toMatchObject({ code: '23514' })
     await harness.pool.end()
     pools.delete(harness.pool)
   })
@@ -2538,13 +2670,13 @@ describe('immutable review version workflow', () => {
     await harness.service.saveComposition({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput })
     const stalledService = createVersionService({
       pool: harness.pool, assetStore: harness.assetStore, renderer: stalledRenderer,
-      clock: () => observedAt, leaseMs: 10, pollIntervalMs: 1, waitTimeoutMs: 50,
+      clock: () => observedAt, leaseMs: 551, timeoutMs: 500, recoveryTimeoutMs: 50, pollIntervalMs: 1,
     })
     const command = {
       actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
       idempotencyKey: 'crash-reclaim', input: {},
     }
-    void stalledService.createVersion(command)
+    void stalledService.createVersion(command).catch(() => {})
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const count = (await harness.pool.query(
         'SELECT count(*)::int AS count FROM review_version_builds WHERE campaign_id = $1',
@@ -2558,10 +2690,10 @@ describe('immutable review version workflow', () => {
       [harness.campaign.id],
     )).rows[0]
     expect(originalPlan).toBeTruthy()
-    observedAt = new Date('2026-09-04T10:00:00.020Z')
+    observedAt = new Date('2026-09-04T10:00:00.600Z')
     const recoveredService = createVersionService({
       pool: harness.pool, assetStore: harness.assetStore, renderer: createInProcessRenderer(),
-      clock: () => observedAt, leaseMs: 10, pollIntervalMs: 1, waitTimeoutMs: 50,
+      clock: () => observedAt, leaseMs: 551, timeoutMs: 500, recoveryTimeoutMs: 50, pollIntervalMs: 1,
     })
 
     const recovered = await recoveredService.createVersion(command)
@@ -2808,6 +2940,11 @@ describe('immutable review version workflow', () => {
   test('keeps durable claimed object intents after adoption and refuses crash cleanup', async () => {
     const harness = await immutableVersionHarness()
     const objectKey = 'campaigns/claimed-build/versions/review.png'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: harness.campaign.id,
+      key: 'crashed-adoption', fingerprint: 'a'.repeat(64), ownerToken: 'crashed-owner',
+      now: new Date('2026-09-04T10:00:00Z'), leaseExpiresAt: new Date('2099-09-04T10:00:00Z'),
+    })
     await harness.pool.query(
       `INSERT INTO review_version_builds
          (id, campaign_id, actor_id, idempotency_key, request_fingerprint, owner_token,
@@ -2832,6 +2969,142 @@ describe('immutable review version workflow', () => {
       orphanId: 'crashed-adoption-intent', deleteObject, cleanedAt: new Date(),
     })).resolves.toEqual({ kind: 'claimed', objectKey })
     expect(deleteObject).not.toHaveBeenCalled()
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('fences an ancient expired claimed build and makes its object eligible for cleanup', async () => {
+    const harness = await immutableVersionHarness()
+    const objectKey = 'campaigns/expired-claimed-build/versions/review.png'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: harness.campaign.id,
+      key: 'expired-adoption', fingerprint: 'c'.repeat(64), ownerToken: 'expired-owner',
+      now: new Date('2020-09-04T10:00:00Z'), leaseExpiresAt: new Date('2020-09-04T10:01:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO review_version_builds
+         (id, campaign_id, actor_id, idempotency_key, request_fingerprint, owner_token,
+          version_id, version_number, expected_revision, plan)
+       VALUES ('expired-claimed-build', $1, $2, 'expired-adoption', $3, 'expired-owner',
+               'expired-claimed-version', 1, 2, '{}')`,
+      [harness.campaign.id, harness.actor.id, 'c'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createVersionRepository(client).adoptBuildObjects({
+      buildId: 'expired-claimed-build', ownerToken: 'expired-owner', campaignId: harness.campaign.id,
+      objectKeys: [objectKey], orphanIds: ['expired-claimed-intent'], adoptedAt: new Date('2020-09-04T10:00:00Z'),
+    }))
+    const deleted = []
+    const result = await createGenerationControlPlane({ pool: harness.pool }).cleanupOrphanUpload({
+      orphanId: 'expired-claimed-intent',
+      deleteObject: async ({ objectKey: key }) => { deleted.push(key) },
+      cleanedAt: new Date('2026-09-04T10:00:00Z'),
+    })
+
+    expect(result).toEqual({ kind: 'cleaned', objectKey })
+    expect(deleted).toEqual([objectKey])
+    expect((await harness.pool.query(
+      "SELECT state FROM idempotency_records WHERE resource_id = $1 AND key = 'expired-adoption'",
+      [harness.campaign.id],
+    )).rows[0]).toEqual({ state: 'failed' })
+    expect((await harness.pool.query(
+      "SELECT state FROM review_version_builds WHERE id = 'expired-claimed-build'",
+    )).rows[0]).toEqual({ state: 'failed' })
+    expect((await harness.pool.query(
+      "SELECT status, claimed_build_id FROM orphaned_uploads WHERE id = 'expired-claimed-intent'",
+    )).rows[0]).toEqual({ status: 'cleaned', claimed_build_id: null })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('lets an idempotency reclaim fence cleanup before it can unclaim the replacement owner intent', async () => {
+    const harness = await immutableVersionHarness()
+    const objectKey = 'campaigns/reclaimed-build/versions/review.png'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: harness.campaign.id,
+      key: 'reclaimed-adoption', fingerprint: '9'.repeat(64), ownerToken: 'old-owner',
+      now: new Date('2020-09-04T10:00:00Z'), leaseExpiresAt: new Date('2020-09-04T10:01:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO review_version_builds
+         (id, campaign_id, actor_id, idempotency_key, request_fingerprint, owner_token,
+          version_id, version_number, expected_revision, plan)
+       VALUES ('reclaimed-build', $1, $2, 'reclaimed-adoption', $3, 'old-owner',
+               'reclaimed-version', 1, 2, '{}')`,
+      [harness.campaign.id, harness.actor.id, '9'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createVersionRepository(client).adoptBuildObjects({
+      buildId: 'reclaimed-build', ownerToken: 'old-owner', campaignId: harness.campaign.id,
+      objectKeys: [objectKey], orphanIds: ['reclaimed-intent'], adoptedAt: new Date('2020-09-04T10:00:00Z'),
+    }))
+    const reclaim = await harness.pool.connect()
+    await reclaim.query('BEGIN')
+    await reclaim.query(
+      `SELECT key FROM idempotency_records
+       WHERE actor_id = $1 AND method = 'POST' AND resource_id = $2 AND key = 'reclaimed-adoption'
+       FOR UPDATE`,
+      [harness.actor.id, harness.campaign.id],
+    )
+    const deleted = []
+    const cleanup = createGenerationControlPlane({ pool: harness.pool }).cleanupOrphanUpload({
+      orphanId: 'reclaimed-intent',
+      deleteObject: async ({ objectKey: key }) => { deleted.push(key) },
+      cleanedAt: new Date(),
+    })
+    await reclaim.query(
+      `UPDATE idempotency_records
+       SET owner_token = 'replacement-owner', lease_expires_at = '2099-09-04T10:00:00Z'
+       WHERE actor_id = $1 AND method = 'POST' AND resource_id = $2 AND key = 'reclaimed-adoption'`,
+      [harness.actor.id, harness.campaign.id],
+    )
+    await reclaim.query("UPDATE review_version_builds SET owner_token = 'replacement-owner' WHERE id = 'reclaimed-build'")
+    await reclaim.query('COMMIT')
+    reclaim.release()
+
+    await expect(cleanup).resolves.toEqual({ kind: 'claimed', objectKey })
+    expect(deleted).toEqual([])
+    expect((await harness.pool.query(
+      "SELECT claimed_build_id FROM orphaned_uploads WHERE id = 'reclaimed-intent'",
+    )).rows[0]).toEqual({ claimed_build_id: 'reclaimed-build' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('keeps a completed version intent tracked when its immutable asset reference is unexpectedly absent', async () => {
+    const harness = await immutableVersionHarness()
+    const objectKey = 'campaigns/completed-build/versions/review.png'
+    const idempotency = createIdempotencyRepository(harness.pool)
+    await idempotency.claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: harness.campaign.id,
+      key: 'completed-adoption', fingerprint: '8'.repeat(64), ownerToken: 'completed-owner',
+      now: new Date(), leaseExpiresAt: new Date(Date.now() + 60_000),
+    })
+    await harness.pool.query(
+      `INSERT INTO review_version_builds
+         (id, campaign_id, actor_id, idempotency_key, request_fingerprint, owner_token,
+          version_id, version_number, expected_revision, plan)
+       VALUES ('completed-build', $1, $2, 'completed-adoption', $3, 'completed-owner',
+               'completed-version', 1, 2, '{}')`,
+      [harness.campaign.id, harness.actor.id, '8'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createVersionRepository(client).adoptBuildObjects({
+      buildId: 'completed-build', ownerToken: 'completed-owner', campaignId: harness.campaign.id,
+      objectKeys: [objectKey], orphanIds: ['completed-intent'], adoptedAt: new Date(),
+    }))
+    await harness.pool.query(
+      "UPDATE review_version_builds SET state = 'completed', completed_at = now() WHERE id = 'completed-build'",
+    )
+    await idempotency.complete({
+      actorId: harness.actor.id, method: 'POST', resourceId: harness.campaign.id,
+      key: 'completed-adoption', ownerToken: 'completed-owner', responseStatus: 201, responseBody: { persisted: true },
+    })
+    const deleted = []
+    await expect(createGenerationControlPlane({ pool: harness.pool }).cleanupOrphanUpload({
+      orphanId: 'completed-intent', deleteObject: async ({ objectKey: key }) => deleted.push(key), cleanedAt: new Date(),
+    })).resolves.toEqual({ kind: 'claimed', objectKey })
+    expect(deleted).toEqual([])
+    expect((await harness.pool.query(
+      "SELECT status, claimed_build_id FROM orphaned_uploads WHERE id = 'completed-intent'",
+    )).rows[0]).toEqual({ status: 'pending', claimed_build_id: 'completed-build' })
     await harness.pool.end()
     pools.delete(harness.pool)
   })
@@ -2879,7 +3152,13 @@ describe('immutable review version workflow', () => {
       actor: optional.actor, campaignId: optional.campaign.id, expectedRevision: 3,
       idempotencyKey: 'optional-image-omitted', input: {},
     })
-    expect(optionalVersion.body.version.snapshot.assets.filter((asset) => ['direction', 'final_image'].includes(asset.kind))).toEqual([])
+    expect(optionalVersion.body.version.snapshot.assets.filter((asset) => ['direction', 'final_image'].includes(asset.kind))).toEqual([
+      { id: optional.sourceAssetId, kind: 'direction', sha256: optional.sourceHash },
+    ])
+    expect((await optional.pool.query(
+      'SELECT asset_id, asset_sha256 FROM campaign_version_source_assets WHERE version_id = $1',
+      [optionalVersion.body.version.id],
+    )).rows).toEqual([{ asset_id: optional.sourceAssetId, asset_sha256: optional.sourceHash }])
     await optional.pool.end()
     pools.delete(optional.pool)
 
@@ -2915,7 +3194,7 @@ describe('immutable review version workflow', () => {
         { direction: {
           id: multi.directionId, title: 'Nordic focus', prompt: 'A calm Norwegian learning scene',
           status: 'pending', previewAssetId: null,
-        } }, {
+        }, width: 1000, height: 1000 }, {
           image: {
             asset: { id: 'secondary-image', kind: 'final_image', sha256: secondaryHash },
             mimeType: 'image/png', width: 1000, height: 1000, byteSize: secondaryBytes.length,
@@ -2954,15 +3233,21 @@ describe('immutable review version workflow', () => {
   })
 
   test.each([
-    ['copy input brief', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:copy-job`, { brief: { ...harness.campaign.brief, product: 'Wrong product' } }]), 'copy_selection_invalid'],
+    ['copy input brief', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:copy-job`, { brief: { ...harness.campaign.brief, product: 'Wrong product' }, analysis: harness.analysis }]), 'copy_selection_invalid'],
+    ['copy input analysis', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:copy-job`, { brief: harness.campaign.brief, analysis: { ...harness.analysis, summary: 'Wrong analysis' } }]), 'copy_selection_invalid'],
+    ['copy input missing analysis', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:copy-job`, { brief: harness.campaign.brief }]), 'copy_selection_invalid'],
+    ['brief analysis result', async (harness) => harness.pool.query('UPDATE generation_jobs SET result_metadata = $2 WHERE id = $1', [harness.analysisJobId, { analysis: { ...harness.analysis, summary: 'Changed after copy generation' } }]), 'copy_selection_invalid'],
     ['copy job step', async (harness) => harness.pool.query('UPDATE generation_jobs SET step = \'directions\' WHERE id = $1', [`${harness.campaign.id}:copy-job`]), 'copy_selection_invalid'],
     ['copy result', async (harness) => harness.pool.query("UPDATE generation_jobs SET result_metadata = '{\"copySetId\":\"other\",\"copies\":[]}' WHERE id = $1", [`${harness.campaign.id}:copy-job`]), 'copy_selection_invalid'],
-    ['direction input copy', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:directions-job`, { copy: { ...harness.copy, headline: 'Wrong headline' } }]), 'direction_selection_invalid'],
+    ['direction input copy', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:directions-job`, { brief: harness.campaign.brief, copy: { ...harness.copy, headline: 'Wrong headline' } }]), 'direction_selection_invalid'],
+    ['direction input brief', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:directions-job`, { brief: { ...harness.campaign.brief, objective: 'Wrong objective' }, copy: harness.copy }]), 'direction_selection_invalid'],
     ['direction result', async (harness) => harness.pool.query("UPDATE generation_jobs SET result_metadata = '{\"directions\":[]}' WHERE id = $1", [`${harness.campaign.id}:directions-job`]), 'direction_selection_invalid'],
     ['direction result state', async (harness) => harness.pool.query('UPDATE generation_jobs SET result_metadata = $2 WHERE id = $1', [`${harness.campaign.id}:directions-job`, { directions: [{ id: harness.directionId, title: 'Nordic focus', prompt: 'A calm Norwegian learning scene', status: 'ready', previewAssetId: harness.sourceAssetId }] }]), 'direction_selection_invalid'],
     ['image job step', async (harness) => harness.pool.query('UPDATE generation_jobs SET step = \'directions\' WHERE id = $1', [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
     ['image input', async (harness) => harness.pool.query("UPDATE generation_jobs SET input_snapshot = '{\"direction\":{\"id\":\"wrong\"}}' WHERE id = $1", [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
-    ['image direction content', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:image-job`, { direction: { id: harness.directionId, title: 'Altered title', prompt: 'Altered prompt', status: 'pending', previewAssetId: null } }]), 'composition_source_mismatch'],
+    ['image direction content', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = $2 WHERE id = $1', [`${harness.campaign.id}:image-job`, { direction: { id: harness.directionId, title: 'Altered title', prompt: 'Altered prompt', status: 'pending', previewAssetId: null }, width: 1000, height: 1000 }]), 'composition_source_mismatch'],
+    ['image input width', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = jsonb_set(input_snapshot, \'{width}\', \'999\'::jsonb) WHERE id = $1', [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
+    ['image input height', async (harness) => harness.pool.query('UPDATE generation_jobs SET input_snapshot = input_snapshot - \'height\' WHERE id = $1', [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
     ['image result', async (harness) => harness.pool.query("UPDATE generation_jobs SET result_metadata = '{\"image\":{\"asset\":{\"id\":\"wrong\",\"kind\":\"direction\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}' WHERE id = $1", [`${harness.campaign.id}:image-job`]), 'composition_source_mismatch'],
   ])('rejects mismatched exact %s lineage', async (_case, mutate, code) => {
     const harness = await immutableVersionHarness()
@@ -3071,6 +3356,24 @@ describe('immutable review version workflow', () => {
         ...valid.renderManifest,
         slots: valid.renderManifest.slots.map((slot) => slot.type === 'text'
           ? { ...slot, lines: ['Altered content'] }
+          : slot),
+      },
+    })],
+    ['changed line wrapping', async (valid) => ({
+      ...valid,
+      renderManifest: {
+        ...valid.renderManifest,
+        slots: valid.renderManifest.slots.map((slot) => slot.id === 'headline'
+          ? { ...slot, lines: ['Learn', 'Norwegian with confidence'] }
+          : slot),
+      },
+    })],
+    ['overflowing line claim', async (valid) => ({
+      ...valid,
+      renderManifest: {
+        ...valid.renderManifest,
+        slots: valid.renderManifest.slots.map((slot) => slot.id === 'headline'
+          ? { ...slot, lines: [slot.lines.join(' ')] }
           : slot),
       },
     })],
@@ -3260,6 +3563,14 @@ describe('immutable review version workflow', () => {
     await pending.catch(() => {})
     expect(outcome).toMatchObject({ kind: 'rejected', error: { statusCode: 503, code: 'version_operation_timeout' } })
     expect((await harness.pool.query('SELECT count(*)::int AS count FROM campaign_versions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].count).toBe(0)
+    expect((await harness.pool.query(
+      `SELECT status, claimed_build_id FROM orphaned_uploads
+       WHERE campaign_id = $1 ORDER BY object_key`,
+      [harness.campaign.id],
+    )).rows).toEqual([
+      { status: 'pending', claimed_build_id: null },
+      { status: 'pending', claimed_build_id: null },
+    ])
     await harness.pool.end()
     pools.delete(harness.pool)
   })
