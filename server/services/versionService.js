@@ -406,7 +406,7 @@ export function createVersionService({
       const campaign = await repository.lockCampaign(campaignId)
       if (!campaign) fail(404, 'not_found', 'Campaign was not found')
       if (campaign.revision !== expectedRevision) fail(409, 'revision_conflict', 'The resource changed since it was loaded')
-      if (campaign.status !== 'direction_selected') {
+      if (!['direction_selected', 'composed'].includes(campaign.status)) {
         fail(409, campaign.openVersionId ? 'campaign_locked' : 'transition_not_allowed', 'The campaign cannot save a composition in its current state')
       }
       const template = await repository.findTemplate(command.templateId, command.templateVersion)

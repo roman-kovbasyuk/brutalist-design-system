@@ -293,6 +293,119 @@ export const campaignVersionListResponseSchema = z.strictObject({
   requestId: requestIdSchema,
 })
 
+const reviewCommentSchema = z.string().trim().min(1).max(2_000)
+
+function isFigmaHttpsUrl(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:'
+      && url.username === ''
+      && url.password === ''
+      && (url.port === '' || url.port === '443')
+      && (url.hostname === 'figma.com' || url.hostname.endsWith('.figma.com'))
+  } catch {
+    return false
+  }
+}
+
+export const reviewChecklistSchema = z.strictObject({
+  copyAccuracy: z.literal(true),
+  layoutQuality: z.literal(true),
+  exportReadiness: z.literal(true),
+})
+
+export const requestVersionChangesRequestSchema = z.strictObject({ comment: reviewCommentSchema })
+export const rejectVersionRequestSchema = requestVersionChangesRequestSchema
+export const markVersionReadyRequestSchema = z.strictObject({
+  figmaUrl: z.string().trim().max(2_000).refine(isFigmaHttpsUrl, 'A valid HTTPS Figma URL is required'),
+  checklistAnswers: reviewChecklistSchema,
+})
+export const approveVersionRequestSchema = z.strictObject({})
+export const reopenCampaignRequestSchema = z.strictObject({})
+
+const reviewEventBase = {
+  id: nonEmptyString,
+  campaignId: nonEmptyString,
+  versionId: nonEmptyString,
+  actorId: nonEmptyString,
+  createdAt: timestampSchema,
+}
+
+const sentReviewEventSchema = z.strictObject({
+  ...reviewEventBase,
+  actorRole: z.enum(['marketer', 'admin']),
+  eventType: z.literal('sent'),
+  payload: z.strictObject({ contentHash: assetHashSchema, assetHashes: z.array(assetHashSchema) }),
+})
+const changesRequestedReviewEventSchema = z.strictObject({
+  ...reviewEventBase,
+  actorRole: z.literal('designer'),
+  eventType: z.literal('changes_requested'),
+  payload: z.strictObject({ comment: reviewCommentSchema }),
+})
+const readyReviewEventSchema = z.strictObject({
+  ...reviewEventBase,
+  actorRole: z.literal('designer'),
+  eventType: z.literal('ready'),
+  payload: z.strictObject({
+    figmaUrl: markVersionReadyRequestSchema.shape.figmaUrl,
+    checklistAnswers: reviewChecklistSchema,
+    readyActorId: nonEmptyString,
+    contentHash: assetHashSchema,
+  }),
+})
+const rejectedReviewEventSchema = z.strictObject({
+  ...reviewEventBase,
+  actorRole: z.enum(['marketer', 'admin']),
+  eventType: z.literal('rejected'),
+  payload: z.strictObject({ comment: reviewCommentSchema }),
+})
+const approvedReviewEventSchema = z.strictObject({
+  ...reviewEventBase,
+  actorRole: z.enum(['marketer', 'admin']),
+  eventType: z.literal('approved'),
+  payload: z.strictObject({ contentHash: assetHashSchema }),
+})
+const deliveredReviewEventSchema = z.strictObject({
+  ...reviewEventBase,
+  actorRole: z.enum(['marketer', 'admin']),
+  eventType: z.literal('delivered'),
+  payload: z.strictObject({
+    deliveryId: nonEmptyString,
+    contentHash: assetHashSchema,
+    assetHashes: z.array(assetHashSchema),
+  }),
+})
+
+export const reviewEventRecordSchema = z.discriminatedUnion('eventType', [
+  sentReviewEventSchema,
+  changesRequestedReviewEventSchema,
+  readyReviewEventSchema,
+  rejectedReviewEventSchema,
+  approvedReviewEventSchema,
+  deliveredReviewEventSchema,
+])
+
+export const reviewCommandResponseSchema = z.strictObject({
+  version: campaignVersionRecordSchema,
+  campaign: campaignRecordSchema,
+  reviewStatus: reviewStatusSchema,
+  event: reviewEventRecordSchema,
+  requestId: requestIdSchema,
+})
+
+export const reopenCampaignResponseSchema = z.strictObject({
+  campaign: campaignRecordSchema,
+  requestId: requestIdSchema,
+})
+
+export const reviewHistoryResponseSchema = z.strictObject({
+  version: campaignVersionRecordSchema,
+  status: reviewStatusSchema,
+  events: z.array(reviewEventRecordSchema),
+  requestId: requestIdSchema,
+})
+
 export const campaignSchema = z.strictObject({
   id: nonEmptyString,
   title: nonEmptyString.max(200),

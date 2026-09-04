@@ -111,6 +111,21 @@ const transitions = [
     }),
   },
   {
+    action: 'save_composition',
+    from: 'composed',
+    to: 'composed',
+    roles: marketerRoles,
+    guard: ({ input }) => {
+      const parsed = compositionSchema.safeParse(input.composition)
+      return parsed.success && parsed.data.validation.valid && !parsed.data.stale
+    },
+    apply: ({ campaign, input }) => ({
+      ...campaign,
+      composition: input.composition,
+      stale: { ...campaign.stale, composition: false },
+    }),
+  },
+  {
     action: 'send_for_review',
     from: 'composed',
     to: 'in_review',
@@ -248,19 +263,19 @@ export function applyArtifactEdit(campaign, changedArtifact) {
       allowed: ['draft', 'copy_ready', 'direction_selected', 'composed'],
       status: 'draft',
       stale: { copy: true, directions: true, composition: true },
-      clear: ['selectedCopy', 'selectedDirection', 'composition'],
+      clear: ['selectedCopy', 'selectedDirection', 'composition', 'selectedCopyId', 'selectedDirectionId', 'compositionId'],
     },
     copy: {
       allowed: ['copy_ready', 'direction_selected', 'composed'],
       status: 'copy_ready',
       stale: { copy: false, directions: true, composition: true },
-      clear: ['selectedDirection', 'composition'],
+      clear: ['selectedDirection', 'composition', 'selectedDirectionId', 'compositionId'],
     },
     direction: {
       allowed: ['direction_selected', 'composed'],
       status: 'direction_selected',
       stale: { copy: false, directions: false, composition: true },
-      clear: ['composition'],
+      clear: ['composition', 'compositionId'],
     },
   }
   const rule = rules[changedArtifact]

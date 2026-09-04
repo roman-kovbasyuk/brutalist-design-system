@@ -8,6 +8,7 @@ import { createTemplateRepository } from '../repositories/templateRepository.js'
 import { createUserRepository } from '../repositories/userRepository.js'
 import { createAuditRepository } from '../repositories/auditRepository.js'
 import { assertProviderRegistry, generationProviderRegistry, providerTupleAllowed } from '../providers/registry.js'
+import { applyArtifactEdit } from '../../shared/workflowRules.js'
 
 const campaignEditors = ['marketer', 'admin']
 const invitationTtlMs = 7 * 24 * 60 * 60 * 1000
@@ -107,6 +108,7 @@ export function createWorkflowService({
     action,
     validate: validateCommand = () => true,
     apply,
+    afterPersist,
     auditPayload = {},
   }) => {
     requireRole(actor, campaignEditors)
@@ -143,6 +145,8 @@ export function createWorkflowService({
         if (error?.code === 'not_found') throw missing('Campaign')
         throw error
       }
+
+      await afterPersist?.({ client, campaigns, before: snapshot, desired, persisted, actor })
 
       await audit(client, {
         actorId: actor.id,
@@ -190,13 +194,38 @@ export function createWorkflowService({
     async patchCampaign({ actor, campaignId, expectedRevision, patch }) {
       const command = validate(campaignPatchRequestSchema, patch)
       const changedFields = Object.keys(command).sort()
+      const briefChanged = Object.hasOwn(command, 'brief')
       return executeCampaignCommand({
         actor,
         campaignId,
         expectedRevision,
         action: 'campaign.updated',
-        validate: () => true,
-        apply: (campaign) => ({ ...campaign, ...command }),
+        validate: ({ campaign }) => {
+          if (!briefChanged) return true
+          const edit = applyArtifactEdit(campaign, 'brief')
+          if (edit.ok) return true
+          return new WorkflowServiceError(edit.status, edit.code, edit.message)
+        },
+        apply: (campaign) => {
+          if (!briefChanged) return { ...campaign, ...command }
+          const edit = applyArtifactEdit(campaign, 'brief')
+          if (!edit.ok) throw new WorkflowServiceError(edit.status, edit.code, edit.message)
+          const { stale: _stale, ...editedCampaign } = edit.campaign
+          return {
+            ...editedCampaign,
+            ...command,
+            selectedCopyId: edit.campaign.selectedCopyId ?? null,
+            selectedDirectionId: edit.campaign.selectedDirectionId ?? null,
+            compositionId: edit.campaign.compositionId ?? null,
+          }
+        },
+        afterPersist: briefChanged
+          ? ({ campaigns, before }) => campaigns.markArtifactsStale(before.id, {
+              copy: true,
+              directions: true,
+              composition: true,
+            })
+          : undefined,
         auditPayload: { changedFields },
       })
     },

@@ -186,6 +186,21 @@ describe('transitionCampaign', () => {
     expect(allowedActions({ campaign: campaignAt('in_review'), actor: marketer })).toEqual([])
   })
 
+  test('allows a marketer to replace the composition after a closed round is reopened', () => {
+    const replacement = { ...pilotCampaignFixture.composition, id: 'composition-2' }
+    const result = transitionCampaign({
+      campaign: campaignAt('composed'),
+      action: 'save_composition',
+      actor: marketer,
+      input: { composition: replacement },
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      campaign: { status: 'composed', composition: { id: 'composition-2' }, revision: pilotCampaignFixture.revision + 1 },
+    })
+  })
+
   test('gives Admin marketer actions but never designer actions', () => {
     expect(allowedActions({ campaign: campaignAt('draft'), actor: admin })).toEqual(['select_copy'])
     expect(allowedActions({ campaign: campaignAt('in_review'), actor: admin })).toEqual([])
@@ -226,6 +241,17 @@ describe('applyArtifactEdit', () => {
 
     expect(result).toMatchObject({ ok: true, campaign: { status, stale } })
     for (const field of cleared) expect(result.campaign[field]).toBeUndefined()
+  })
+
+  test('clears persisted artifact identifiers as part of a brief edit result', () => {
+    const result = applyArtifactEdit(campaignAt('composed', {
+      selectedCopyId: 'copy-set-1', selectedDirectionId: 'direction-1', compositionId: 'composition-1',
+    }), 'brief')
+
+    expect(result.ok).toBe(true)
+    expect(result.campaign).not.toHaveProperty('selectedCopyId')
+    expect(result.campaign).not.toHaveProperty('selectedDirectionId')
+    expect(result.campaign).not.toHaveProperty('compositionId')
   })
 
   test('preserves an existing upstream stale marker while invalidating downstream artifacts', () => {

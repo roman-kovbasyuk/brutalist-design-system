@@ -155,6 +155,57 @@ describe('workflow service', () => {
       .rejects.toMatchObject({ statusCode: 400, code: 'invalid_request' })
   })
 
+  test.each(['in_review', 'changes_requested', 'ready', 'approved', 'delivered'])('rejects brief edits while the campaign is %s', async (status) => {
+    const locked = { ...currentCampaign, status, openVersionId: status === 'in_review' || status === 'ready' ? 'version-1' : null }
+    const { service, campaignRepository, auditRepository } = harness()
+    campaignRepository.findByIdForUpdate.mockResolvedValueOnce(locked)
+
+    await expect(service.patchCampaign({
+      actor,
+      campaignId: locked.id,
+      expectedRevision: locked.revision,
+      patch: { brief: { ...brief, objective: 'Purchases' } },
+    })).rejects.toMatchObject({ statusCode: 409, code: 'content_locked' })
+
+    expect(campaignRepository.updateState).not.toHaveBeenCalled()
+    expect(auditRepository.append).not.toHaveBeenCalled()
+  })
+
+  test('regresses a reopened brief edit to draft, clears selections, and marks retained history stale', async () => {
+    const reopened = {
+      ...currentCampaign,
+      status: 'composed',
+      selectedCopyId: 'copy-set-1',
+      selectedDirectionId: 'direction-1',
+      compositionId: 'composition-1',
+      currentVersionNumber: 1,
+      openVersionId: null,
+    }
+    const { service, campaignRepository } = harness()
+    campaignRepository.findByIdForUpdate.mockResolvedValueOnce(reopened)
+    campaignRepository.markArtifactsStale = vi.fn(async () => {})
+
+    const updated = await service.patchCampaign({
+      actor,
+      campaignId: reopened.id,
+      expectedRevision: reopened.revision,
+      patch: { brief: { ...brief, objective: 'Purchases' } },
+    })
+
+    expect(updated).toMatchObject({
+      status: 'draft',
+      selectedCopyId: null,
+      selectedDirectionId: null,
+      compositionId: null,
+      currentVersionNumber: 1,
+    })
+    expect(campaignRepository.markArtifactsStale).toHaveBeenCalledWith(reopened.id, {
+      copy: true,
+      directions: true,
+      composition: true,
+    })
+  })
+
   test('revision-protects settings and audits only after persistence', async () => {
     const { service, calls, settingsRepository, auditRepository } = harness()
 

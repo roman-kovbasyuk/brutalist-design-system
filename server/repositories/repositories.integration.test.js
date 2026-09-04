@@ -30,6 +30,8 @@ import { campaignVersionSnapshotSchema } from '../../shared/contracts.js'
 import { createVersionService } from '../services/versionService.js'
 import { createInProcessRenderer } from '../rendering/inProcessRenderer.js'
 import { createVersionRepository } from './versionRepository.js'
+import { createReviewService } from '../services/reviewService.js'
+import { createReviewRepository } from './reviewRepository.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
@@ -164,8 +166,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(14)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'])
+    expect(tracked.rows).toHaveLength(15)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -280,11 +282,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'])
     expect((await pool.query("SELECT budget_day::text AS day FROM generation_jobs WHERE id = 'legacy-generation-job'")).rows[0].day).toBe('2025-12-31')
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
@@ -696,11 +698,19 @@ describe('append-only history', () => {
     ['campaign_versions', async (pool, actorId, campaignId) => insertVersion(pool, campaignId, actorId, { id: 'immutable-version' })],
     ['review_events', async (pool, actorId, campaignId) => {
       const version = await insertVersion(pool, campaignId, actorId)
-      await pool.query(
-        `INSERT INTO review_events (id, campaign_id, version_id, actor_id, actor_role, event_type, payload)
-         VALUES ('immutable-review', $1, $2, $3, 'marketer', 'sent', '{}')`,
-        [campaignId, version.id, actorId],
-      )
+      await withTransaction(pool, async (client) => {
+        await client.query(
+          `INSERT INTO review_events (id, campaign_id, version_id, actor_id, actor_role, event_type, payload)
+           VALUES ('immutable-review', $1, $2, $3, 'marketer', 'sent', $4)`,
+          [campaignId, version.id, actorId, { contentHash: version.contentHash, assetHashes: [] }],
+        )
+        await client.query(
+          `UPDATE campaigns
+           SET status = 'in_review', current_version_number = $2, open_version_id = $3, revision = revision + 1
+           WHERE id = $1`,
+          [campaignId, version.versionNumber, version.id],
+        )
+      })
       return { id: 'immutable-review' }
     }],
     ['audit_events', async (pool, actorId, campaignId) => {
@@ -2406,7 +2416,7 @@ describe('immutable review version workflow', () => {
     const imageJobId = `${harness.campaign.id}:image-job`
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [imageJobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'] })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
     expect((await harness.pool.query('SELECT input_snapshot FROM generation_jobs WHERE id = $1', [imageJobId])).rows[0].input_snapshot)
       .toMatchObject({ width: 1000, height: 1000 })
@@ -2446,7 +2456,7 @@ describe('immutable review version workflow', () => {
       [imageJobId],
     )
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'] })
     expect((await harness.pool.query(
       'SELECT status, error_code, response_status, response_body FROM generation_jobs WHERE id = $1',
       [imageJobId],
@@ -2518,7 +2528,7 @@ describe('immutable review version workflow', () => {
     await harness.controlPlane.markDispatched({ jobId, ownerToken, dispatchedAt: now })
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [jobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'] })
     expect((await harness.pool.query(
       'SELECT status, unknown_reason, response_status, response_body FROM generation_jobs WHERE id = $1', [jobId],
     )).rows[0]).toMatchObject({
@@ -2596,7 +2606,7 @@ describe('immutable review version workflow', () => {
 
     expect((await harness.pool.query("SELECT count(*)::int AS count FROM audit_events WHERE action LIKE 'migration.%'")).rows[0].count).toBe(0)
     expect(await runMigrations({ pool: harness.pool })).toEqual({
-      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'],
+      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'],
     })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
 
@@ -2730,7 +2740,7 @@ describe('immutable review version workflow', () => {
     })
 
     expect(await runMigrations({ pool: harness.pool })).toEqual({
-      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql'],
+      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql'],
     })
     expect((await harness.pool.query(
       'SELECT status, revision, selected_direction_id, composition_id FROM campaigns WHERE id = $1', [harness.campaign.id],
@@ -4322,6 +4332,227 @@ describe('immutable review version workflow', () => {
       'SELECT count(*)::int AS count FROM campaign_version_source_assets WHERE asset_id = $1',
       [harness.sourceAssetId],
     )).rows[0].count).toBe(2)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+})
+
+async function openReviewHarness() {
+  const harness = await immutableVersionHarness()
+  await harness.service.saveComposition({
+    actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
+  })
+  const created = await harness.service.createVersion({
+    actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+    idempotencyKey: `open-review-${randomUUID()}`, input: {},
+  })
+  return { ...harness, created, reviewService: createReviewService({ pool: harness.pool }) }
+}
+
+describe('append-only human review gates', () => {
+  test('persists ready and approval as exact idempotent event/audit/campaign transactions', async () => {
+    const harness = await openReviewHarness()
+    const readyCommand = {
+      actor: harness.designer, versionId: harness.created.body.version.id, expectedRevision: 4,
+      idempotencyKey: 'ready-once', input: {
+        figmaUrl: 'https://www.figma.com/design/file/review',
+        checklistAnswers: { copyAccuracy: true, layoutQuality: true, exportReadiness: true },
+      },
+    }
+    const marked = await harness.reviewService.markReady(readyCommand)
+    const replay = await harness.reviewService.markReady(readyCommand)
+
+    expect(marked.body).toMatchObject({ campaign: { status: 'ready', revision: 5, openVersionId: harness.created.body.version.id }, reviewStatus: 'ready' })
+    expect(replay).toEqual({ ...marked, replayed: true })
+    await expect(harness.reviewService.requestChanges({
+      actor: harness.designer, versionId: harness.created.body.version.id, expectedRevision: 5,
+      idempotencyKey: 'ready-once', input: { comment: 'Different command.' },
+    })).rejects.toMatchObject({ code: 'idempotency_conflict' })
+
+    const approved = await harness.reviewService.approve({
+      actor: harness.actor, versionId: harness.created.body.version.id, expectedRevision: 5,
+      idempotencyKey: 'approve-once', input: {},
+    })
+    expect(approved.body).toMatchObject({ campaign: { status: 'approved', revision: 6, openVersionId: null }, reviewStatus: 'approved' })
+    expect((await harness.pool.query(
+      'SELECT event_type, payload FROM review_events WHERE version_id = $1 ORDER BY created_at, id',
+      [harness.created.body.version.id],
+    )).rows).toEqual([
+      expect.objectContaining({ event_type: 'sent' }),
+      { event_type: 'ready', payload: {
+        figmaUrl: readyCommand.input.figmaUrl,
+        checklistAnswers: readyCommand.input.checklistAnswers,
+        readyActorId: harness.designer.id,
+        contentHash: harness.created.body.version.contentHash,
+      } },
+      { event_type: 'approved', payload: { contentHash: harness.created.body.version.contentHash } },
+    ])
+    expect((await harness.pool.query(
+      `SELECT count(*)::int AS count FROM audit_events
+       WHERE version_id = $1 AND action IN ('campaign.mark_ready', 'campaign.approve')`,
+      [harness.created.body.version.id],
+    )).rows[0].count).toBe(2)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('uses persisted ready identity to prohibit approval after a role change', async () => {
+    const harness = await openReviewHarness()
+    await harness.reviewService.markReady({
+      actor: harness.designer, versionId: harness.created.body.version.id, expectedRevision: 4,
+      idempotencyKey: 'role-change-ready', input: {
+        figmaUrl: 'https://figma.com/design/file/review',
+        checklistAnswers: { copyAccuracy: true, layoutQuality: true, exportReadiness: true },
+      },
+    })
+    await harness.pool.query("UPDATE users SET role = 'marketer' WHERE id = $1", [harness.designer.id])
+    await expect(harness.reviewService.approve({
+      actor: { ...harness.designer, role: 'marketer' }, versionId: harness.created.body.version.id,
+      expectedRevision: 5, idempotencyKey: 'role-change-approve', input: {},
+    })).rejects.toMatchObject({ code: 'self_approval_forbidden', statusCode: 403 })
+    expect((await harness.pool.query(
+      "SELECT count(*)::int AS count FROM review_events WHERE version_id = $1 AND event_type = 'approved'",
+      [harness.created.body.version.id],
+    )).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('request changes, reopen, and brief edit preserve version history while staling every retained artifact', async () => {
+    const harness = await openReviewHarness()
+    await harness.reviewService.requestChanges({
+      actor: harness.designer, versionId: harness.created.body.version.id, expectedRevision: 4,
+      idempotencyKey: 'changes-round-one', input: { comment: 'Increase the headline contrast.' },
+    })
+    const reopened = await harness.reviewService.reopen({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 5,
+      idempotencyKey: 'reopen-round-one', input: {},
+    })
+    expect(reopened.body.campaign).toMatchObject({ status: 'composed', revision: 6, openVersionId: null, currentVersionNumber: 1 })
+
+    const workflow = createWorkflowService({ pool: harness.pool })
+    const editedBrief = { ...harness.campaign.brief, objective: 'Purchase the course' }
+    const edited = await workflow.patchCampaign({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 6, patch: { brief: editedBrief },
+    })
+    expect(edited).toMatchObject({
+      status: 'draft', revision: 7, selectedCopyId: null, selectedDirectionId: null,
+      compositionId: null, currentVersionNumber: 1, openVersionId: null,
+    })
+    expect((await harness.pool.query('SELECT bool_and(stale) AS stale FROM copy_sets WHERE campaign_id = $1', [harness.campaign.id])).rows[0].stale).toBe(true)
+    expect((await harness.pool.query('SELECT bool_and(stale) AS stale FROM visual_directions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].stale).toBe(true)
+    expect((await harness.pool.query('SELECT bool_and(stale) AS stale FROM compositions WHERE campaign_id = $1', [harness.campaign.id])).rows[0].stale).toBe(true)
+    expect((await harness.pool.query('SELECT snapshot, content_hash FROM campaign_versions WHERE id = $1', [harness.created.body.version.id])).rows[0])
+      .toEqual({ snapshot: harness.created.body.version.snapshot, content_hash: harness.created.body.version.contentHash })
+    expect((await harness.pool.query('SELECT event_type FROM review_events WHERE version_id = $1 ORDER BY created_at, id', [harness.created.body.version.id])).rows)
+      .toEqual([{ event_type: 'sent' }, { event_type: 'changes_requested' }])
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('reopened composition edits create N+1 while version N remains immutable', async () => {
+    const harness = await openReviewHarness()
+    const firstVersion = structuredClone(harness.created.body.version)
+    await harness.reviewService.requestChanges({
+      actor: harness.designer, versionId: firstVersion.id, expectedRevision: 4,
+      idempotencyKey: 'changes-before-v2', input: { comment: 'Change the call to action.' },
+    })
+    await harness.reviewService.reopen({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 5,
+      idempotencyKey: 'reopen-before-v2', input: {},
+    })
+    const replacement = await harness.service.saveComposition({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 6,
+      input: {
+        ...harness.compositionInput,
+        slotValues: { ...harness.compositionInput.slotValues, cta: 'Join today' },
+      },
+    })
+    expect(replacement.campaign).toMatchObject({ status: 'composed', revision: 7 })
+    const second = await harness.service.createVersion({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 7,
+      idempotencyKey: 'version-two-after-review', input: {},
+    })
+    expect(second.body.version).toMatchObject({ versionNumber: 2 })
+    expect(second.body.version.contentHash).not.toBe(firstVersion.contentHash)
+    expect((await harness.pool.query('SELECT snapshot, content_hash FROM campaign_versions WHERE id = $1', [firstVersion.id])).rows[0])
+      .toEqual({ snapshot: firstVersion.snapshot, content_hash: firstVersion.contentHash })
+    expect((await harness.pool.query('SELECT stale FROM compositions WHERE id = $1', [firstVersion.snapshot.composition.id])).rows[0].stale).toBe(true)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('serializes racing approve and reject commands so exactly one review fact wins', async () => {
+    const harness = await openReviewHarness()
+    await harness.reviewService.markReady({
+      actor: harness.designer, versionId: harness.created.body.version.id, expectedRevision: 4,
+      idempotencyKey: 'race-ready', input: {
+        figmaUrl: 'https://figma.com/design/file/review',
+        checklistAnswers: { copyAccuracy: true, layoutQuality: true, exportReadiness: true },
+      },
+    })
+    const [approve, reject] = await Promise.allSettled([
+      harness.reviewService.approve({
+        actor: harness.actor, versionId: harness.created.body.version.id, expectedRevision: 5,
+        idempotencyKey: 'race-approve', input: {},
+      }),
+      harness.reviewService.reject({
+        actor: harness.actor, versionId: harness.created.body.version.id, expectedRevision: 5,
+        idempotencyKey: 'race-reject', input: { comment: 'Not yet.' },
+      }),
+    ])
+    expect([approve, reject].filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1)
+    expect([approve, reject].filter((outcome) => outcome.status === 'rejected')).toHaveLength(1)
+    expect((await harness.pool.query(
+      "SELECT count(*)::int AS count FROM review_events WHERE version_id = $1 AND event_type IN ('approved', 'rejected')",
+      [harness.created.body.version.id],
+    )).rows[0].count).toBe(1)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rolls back the event and campaign transition when the audit append fails', async () => {
+    const harness = await openReviewHarness()
+    const repositoryFactory = (client) => ({
+      ...createReviewRepository(client),
+      appendAudit: async () => { throw new Error('audit unavailable') },
+    })
+    const service = createReviewService({ pool: harness.pool, repositoryFactory })
+    await expect(service.requestChanges({
+      actor: harness.designer, versionId: harness.created.body.version.id, expectedRevision: 4,
+      idempotencyKey: 'rollback-review', input: { comment: 'Increase contrast.' },
+    })).rejects.toThrow('audit unavailable')
+
+    expect((await harness.pool.query(
+      'SELECT status, revision, open_version_id FROM campaigns WHERE id = $1', [harness.campaign.id],
+    )).rows[0]).toEqual({ status: 'in_review', revision: 4, open_version_id: harness.created.body.version.id })
+    expect((await harness.pool.query(
+      'SELECT event_type FROM review_events WHERE version_id = $1 ORDER BY created_at, id',
+      [harness.created.body.version.id],
+    )).rows).toEqual([{ event_type: 'sent' }])
+    expect((await harness.pool.query(
+      "SELECT state FROM idempotency_records WHERE actor_id = $1 AND resource_id = $2 AND key = 'rollback-review'",
+      [harness.designer.id, harness.created.body.version.id],
+    )).rows).toEqual([{ state: 'failed' }])
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('database rejects malformed review payloads, impossible sequences, and event mutation', async () => {
+    const harness = await openReviewHarness()
+    const versionId = harness.created.body.version.id
+    await expect(harness.pool.query(
+      `INSERT INTO review_events (id, campaign_id, version_id, actor_id, actor_role, event_type, payload)
+       VALUES ('bad-ready-payload', $1, $2, $3, 'designer', 'ready', $4)`,
+      [harness.campaign.id, versionId, harness.designer.id, { figmaUrl: 'https://evil.test', checklistAnswers: {} }],
+    )).rejects.toMatchObject({ code: '23514' })
+    await expect(harness.pool.query(
+      `INSERT INTO review_events (id, campaign_id, version_id, actor_id, actor_role, event_type, payload)
+       VALUES ('bad-approval-sequence', $1, $2, $3, 'marketer', 'approved', $4)`,
+      [harness.campaign.id, versionId, harness.actor.id, { contentHash: harness.created.body.version.contentHash }],
+    )).rejects.toMatchObject({ code: '23514' })
+    await expect(harness.pool.query("UPDATE review_events SET payload = '{}' WHERE version_id = $1", [versionId]))
+      .rejects.toMatchObject({ code: '55000' })
     await harness.pool.end()
     pools.delete(harness.pool)
   })

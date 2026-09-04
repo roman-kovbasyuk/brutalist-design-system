@@ -251,6 +251,12 @@ export function createVersionRepository(client) {
     },
 
     async insertComposition({ composition, campaign, actor, createdAt }) {
+      if (campaign.compositionId) {
+        await client.query(
+          'UPDATE compositions SET stale = true WHERE campaign_id = $1 AND id = $2 AND stale = false',
+          [campaign.id, campaign.compositionId],
+        )
+      }
       const inserted = await client.query(
         `INSERT INTO compositions
            (id, campaign_id, template_id, template_version, ratio_ids, slot_values, validation, stale, created_at)

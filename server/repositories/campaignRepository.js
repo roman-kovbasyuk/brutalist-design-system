@@ -110,6 +110,12 @@ export function createCampaignRepository(client) {
       throw new RevisionConflictError(id, expectedRevision)
     },
 
+    async markArtifactsStale(campaignId, { copy = false, directions = false, composition = false } = {}) {
+      if (copy) await client.query('UPDATE copy_sets SET stale = true WHERE campaign_id = $1 AND stale = false', [campaignId])
+      if (directions) await client.query('UPDATE visual_directions SET stale = true WHERE campaign_id = $1 AND stale = false', [campaignId])
+      if (composition) await client.query('UPDATE compositions SET stale = true WHERE campaign_id = $1 AND stale = false', [campaignId])
+    },
+
     async archive({ id, expectedRevision, archivedAt }) {
       const result = await client.query(
         `UPDATE campaigns
