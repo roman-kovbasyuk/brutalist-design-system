@@ -4,7 +4,9 @@ import { registerCampaignRoutes } from './routes/campaigns.js'
 import { registerTemplateRoutes } from './routes/templates.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerSettingsRoutes } from './routes/settings.js'
+import { registerSessionRoute } from './routes/session.js'
 import { apiErrorResponseSchema } from '../shared/contracts.js'
+import { createAuthorizer } from './auth/authorize.js'
 
 const safeRequestId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
@@ -63,7 +65,9 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
     throw new TypeError('resolveActor and workflowService must be injected together')
   }
   if (resolveActor && workflowService) {
-    const dependencies = { resolveActor, workflowService }
+    const { requireRole } = createAuthorizer(resolveActor)
+    const dependencies = { requireRole, workflowService }
+    registerSessionRoute(app, dependencies)
     registerCampaignRoutes(app, dependencies)
     registerTemplateRoutes(app, dependencies)
     registerUserRoutes(app, dependencies)

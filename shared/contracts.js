@@ -117,6 +117,14 @@ export const userResponseSchema = z.strictObject({
   requestId: requestIdSchema,
 })
 
+export const sessionResponseSchema = z.strictObject({
+  id: nonEmptyString,
+  email: z.string().email(),
+  role: roleSchema,
+  displayName: nonEmptyString,
+  requestId: requestIdSchema,
+})
+
 export const createTemplateVersionRequestSchema = z.strictObject({
   id: nonEmptyString.max(200),
   version: nonEmptyString.max(100),

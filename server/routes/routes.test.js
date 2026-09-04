@@ -63,6 +63,25 @@ function makeApp({ role = 'marketer', actor, workflowService = services() } = {}
 }
 
 describe('versioned workflow routes', () => {
+  test('returns the authenticated database session through a strict response contract', async () => {
+    const actor = {
+      id: 'designer-1', email: 'designer@example.com', firebaseUid: 'firebase-designer',
+      role: 'designer', displayName: 'Designer', disabledAt: null, internalSecret: 'not-for-clients',
+    }
+    const { app } = makeApp({ actor })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/session' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      id: 'designer-1', email: 'designer@example.com', role: 'designer', displayName: 'Designer',
+      requestId: response.headers['x-request-id'],
+    })
+    expect(response.body).not.toContain('firebaseUid')
+    expect(response.body).not.toContain('internalSecret')
+    await app.close()
+  })
+
   test('lists, creates, and gets campaigns through the injected service', async () => {
     const { app, workflowService } = makeApp()
 

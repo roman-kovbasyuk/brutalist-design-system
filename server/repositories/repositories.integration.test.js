@@ -16,6 +16,7 @@ import { createWorkflowService } from '../services/workflowService.js'
 import { createIdempotencyService } from '../services/idempotencyService.js'
 import { buildApp } from '../app.js'
 import { hashCanonical } from '../../shared/canonicalJson.js'
+import { createAuthenticator } from '../auth/verifyToken.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
@@ -108,8 +109,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(4)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql'])
+    expect(tracked.rows).toHaveLength(5)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -195,6 +196,7 @@ describe('migration runner', () => {
     expect(await runMigrations({ pool, directory: baseDirectory })).toEqual({ applied: ['001_core.sql'] })
 
     const actorId = await insertUser(pool, { id: 'upgrade-admin', role: 'admin' })
+    await pool.query('UPDATE users SET disabled = true WHERE id = $1', [actorId])
     await pool.query(
       'UPDATE settings SET daily_budget_microunits = $1, updated_by = $2 WHERE singleton = $3',
       [5_000_000, actorId, true],
@@ -207,13 +209,14 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql'])
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
+    expect((await pool.query('SELECT disabled_at FROM users WHERE id = $1', [actorId])).rows[0].disabled_at).toBeInstanceOf(Date)
     expect(await createTemplateRepository(pool).listLatest())
       .toEqual([expect.objectContaining({ id: 'upgrade-template', version: '1.10.0', manifest: { version: '1.10.0' } })])
     const sequences = await pool.query(
@@ -563,6 +566,126 @@ describe('supporting repositories', () => {
     const updated = await settings.update({ expectedRevision: 0, provider: 'gemini', model: 'gemini-2.5-flash', region: 'europe-west6', dailyBudgetMicrounits: 5_000_000, perStepRegenerationLimit: 3, generationDisabled: false, updatedBy: adminId })
     expect(updated).toMatchObject({ revision: 1, dailyBudgetMicrounits: 5_000_000, generationDisabled: false })
     expect(await settings.get()).toMatchObject({ provider: 'gemini', model: 'gemini-2.5-flash' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('atomically binds concurrent first sign-ins to exactly one invited user', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'race-invite', email: 'race@example.test', role: 'designer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+
+    const [first, second] = await Promise.all([
+      withTransaction(pool, (client) => createUserRepository(client).resolveAuthenticatedUser({
+        firebaseUid: 'firebase-race', verifiedEmail: 'race@example.test', displayName: 'Race User', userId: 'race-user-1',
+      })),
+      withTransaction(pool, (client) => createUserRepository(client).resolveAuthenticatedUser({
+        firebaseUid: 'firebase-race', verifiedEmail: 'race@example.test', displayName: 'Race User', userId: 'race-user-2',
+      })),
+    ])
+
+    expect(first.id).toBe(second.id)
+    expect(['race-user-1', 'race-user-2']).toContain(first.id)
+    expect((await pool.query('SELECT id FROM users WHERE firebase_uid = $1', ['firebase-race'])).rows).toHaveLength(1)
+    expect((await pool.query('SELECT accepted_user_id, accepted_at FROM invitations WHERE id = $1', ['race-invite'])).rows[0])
+      .toMatchObject({ accepted_user_id: first.id, accepted_at: expect.any(Date) })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('requires the accepted invitation UID and verified email on later requests', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'identity-invite', email: 'identity@example.test', role: 'marketer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+    const repository = createUserRepository(pool)
+    const accepted = await withTransaction(pool, (client) => createUserRepository(client).resolveAuthenticatedUser({
+      firebaseUid: 'firebase-identity', verifiedEmail: 'identity@example.test', displayName: 'Identity', userId: 'identity-user',
+    }))
+
+    expect(accepted).toMatchObject({ id: 'identity-user', role: 'marketer', disabledAt: null })
+    await expect(withTransaction(pool, (client) => createUserRepository(client).resolveAuthenticatedUser({
+      firebaseUid: 'firebase-identity', verifiedEmail: 'other@example.test', displayName: 'Other', userId: 'other-user',
+    }))).resolves.toBeNull()
+    await expect(withTransaction(pool, (client) => createUserRepository(client).resolveAuthenticatedUser({
+      firebaseUid: 'different-firebase-uid', verifiedEmail: 'identity@example.test', displayName: 'Identity', userId: 'other-user',
+    }))).resolves.toBeNull()
+    expect(await repository.findByFirebaseUid('firebase-identity')).toMatchObject({ id: 'identity-user' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('reloads role and disabled state from PostgreSQL for every authenticated request', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'live-role-invite', email: 'live-role@example.test', role: 'designer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+    const authenticate = createAuthenticator({
+      pool,
+      tokenVerifier: { verify: async () => ({ uid: 'firebase-live-role', email: 'live-role@example.test', email_verified: true }) },
+      idGenerator: () => 'live-role-user',
+    })
+    const authRequest = { headers: { authorization: 'Bearer token' } }
+
+    await expect(authenticate(authRequest)).resolves.toMatchObject({ role: 'designer', disabledAt: null })
+    await pool.query('UPDATE users SET role = $2 WHERE id = $1', ['live-role-user', 'admin'])
+    await expect(authenticate(authRequest)).resolves.toMatchObject({ role: 'admin', disabledAt: null })
+    await pool.query('UPDATE users SET disabled_at = now() WHERE id = $1', ['live-role-user'])
+    await expect(authenticate(authRequest)).rejects.toMatchObject({ statusCode: 403, code: 'user_disabled' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('accepts an invitation through the authenticated session route', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'session-invite', email: 'session@example.test', role: 'designer', invitedBy: adminId,
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+    })
+    const resolveActor = createAuthenticator({
+      pool,
+      tokenVerifier: { verify: async () => ({ uid: 'firebase-session', email: ' SESSION@example.test ', email_verified: true, name: 'Session User' }) },
+      idGenerator: () => 'session-user',
+    })
+    const app = buildApp({ resolveActor, workflowService: {} })
+
+    const response = await app.inject({
+      method: 'GET', url: '/api/v1/session', headers: { authorization: 'Bearer valid-session-token' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      id: 'session-user', email: 'session@example.test', role: 'designer', displayName: 'Session User',
+    })
+    expect((await pool.query('SELECT accepted_user_id FROM invitations WHERE id = $1', ['session-invite'])).rows[0])
+      .toEqual({ accepted_user_id: 'session-user' })
+    await app.close()
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('does not accept expired, revoked, or absent invitations', async () => {
+    const pool = makePool()
+    const adminId = await insertUser(pool, { role: 'admin' })
+    await createUserRepository(pool).createInvitation({
+      id: 'expired-auth-invite', email: 'expired-auth@example.test', role: 'designer', invitedBy: adminId,
+      expiresAt: new Date('2020-01-01T00:00:00Z'),
+    })
+    const resolve = (email) => withTransaction(pool, (client) => createUserRepository(client).resolveAuthenticatedUser({
+      firebaseUid: `firebase-${email}`, verifiedEmail: email, displayName: 'No Access', userId: `user-${email}`,
+    }))
+
+    await expect(resolve('expired-auth@example.test')).resolves.toBeNull()
+    await expect(resolve('absent@example.test')).resolves.toBeNull()
+    expect((await pool.query('SELECT id FROM users WHERE email IN ($1, $2)', ['expired-auth@example.test', 'absent@example.test'])).rowCount).toBe(0)
     await pool.end()
     pools.delete(pool)
   })

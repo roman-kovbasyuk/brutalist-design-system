@@ -1,5 +1,3 @@
-import { roleSchema } from '../../shared/contracts.js'
-
 export class PublicApiError extends Error {
   constructor(statusCode, code, message, details) {
     super(message)
@@ -43,17 +41,6 @@ export function strictResponse(schema, request, payload) {
   const parsed = schema.safeParse({ ...payload, requestId: request.id })
   if (!parsed.success) throw new Error('Service response violated its API contract')
   return parsed.data
-}
-
-export async function requireActor(request, resolveActor, allowedRoles = roleSchema.options) {
-  const actor = await resolveActor(request)
-  if (!actor) throw new PublicApiError(401, 'unauthorized', 'Authentication is required')
-  if (!actor.id || !roleSchema.safeParse(actor.role).success) {
-    throw new PublicApiError(403, 'forbidden', 'The authenticated actor is not invited')
-  }
-  if (actor.disabled) throw new PublicApiError(403, 'user_disabled', 'This user is disabled')
-  if (!allowedRoles.includes(actor.role)) throw new PublicApiError(403, 'forbidden', 'This role cannot perform the requested operation')
-  return actor
 }
 
 export function notFound(resourceName) {
