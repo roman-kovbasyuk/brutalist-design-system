@@ -15,6 +15,7 @@ import { createIdempotencyRepository } from './idempotencyRepository.js'
 import { createWorkflowService } from '../services/workflowService.js'
 import { createIdempotencyService } from '../services/idempotencyService.js'
 import { buildApp } from '../app.js'
+import { hashCanonical } from '../../shared/canonicalJson.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
 const pools = new Set()
@@ -639,28 +640,58 @@ describe('idempotency coordination', () => {
     pools.delete(pool)
   })
 
-  test('row locking prevents concurrent expired-lease takeover while the owner transaction commits', async () => {
+  test('bounds expired-lease recovery while the owner row remains locked, then replays its completion', async () => {
     const pool = makePool()
     const actorId = await insertUser(pool)
     const repository = createIdempotencyRepository(pool)
-    const scope = { actorId, method: 'POST', resourceId: 'locked-campaign', key: 'locked-key', fingerprint: 'b'.repeat(64) }
+    const payload = { command: 'persist' }
+    const scope = {
+      actorId, method: 'POST', resourceId: 'locked-campaign', key: 'locked-key', fingerprint: hashCanonical(payload),
+    }
     await repository.claim({ ...scope, ownerToken: 'owner-1', now: new Date('2026-09-04T10:00:00Z'), leaseExpiresAt: new Date('2026-09-04T10:00:10Z') })
 
     const client = await pool.connect()
     await client.query('BEGIN')
     const transactional = createIdempotencyRepository(client)
     expect(await transactional.lockOwner({ ...scope, ownerToken: 'owner-1', now: new Date('2026-09-04T10:00:05Z') })).toBeTruthy()
-    let takeoverSettled = false
-    const takeover = repository.claim({
-      ...scope, ownerToken: 'owner-2', now: new Date('2026-09-04T10:00:11Z'), leaseExpiresAt: new Date('2026-09-04T10:00:21Z'),
-    }).finally(() => { takeoverSettled = true })
-    await new Promise((resolve) => setImmediate(resolve))
-    expect(takeoverSettled).toBe(false)
+    let logicalNow = new Date('2026-09-04T10:00:11Z').getTime()
+    let contenderNumber = 0
+    const service = createIdempotencyService({
+      pool,
+      idGenerator: () => `bounded-contender-${++contenderNumber}`,
+      clock: () => new Date(logicalNow),
+      wait: async (duration) => { logicalNow += duration },
+      leaseMs: 1_000,
+      pollIntervalMs: 10,
+      timeoutMs: 30,
+    })
+    const operation = vi.fn(async () => ({ status: 500, body: { shouldNotRun: true } }))
+    const contender = service.executeDatabaseCommand({
+      actorId, method: 'POST', resourceId: 'locked-campaign', key: 'locked-key', payload, operation,
+    })
+    let ceilingTimer
+    const startedAt = Date.now()
+    const observed = await Promise.race([
+      contender.then(
+        (result) => ({ kind: 'resolved', result }),
+        (error) => ({ kind: 'rejected', error }),
+      ),
+      new Promise((resolve) => { ceilingTimer = setTimeout(() => resolve({ kind: 'wall_clock_ceiling' }), 750) }),
+    ])
+    clearTimeout(ceilingTimer)
+    const elapsedMs = Date.now() - startedAt
+
     await transactional.complete({ ...scope, ownerToken: 'owner-1', responseStatus: 200, responseBody: { committed: true } })
     await client.query('COMMIT')
     client.release()
+    if (observed.kind === 'wall_clock_ceiling') await contender
 
-    expect(await takeover).toEqual({ kind: 'replay', responseStatus: 200, responseBody: { committed: true } })
+    expect(observed).toMatchObject({ kind: 'rejected', error: { statusCode: 409, code: 'idempotency_in_progress' } })
+    expect(elapsedMs).toBeLessThan(750)
+    expect(operation).not.toHaveBeenCalled()
+    expect(await service.executeDatabaseCommand({
+      actorId, method: 'POST', resourceId: 'locked-campaign', key: 'locked-key', payload, operation,
+    })).toEqual({ status: 200, body: { committed: true }, replayed: true })
     await pool.end()
     pools.delete(pool)
   })

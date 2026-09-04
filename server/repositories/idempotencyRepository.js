@@ -45,31 +45,52 @@ export function createIdempotencyRepository(client) {
       )
       if (inserted.rowCount > 0) return { kind: 'owner' }
 
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const existing = await client.query(
-          `SELECT fingerprint, state, response_status, response_body, lease_expires_at
+      const existing = await client.query(
+        `SELECT fingerprint, state, response_status, response_body, lease_expires_at
+         FROM idempotency_records
+         WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4`,
+        scope,
+      )
+      const record = existing.rows[0]
+      if (!record || record.fingerprint !== fingerprint) return { kind: 'conflict' }
+      if (record.state === 'completed') {
+        return { kind: 'replay', responseStatus: record.response_status, responseBody: record.response_body }
+      }
+      const reclaimable = record.state === 'failed' || record.lease_expires_at <= times.now
+      if (!reclaimable) return { kind: 'in_progress' }
+
+      const reclaimed = await client.query(
+        `WITH candidate AS (
+           SELECT actor_id, method, resource_id, key
            FROM idempotency_records
-           WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4`,
-          scope,
-        )
-        const record = existing.rows[0]
-        if (!record || record.fingerprint !== fingerprint) return { kind: 'conflict' }
-        if (record.state === 'completed') {
-          return { kind: 'replay', responseStatus: record.response_status, responseBody: record.response_body }
-        }
-        const reclaimable = record.state === 'failed' || record.lease_expires_at <= times.now
-        if (!reclaimable) return { kind: 'in_progress' }
-        const reclaimed = await client.query(
-          `UPDATE idempotency_records
-           SET state = 'in_progress', owner_token = $6, lease_expires_at = $7,
-               failed_at = NULL, failure_code = NULL
            WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
              AND fingerprint = $5
              AND (state = 'failed' OR (state = 'in_progress' AND lease_expires_at <= $8))
-           RETURNING actor_id`,
-          [...scope, fingerprint, ownerToken, times.leaseExpiresAt, times.now],
-        )
-        if (reclaimed.rowCount > 0) return { kind: 'owner' }
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE idempotency_records AS records
+         SET state = 'in_progress', owner_token = $6, lease_expires_at = $7,
+             failed_at = NULL, failure_code = NULL
+         FROM candidate
+         WHERE records.actor_id = candidate.actor_id
+           AND records.method = candidate.method
+           AND records.resource_id = candidate.resource_id
+           AND records.key = candidate.key
+         RETURNING records.actor_id`,
+        [...scope, fingerprint, ownerToken, times.leaseExpiresAt, times.now],
+      )
+      if (reclaimed.rowCount > 0) return { kind: 'owner' }
+
+      const latest = await client.query(
+        `SELECT fingerprint, state, response_status, response_body
+         FROM idempotency_records
+         WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4`,
+        scope,
+      )
+      const latestRecord = latest.rows[0]
+      if (!latestRecord || latestRecord.fingerprint !== fingerprint) return { kind: 'conflict' }
+      if (latestRecord.state === 'completed') {
+        return { kind: 'replay', responseStatus: latestRecord.response_status, responseBody: latestRecord.response_body }
       }
       return { kind: 'in_progress' }
     },

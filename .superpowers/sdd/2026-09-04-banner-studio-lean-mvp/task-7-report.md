@@ -183,3 +183,37 @@ The build retains the pre-existing VitePress chunk-size advisory; it does not fa
   - exit 0.
   - Vite application and VitePress builds succeeded.
   - The pre-existing chunk-size advisory remains non-fatal.
+
+## Fix round 2 — bounded lease recovery
+
+### Root cause
+
+The expired/failed reclaim branch used a normal `UPDATE`. When the original owner still held `FOR UPDATE`, PostgreSQL waited on that row lock inside `coordinator.claim`. That wait occurred outside the service polling loop, so the injected clock, wait function, and deadline could not bound request latency.
+
+### Exact RED evidence
+
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "bounds expired-lease recovery"`
+  - 1 failed, 36 skipped.
+  - The real PostgreSQL contender reached the conservative 750 ms wall-clock ceiling while the owner transaction still held the expired row lock, producing `{ kind: "wall_clock_ceiling" }` instead of `409 idempotency_in_progress`.
+
+### Fix
+
+- Reclaim now selects only an expired/failed candidate with `FOR UPDATE SKIP LOCKED` and updates only that selected scoped row.
+- A locked candidate is skipped immediately; a final non-locking read preserves completed replay/conflict semantics and otherwise returns deterministic `in_progress`.
+- The service polling loop remains the sole owner of wait/deadline behavior. No additional unbounded row-lock acquisition was added to reclaim.
+- The integration test keeps the owner transaction open past lease expiry, verifies the contender resolves with bounded `409 idempotency_in_progress` while the lock is still held, commits the owner's stored response, and then verifies normal replay without running the contender operation.
+
+### GREEN evidence
+
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "bounds expired-lease recovery"`
+  - 1 passed, 36 skipped.
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "idempotency coordination"`
+  - 9 passed, 28 skipped.
+- `npm test -- --run server/services/idempotencyService.test.js`
+  - 6 passed.
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared`
+  - 9 test files passed.
+  - 139 tests passed.
+- `npm run build`
+  - exit 0; Vite and VitePress builds succeeded.
+  - The existing chunk-size advisory remains non-fatal.
