@@ -416,6 +416,79 @@ export const reviewHistoryResponseSchema = z.strictObject({
   requestId: requestIdSchema,
 })
 
+const safeArchiveFilenameSchema = z.string().regex(
+  /^(?:banners\/banner-[0-9]{3}\.png|render-manifest\.json)$/,
+  'Delivery filenames must be server-owned safe POSIX paths',
+)
+
+const deliveryFileSchema = z.strictObject({
+  filename: safeArchiveFilenameSchema,
+  assetId: nonEmptyString,
+  mimeType: z.enum(['image/png', 'application/json']),
+  byteSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  width: z.number().int().positive().max(4_096).nullable(),
+  height: z.number().int().positive().max(4_096).nullable(),
+  sha256: assetHashSchema,
+}).superRefine((file, context) => {
+  const image = file.mimeType === 'image/png'
+  if (image !== (file.width !== null && file.height !== null)) {
+    context.addIssue({ code: 'custom', path: ['width'], message: 'Only PNG files have dimensions.' })
+  }
+  if (image !== file.filename.startsWith('banners/')) {
+    context.addIssue({ code: 'custom', path: ['filename'], message: 'Filename does not match its MIME type.' })
+  }
+})
+
+export const deliveryManifestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  campaignId: nonEmptyString,
+  versionId: nonEmptyString,
+  versionNumber: z.number().int().positive(),
+  contentHash: assetHashSchema,
+  approval: z.strictObject({ actorId: nonEmptyString, at: timestampSchema }),
+  files: z.array(deliveryFileSchema).min(2),
+}).superRefine((manifest, context) => {
+  const filenames = manifest.files.map((file) => file.filename)
+  const sorted = [...filenames].sort()
+  if (new Set(filenames).size !== filenames.length || filenames.some((value, index) => value !== sorted[index])) {
+    context.addIssue({ code: 'custom', path: ['files'], message: 'Delivery files must be unique and sorted by filename.' })
+  }
+  if (manifest.files.filter((file) => file.filename === 'render-manifest.json').length !== 1) {
+    context.addIssue({ code: 'custom', path: ['files'], message: 'One render manifest is required.' })
+  }
+  if (!manifest.files.some((file) => file.mimeType === 'image/png')) {
+    context.addIssue({ code: 'custom', path: ['files'], message: 'At least one banner PNG is required.' })
+  }
+})
+
+export const createDeliveryRequestSchema = z.strictObject({})
+
+const deliveryFields = {
+  id: nonEmptyString,
+  campaignId: nonEmptyString,
+  versionId: nonEmptyString,
+  contentHash: assetHashSchema,
+  asset: assetReferenceSchema.refine((asset) => asset.kind === 'delivery_zip', 'A delivery ZIP asset is required'),
+  byteSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  createdBy: nonEmptyString,
+  createdAt: timestampSchema,
+}
+
+export const deliveryRecordSchema = z.strictObject(deliveryFields)
+
+export const deliveryCommandResponseSchema = z.strictObject({
+  delivery: deliveryRecordSchema,
+  campaign: campaignRecordSchema,
+  reviewStatus: z.literal('delivered'),
+  event: deliveredReviewEventSchema,
+  requestId: requestIdSchema,
+})
+
+export const deliveryResponseSchema = z.strictObject({
+  ...deliveryFields,
+  requestId: requestIdSchema,
+})
+
 export const campaignSchema = z.strictObject({
   id: nonEmptyString,
   title: nonEmptyString.max(200),

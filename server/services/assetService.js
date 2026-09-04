@@ -39,6 +39,7 @@ export function createAssetService({ pool, assetStore, repositoryFactory = creat
       }
       const record = await repositoryFactory(pool).findReadableById({ assetId, actorId: actor.id })
       if (!record) return null
+      if (record.kind === 'delivery_zip' && !['marketer', 'admin'].includes(actor.role)) return null
       if (!mimeTypesByKind[record.kind]?.has(record.mimeType)) {
         throw new AssetServiceError(502, 'invalid_asset_content_type', 'Stored asset content type is invalid')
       }

@@ -58,4 +58,12 @@ describe('private asset route', () => {
       .toBe(`attachment; filename="${kind === 'manifest' ? 'manifest' : 'delivery'}-${asset.sha256.slice(0, 16)}.${extension}"`)
     await app.close()
   })
+
+  test('does not expose delivery ZIPs to designers even when they know the asset id', async () => {
+    const { app, assetService } = makeApp({ role: 'designer', result: null })
+    const response = await app.inject({ method: 'GET', url: '/api/v1/assets/delivery-zip-1' })
+    expect(response.statusCode).toBe(404)
+    expect(assetService.readAsset).toHaveBeenCalledWith({ actor: expect.objectContaining({ role: 'designer' }), assetId: 'delivery-zip-1' })
+    await app.close()
+  })
 })

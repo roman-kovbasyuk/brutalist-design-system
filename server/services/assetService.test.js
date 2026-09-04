@@ -71,4 +71,18 @@ describe('authorized asset reads', () => {
     expect(repository.findReadableById).not.toHaveBeenCalled()
     expect(assetStore.get).not.toHaveBeenCalled()
   })
+
+  test('hides delivery ZIP bytes from designers while allowing marketer and admin downloads', async () => {
+    const zip = { ...record, kind: 'delivery_zip', mimeType: 'application/zip', width: null, height: null }
+    const designer = harness({ row: zip })
+    await expect(designer.service.readAsset({ actor: { id: 'designer-1', role: 'designer' }, assetId: zip.id }))
+      .resolves.toBeNull()
+    expect(designer.assetStore.get).not.toHaveBeenCalled()
+
+    for (const role of ['marketer', 'admin']) {
+      const allowed = harness({ row: zip })
+      await expect(allowed.service.readAsset({ actor: { id: `${role}-1`, role }, assetId: zip.id }))
+        .resolves.toMatchObject({ kind: 'delivery_zip', bytes: expect.any(Buffer) })
+    }
+  })
 })

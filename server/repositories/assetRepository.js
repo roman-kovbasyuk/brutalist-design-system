@@ -35,7 +35,8 @@ export function createAssetRepository(client) {
            AND c.archived_at IS NULL
            AND u.disabled = false
            AND u.disabled_at IS NULL
-           AND u.role IN ('marketer', 'designer', 'admin')`,
+           AND u.role IN ('marketer', 'designer', 'admin')
+           AND (a.kind <> 'delivery_zip' OR u.role IN ('marketer', 'admin'))`,
         [assetId, actorId],
       )
       return mapAsset(result.rows[0])

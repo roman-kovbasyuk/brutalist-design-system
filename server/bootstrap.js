@@ -15,6 +15,7 @@ import { createGcsAssetStore } from './storage/gcsAssetStore.js'
 import { createAssetService } from './services/assetService.js'
 import { createVersionService } from './services/versionService.js'
 import { createReviewService } from './services/reviewService.js'
+import { createDeliveryService } from './services/deliveryService.js'
 
 const productionDependencies = {
   buildApp,
@@ -33,6 +34,7 @@ const productionDependencies = {
   createAssetService,
   createVersionService,
   createReviewService,
+  createDeliveryService,
   runMigrations,
 }
 
@@ -104,6 +106,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
     const assetService = resolved.createAssetService({ pool, assetStore })
     const versionService = resolved.createVersionService({ pool, assetStore })
     const reviewService = resolved.createReviewService({ pool })
+    const deliveryService = resolved.createDeliveryService({ pool, assetStore })
     const generationService = resolved.createGenerationService({
       pool,
       controlPlane: generationControlPlane,
@@ -123,6 +126,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       assetService,
       versionService,
       reviewService,
+      deliveryService,
     })
     return { app, close, config }
   } catch (error) {
