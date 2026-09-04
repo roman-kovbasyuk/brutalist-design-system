@@ -221,18 +221,21 @@ git commit -m "feat: enforce MVP workflow transitions"
 ### Task 4: Template manifest contract
 
 **Files:**
+- Modify: `shared/contracts.js`
+- Modify: `shared/contracts.test.js`
 - Create: `shared/templateManifest.test.js`
 - Create: `shared/templateManifest.js`
 - Create: `shared/fixtures/pilotTemplate.js`
 
 **Interfaces:**
 - Produces: `templateManifestSchema`
-- Produces: `validateComposition(manifest, slotValues): { valid, errors }`
+- Produces: `validateComposition(manifest, compositionInput): { valid, errors }`
 - Produces: `pilotTemplateFixture`
+- Extends: `campaignVersionSnapshotSchema` with the complete normalized manifest and its SHA-256
 
 - [ ] **Step 1: Write failing validation tests**
 
-Test a valid manifest and failures for unsupported ratio, missing required slot, headline over character limit, and unknown slot.
+Test a valid manifest and failures for unsupported ratio, missing required slot, headline over character limit, max-line overflow, unknown slot, unsafe text placement, font size below the declared minimum, and undersized image metadata.
 
 - [ ] **Step 2: Run the tests and verify RED**
 
@@ -241,7 +244,9 @@ Expected: FAIL because the manifest module does not exist.
 
 - [ ] **Step 3: Implement the manifest and validator**
 
-The pilot manifest has `id`, semantic `version`, `name`, `ratios`, and `slots`. Slot types are `text`, `image`, and `cta`; text slots define `required`, `maxCharacters`, and `maxLines`.
+The pilot manifest has `id`, semantic `version`, `name`, `ratios`, and `slots`. Ratios define exact pixel dimensions and safe-area insets. Slot types are `text`, `image`, and `cta`; text/CTA slots define `required`, `maxCharacters`, `maxLines`, font family/weight/size, minimum font size, and a placement for every ratio. Image slots define minimum asset dimensions, accepted MIME types, and a placement for every ratio. Validate that text/CTA boxes stay inside the ratio safe area and all boxes stay inside the canvas.
+
+`compositionInput` contains `ratioIds`, `slotValues`, and image `assetMetadata` keyed by asset ID. Validation returns deterministic, human-readable errors without I/O. The immutable version snapshot embeds the parsed manifest plus `templateManifestHash`; a semantic template version alone is insufficient.
 
 - [ ] **Step 4: Run Module 0 verification**
 
