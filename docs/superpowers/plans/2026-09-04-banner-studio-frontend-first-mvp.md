@@ -52,11 +52,11 @@ The backend implementation receives its own plan after Review E. It must impleme
 - Produces: `getAvailableActions(campaign, actor)`, `transitionCampaign(campaign, action, actor, input)`, `createCampaignVersion(campaign, actor, now)`.
 - Consumes: no UI or storage modules.
 
-- [ ] **Step 1: Install Zod**
+- [x] **Step 1: Install Zod**
 
 Run: `npm install zod`
 
-- [ ] **Step 2: Write failing schema tests**
+- [x] **Step 2: Write failing schema tests**
 
 ```js
 test('accepts the minimum draft campaign', () => {
@@ -68,13 +68,13 @@ test('rejects an unknown campaign status', () => {
 })
 ```
 
-- [ ] **Step 3: Run the schema tests and confirm RED**
+- [x] **Step 3: Run the schema tests and confirm RED**
 
 Run: `npm test -- --run src/mvp/contracts.test.js`
 
 Expected: FAIL because `contracts.js` does not exist.
 
-- [ ] **Step 4: Implement the minimum schemas**
+- [x] **Step 4: Implement the minimum schemas**
 
 Define the exact enum:
 
@@ -94,11 +94,11 @@ export const canonicalStatuses = [
 
 The campaign schema includes `id`, `name`, `status`, `brief`, `copySets`, `selectedCopyId`, `directions`, `selectedDirectionId`, `composition`, `versions`, `reviewEvents`, `delivery`, `providerMode`, `updatedAt`.
 
-- [ ] **Step 5: Run schema tests and confirm GREEN**
+- [x] **Step 5: Run schema tests and confirm GREEN**
 
 Run: `npm test -- --run src/mvp/contracts.test.js`
 
-- [ ] **Step 6: Write failing transition tests**
+- [x] **Step 6: Write failing transition tests**
 
 Cover:
 
@@ -116,17 +116,17 @@ test('prevents the ready actor from approving their own version', () => {
 })
 ```
 
-- [ ] **Step 7: Run transition tests and confirm RED**
+- [x] **Step 7: Run transition tests and confirm RED**
 
 Run: `npm test -- --run src/mvp/workflowRules.test.js`
 
-- [ ] **Step 8: Implement the transition table**
+- [x] **Step 8: Implement the transition table**
 
 Actions are `save_brief`, `generate_copy`, `select_copy`, `generate_directions`, `select_direction`, `save_composition`, `send_for_review`, `request_changes`, `mark_ready`, `reject`, `reopen`, `approve`, `deliver`.
 
 The implementation returns a new parsed campaign object and never mutates its input.
 
-- [ ] **Step 9: Run Task 1 tests and commit**
+- [x] **Step 9: Run Task 1 tests and commit**
 
 Run: `npm test -- --run src/mvp/contracts.test.js src/mvp/workflowRules.test.js`
 
