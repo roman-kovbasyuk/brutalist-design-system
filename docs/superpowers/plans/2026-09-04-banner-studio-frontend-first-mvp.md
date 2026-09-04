@@ -151,7 +151,7 @@ git commit -m "feat: add MVP workflow contracts"
 - Gateway methods: `listCampaigns()`, `getCampaign(id)`, `createCampaign(input, meta)`, `performAction(id, action, input, meta)`, `reset()`.
 - `meta` is `{ actor, idempotencyKey }`.
 
-- [ ] **Step 1: Write failing persistence and idempotency tests**
+- [x] **Step 1: Write failing persistence and idempotency tests**
 
 ```js
 test('persists a created campaign across gateway instances', async () => {
@@ -168,19 +168,19 @@ test('returns the first result for a repeated idempotency key', async () => {
 })
 ```
 
-- [ ] **Step 2: Run and confirm RED**
+- [x] **Step 2: Run and confirm RED**
 
 Run: `npm test -- --run src/mvp/mockCampaignGateway.test.js`
 
-- [ ] **Step 3: Implement the asynchronous gateway**
+- [x] **Step 3: Implement the asynchronous gateway**
 
 Storage key: `banner-studio:mvp:v1`. Store `{ campaigns, idempotencyResults }`. Validate every read and write through `campaignSchema`.
 
-- [ ] **Step 4: Run and confirm GREEN**
+- [x] **Step 4: Run and confirm GREEN**
 
 Run: `npm test -- --run src/mvp/mockCampaignGateway.test.js`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/mvp/gateway.js src/mvp/fixtures.js src/mvp/mockCampaignGateway.js src/mvp/mockCampaignGateway.test.js
