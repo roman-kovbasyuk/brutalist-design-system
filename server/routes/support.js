@@ -39,6 +39,12 @@ export function setRevisionEtag(reply, resource) {
   return resource
 }
 
+export function strictResponse(schema, request, payload) {
+  const parsed = schema.safeParse({ ...payload, requestId: request.id })
+  if (!parsed.success) throw new Error('Service response violated its API contract')
+  return parsed.data
+}
+
 export async function requireActor(request, resolveActor, allowedRoles = roleSchema.options) {
   const actor = await resolveActor(request)
   if (!actor) throw new PublicApiError(401, 'unauthorized', 'Authentication is required')

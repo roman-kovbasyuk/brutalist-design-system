@@ -4,7 +4,10 @@ import { templateManifestSchema } from './templateManifest.js'
 
 const nonEmptyString = z.string().trim().min(1)
 const nullableAssetId = nonEmptyString.nullable().optional()
-const timestampSchema = z.string().datetime({ offset: true })
+const timestampSchema = z.union([
+  z.date().transform((value) => value.toISOString()),
+  z.string().datetime({ offset: true }),
+])
 const requestIdSchema = nonEmptyString.max(128)
 
 export const roleSchema = z.enum(['marketer', 'designer', 'admin'])
@@ -65,7 +68,10 @@ const persistedCampaignFields = {
   createdBy: nonEmptyString,
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
+  archivedAt: timestampSchema.nullable(),
 }
+
+export const campaignRecordSchema = z.strictObject(persistedCampaignFields)
 
 export const campaignResponseSchema = z.strictObject({
   ...persistedCampaignFields,
@@ -73,7 +79,7 @@ export const campaignResponseSchema = z.strictObject({
 })
 
 export const campaignListResponseSchema = z.strictObject({
-  campaigns: z.array(z.strictObject(persistedCampaignFields)),
+  campaigns: z.array(campaignRecordSchema),
   requestId: requestIdSchema,
 })
 

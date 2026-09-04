@@ -4,6 +4,7 @@ import { registerCampaignRoutes } from './routes/campaigns.js'
 import { registerTemplateRoutes } from './routes/templates.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerSettingsRoutes } from './routes/settings.js'
+import { apiErrorResponseSchema } from '../shared/contracts.js'
 
 const safeRequestId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
@@ -69,11 +70,11 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
     registerSettingsRoutes(app, dependencies)
   }
 
-  app.setNotFoundHandler((request, reply) => reply.code(404).send(errorEnvelope(
+  app.setNotFoundHandler((request, reply) => reply.code(404).send(apiErrorResponseSchema.parse(errorEnvelope(
     'NOT_FOUND',
     'Route not found',
     request.id,
-  )))
+  ))))
 
   app.setErrorHandler((error, request, reply) => {
     const statusCode = error.statusCode >= 400 && error.statusCode < 600
@@ -81,12 +82,12 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
       : 500
 
     const exposed = error.expose === true && statusCode !== 500
-    reply.code(statusCode).send(errorEnvelope(
+    reply.code(statusCode).send(apiErrorResponseSchema.parse(errorEnvelope(
       exposed ? error.code : (statusCode === 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR'),
       exposed ? error.publicMessage : (statusCode === 500 ? 'An unexpected error occurred' : 'Request could not be processed'),
       request.id,
       exposed ? error.details : undefined,
-    ))
+    )))
   })
 
   return app

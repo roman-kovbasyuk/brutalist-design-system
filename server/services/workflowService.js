@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { campaignPatchRequestSchema, createCampaignRequestSchema, createInvitationRequestSchema, createTemplateVersionRequestSchema, settingsPatchRequestSchema } from '../../shared/contracts.js'
+import { campaignPatchRequestSchema, campaignRecordSchema, createCampaignRequestSchema, createInvitationRequestSchema, createTemplateVersionRequestSchema, settingsPatchRequestSchema } from '../../shared/contracts.js'
 import { hashCanonical } from '../../shared/canonicalJson.js'
 import { withTransaction } from '../db/pool.js'
 import { createCampaignRepository } from '../repositories/campaignRepository.js'
@@ -53,9 +53,9 @@ function missing(name) {
   return new WorkflowServiceError(404, 'not_found', `${name} was not found`)
 }
 
-function campaignUpdateInput(campaign, expectedRevision) {
+function campaignUpdateInput(id, campaign, expectedRevision) {
   return {
-    id: campaign.id,
+    id,
     expectedRevision,
     title: campaign.title,
     brief: campaign.brief,
@@ -66,6 +66,19 @@ function campaignUpdateInput(campaign, expectedRevision) {
     currentVersionNumber: campaign.currentVersionNumber,
     openVersionId: campaign.openVersionId,
   }
+}
+
+function lockedCampaignSnapshot(value) {
+  const parsed = campaignRecordSchema.safeParse(value)
+  if (!parsed.success) throw new Error('Persistence returned an invalid campaign state')
+  return structuredClone(parsed.data)
+}
+
+function commandCampaignResult(value, lockedId) {
+  const parsed = campaignRecordSchema.safeParse(value)
+  if (!parsed.success) throw new WorkflowServiceError(409, 'invalid_campaign_result', 'Campaign command returned an invalid state')
+  if (parsed.data.id !== lockedId) throw new WorkflowServiceError(409, 'campaign_identity_mismatch', 'Campaign commands cannot change campaign identity')
+  return parsed.data
 }
 
 export function createWorkflowService({
@@ -105,18 +118,23 @@ export function createWorkflowService({
       const campaigns = repositories.campaign(client)
       const current = await campaigns.findByIdForUpdate(campaignId)
       if (!current) throw missing('Campaign')
-      if (current.revision !== expectedRevision) throw revisionConflict()
+      const snapshot = lockedCampaignSnapshot(current)
+      const lockedId = snapshot.id
+      if (snapshot.revision !== expectedRevision) throw revisionConflict()
 
-      const validation = await validateCommand({ campaign: current, actor })
+      const validation = await validateCommand({ campaign: structuredClone(snapshot), actor })
       if (validation !== true) {
         if (validation instanceof Error) throw validation
         throw new WorkflowServiceError(409, 'command_rejected', 'The command is not valid for the current campaign')
       }
 
-      const desired = await apply(current)
+      const desired = commandCampaignResult(await apply(structuredClone(snapshot)), lockedId)
       let persisted
       try {
-        persisted = await campaigns.updateState(campaignUpdateInput(desired, expectedRevision))
+        persisted = commandCampaignResult(
+          await campaigns.updateState(campaignUpdateInput(lockedId, desired, expectedRevision)),
+          lockedId,
+        )
       } catch (error) {
         if (error?.code === 'revision_conflict') throw revisionConflict()
         if (error?.code === 'not_found') throw missing('Campaign')
@@ -128,8 +146,8 @@ export function createWorkflowService({
         actorRole: actor.role,
         action,
         entityType: 'campaign',
-        entityId: campaignId,
-        beforeStatus: current.status,
+        entityId: lockedId,
+        beforeStatus: snapshot.status,
         afterStatus: persisted.status,
         payload: auditPayload,
       })
@@ -177,6 +195,38 @@ export function createWorkflowService({
         validate: () => true,
         apply: (campaign) => ({ ...campaign, ...command }),
         auditPayload: { changedFields },
+      })
+    },
+
+    async archiveCampaign({ actor, campaignId, expectedRevision }) {
+      requireRole(actor, campaignEditors)
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+        throw new WorkflowServiceError(400, 'invalid_revision', 'Expected revision must be a non-negative integer')
+      }
+      return transaction(pool, async (client) => {
+        const campaigns = repositories.campaign(client)
+        const current = await campaigns.findByIdForUpdate(campaignId)
+        if (!current) throw missing('Campaign')
+        const snapshot = lockedCampaignSnapshot(current)
+        if (snapshot.revision !== expectedRevision) throw revisionConflict()
+        const archivedAt = clock()
+        let archived
+        try {
+          archived = commandCampaignResult(
+            await campaigns.archive({ id: snapshot.id, expectedRevision, archivedAt }),
+            snapshot.id,
+          )
+        } catch (error) {
+          if (error?.code === 'revision_conflict') throw revisionConflict()
+          if (error?.code === 'not_found') throw missing('Campaign')
+          throw error
+        }
+        await audit(client, {
+          actorId: actor.id, actorRole: actor.role, action: 'campaign.archived',
+          entityType: 'campaign', entityId: snapshot.id, beforeStatus: snapshot.status,
+          afterStatus: snapshot.status, payload: {},
+        })
+        return archived
       })
     },
 

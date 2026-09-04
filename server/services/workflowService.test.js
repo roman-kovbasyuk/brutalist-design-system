@@ -10,13 +10,16 @@ const currentCampaign = {
   id: 'campaign-1', title: 'Autumn', brief, status: 'draft', revision: 2,
   selectedCopyId: null, selectedDirectionId: null, compositionId: null,
   currentVersionNumber: 0, openVersionId: null, createdBy: actor.id,
+  archivedAt: null,
+  createdAt: new Date('2026-09-01T10:00:00.000Z'), updatedAt: new Date('2026-09-01T10:00:00.000Z'),
 }
 
 function harness(overrides = {}) {
   const calls = []
   const campaignRepository = {
     findByIdForUpdate: vi.fn(async () => { calls.push('lock/load'); return currentCampaign }),
-    updateState: vi.fn(async (input) => { calls.push('persist'); return { ...currentCampaign, ...input, revision: input.expectedRevision + 1 } }),
+    updateState: vi.fn(async ({ expectedRevision, ...input }) => { calls.push('persist'); return { ...currentCampaign, ...input, revision: expectedRevision + 1 } }),
+    archive: vi.fn(async (input) => { calls.push('persist'); return { ...currentCampaign, archivedAt: input.archivedAt, revision: input.expectedRevision + 1 } }),
     create: vi.fn(async (input) => ({ ...currentCampaign, ...input, revision: 0 })),
     findById: vi.fn(async () => currentCampaign),
     list: vi.fn(async () => [currentCampaign]),
@@ -98,6 +101,45 @@ describe('workflow service', () => {
     expect(validate).not.toHaveBeenCalled()
     expect(campaignRepository.updateState).not.toHaveBeenCalled()
     expect(auditRepository.append).not.toHaveBeenCalled()
+  })
+
+  test('isolates callback mutation and fences campaign identity and invalid resulting state', async () => {
+    const { service, calls, campaignRepository, auditRepository } = harness()
+
+    await service.executeCampaignCommand({
+      actor, campaignId: 'campaign-1', expectedRevision: 2, action: 'campaign.updated', validate: () => true,
+      apply: (candidate) => {
+        candidate.status = 'copy_ready'
+        return candidate
+      },
+    })
+    expect(auditRepository.append).toHaveBeenCalledWith(expect.objectContaining({ beforeStatus: 'draft', afterStatus: 'copy_ready', entityId: 'campaign-1' }))
+    expect(currentCampaign.status).toBe('draft')
+
+    calls.length = 0
+    campaignRepository.updateState.mockClear()
+    auditRepository.append.mockClear()
+    await expect(service.executeCampaignCommand({
+      actor, campaignId: 'campaign-1', expectedRevision: 2, action: 'campaign.updated', validate: () => true,
+      apply: (candidate) => ({ ...candidate, id: 'campaign-2' }),
+    })).rejects.toMatchObject({ statusCode: 409, code: 'campaign_identity_mismatch' })
+    await expect(service.executeCampaignCommand({
+      actor, campaignId: 'campaign-1', expectedRevision: 2, action: 'campaign.updated', validate: () => true,
+      apply: (candidate) => ({ ...candidate, status: 'not-a-state' }),
+    })).rejects.toMatchObject({ statusCode: 409, code: 'invalid_campaign_result' })
+    expect(campaignRepository.updateState).not.toHaveBeenCalled()
+    expect(auditRepository.append).not.toHaveBeenCalled()
+  })
+
+  test('soft-archives after lock/revision validation and preserves an audit trail', async () => {
+    const { service, calls, campaignRepository, auditRepository } = harness()
+
+    const archived = await service.archiveCampaign({ actor, campaignId: 'campaign-1', expectedRevision: 2 })
+
+    expect(calls).toEqual(['lock/load', 'persist', 'audit'])
+    expect(archived).toMatchObject({ id: 'campaign-1', revision: 3, archivedAt: '2026-09-04T10:00:00.000Z' })
+    expect(campaignRepository.archive).toHaveBeenCalledWith({ id: 'campaign-1', expectedRevision: 2, archivedAt: new Date('2026-09-04T10:00:00.000Z') })
+    expect(auditRepository.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'campaign.archived', entityId: 'campaign-1', beforeStatus: 'draft', afterStatus: 'draft' }))
   })
 
   test('uses the campaign command path for strict title and brief patches', async () => {

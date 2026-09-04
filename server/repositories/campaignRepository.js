@@ -14,6 +14,7 @@ function mapCampaign(row) {
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
   }
 }
 
@@ -53,18 +54,18 @@ export function createCampaignRepository(client) {
     },
 
     async findById(id) {
-      const result = await client.query('SELECT * FROM campaigns WHERE id = $1', [id])
+      const result = await client.query('SELECT * FROM campaigns WHERE id = $1 AND archived_at IS NULL', [id])
       return mapCampaign(result.rows[0])
     },
 
     async findByIdForUpdate(id) {
-      const result = await client.query('SELECT * FROM campaigns WHERE id = $1 FOR UPDATE', [id])
+      const result = await client.query('SELECT * FROM campaigns WHERE id = $1 AND archived_at IS NULL FOR UPDATE', [id])
       return mapCampaign(result.rows[0])
     },
 
     async list({ limit = 50, offset = 0 } = {}) {
       const result = await client.query(
-        'SELECT * FROM campaigns ORDER BY created_at DESC, id LIMIT $1 OFFSET $2',
+        'SELECT * FROM campaigns WHERE archived_at IS NULL ORDER BY created_at DESC, id LIMIT $1 OFFSET $2',
         [limit, offset],
       )
       return result.rows.map(mapCampaign)
@@ -94,7 +95,7 @@ export function createCampaignRepository(client) {
              open_version_id = $10,
              revision = revision + 1,
              updated_at = now()
-         WHERE id = $1 AND revision = $2
+         WHERE id = $1 AND revision = $2 AND archived_at IS NULL
          RETURNING *`,
         [id, expectedRevision, title, brief, status, selectedCopyId, selectedDirectionId, compositionId, currentVersionNumber, openVersionId],
       )
@@ -102,6 +103,24 @@ export function createCampaignRepository(client) {
 
       const existing = await client.query('SELECT revision FROM campaigns WHERE id = $1', [id])
       if (existing.rowCount === 0) {
+        const error = new Error(`Campaign ${id} was not found`)
+        error.code = 'not_found'
+        throw error
+      }
+      throw new RevisionConflictError(id, expectedRevision)
+    },
+
+    async archive({ id, expectedRevision, archivedAt }) {
+      const result = await client.query(
+        `UPDATE campaigns
+         SET archived_at = $3, revision = revision + 1, updated_at = $3
+         WHERE id = $1 AND revision = $2 AND archived_at IS NULL
+         RETURNING *`,
+        [id, expectedRevision, archivedAt],
+      )
+      if (result.rowCount > 0) return mapCampaign(result.rows[0])
+      const existing = await client.query('SELECT revision, archived_at FROM campaigns WHERE id = $1', [id])
+      if (existing.rowCount === 0 || existing.rows[0].archived_at !== null) {
         const error = new Error(`Campaign ${id} was not found`)
         error.code = 'not_found'
         throw error

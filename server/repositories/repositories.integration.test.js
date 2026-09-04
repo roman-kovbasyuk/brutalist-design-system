@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Pool } from 'pg'
 import { runMigrations } from '../db/migrate.js'
 import { withTransaction } from '../db/pool.js'
@@ -13,6 +13,7 @@ import { createUserRepository } from './userRepository.js'
 import { createAuditRepository } from './auditRepository.js'
 import { createIdempotencyRepository } from './idempotencyRepository.js'
 import { createWorkflowService } from '../services/workflowService.js'
+import { createIdempotencyService } from '../services/idempotencyService.js'
 import { buildApp } from '../app.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql:///banner_studio_test'
@@ -106,8 +107,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(3)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql'])
+    expect(tracked.rows).toHaveLength(4)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -205,11 +206,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql'])
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
     expect(await createTemplateRepository(pool).listLatest())
@@ -307,6 +308,32 @@ describe('persistent workflow API checkpoint', () => {
     await restartedApp.close()
     await restartedPool.end()
     pools.delete(restartedPool)
+  })
+
+  test('soft-archives through DELETE while preserving the campaign and history rows', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool, { role: 'admin' })
+    const actor = { id: actorId, role: 'admin', disabled: false }
+    const created = await insertCampaign(pool, actorId, { id: 'archive-campaign' })
+    const version = await insertVersion(pool, created.id, actorId, { id: 'archive-version' })
+    const service = createWorkflowService({ pool, clock: () => new Date('2026-09-04T12:00:00.000Z') })
+    const app = buildApp({ resolveActor: async () => actor, workflowService: service })
+
+    const response = await app.inject({ method: 'DELETE', url: `/api/v1/campaigns/${created.id}`, headers: { 'if-match': '"0"' } })
+
+    expect(response.statusCode).toBe(204)
+    expect(response.headers.etag).toBe('"1"')
+    expect((await app.inject({ method: 'GET', url: `/api/v1/campaigns/${created.id}` })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'GET', url: '/api/v1/campaigns' })).json().campaigns).toEqual([])
+    expect(await createCampaignRepository(pool).findById(created.id)).toBeNull()
+    expect((await pool.query('SELECT archived_at, revision FROM campaigns WHERE id = $1', [created.id])).rows[0])
+      .toEqual({ archived_at: new Date('2026-09-04T12:00:00.000Z'), revision: 1 })
+    expect((await pool.query('SELECT id FROM campaign_versions WHERE id = $1', [version.id])).rows).toEqual([{ id: version.id }])
+    expect(await createAuditRepository(pool).listForEntity({ entityType: 'campaign', entityId: created.id }))
+      .toEqual([expect.objectContaining({ action: 'campaign.archived', entityId: created.id })])
+    await app.close()
+    await pool.end()
+    pools.delete(pool)
   })
 })
 
@@ -584,6 +611,123 @@ describe('supporting repositories', () => {
 })
 
 describe('idempotency coordination', () => {
+  test('reclaims expired leases after process death and fences the original owner token', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    const repository = createIdempotencyRepository(pool)
+    const scope = { actorId, method: 'POST', resourceId: 'lease-campaign', key: 'lease-key', fingerprint: 'a'.repeat(64) }
+
+    expect(await repository.claim({ ...scope, ownerToken: 'owner-1', now: new Date('2026-09-04T10:00:00Z'), leaseExpiresAt: new Date('2026-09-04T10:00:10Z') }))
+      .toEqual({ kind: 'owner' })
+    expect(await repository.claim({ ...scope, ownerToken: 'owner-2', now: new Date('2026-09-04T10:00:05Z'), leaseExpiresAt: new Date('2026-09-04T10:00:15Z') }))
+      .toEqual({ kind: 'in_progress' })
+    expect(await repository.claim({ ...scope, ownerToken: 'owner-2', now: new Date('2026-09-04T10:00:11Z'), leaseExpiresAt: new Date('2026-09-04T10:00:21Z') }))
+      .toEqual({ kind: 'owner' })
+    await expect(repository.fail({ ...scope, ownerToken: 'owner-1', failureCode: 'late_owner_failure' }))
+      .rejects.toMatchObject({ code: 'idempotency_owner_conflict' })
+    expect(await repository.find(scope)).toMatchObject({
+      state: 'in_progress', ownerToken: 'owner-2', leaseExpiresAt: new Date('2026-09-04T10:00:21Z'),
+    })
+
+    await withTransaction(pool, async (client) => {
+      const transactional = createIdempotencyRepository(client)
+      expect(await transactional.lockOwner({ ...scope, ownerToken: 'owner-1', now: new Date('2026-09-04T10:00:11Z') })).toBeNull()
+      expect(await transactional.lockOwner({ ...scope, ownerToken: 'owner-2', now: new Date('2026-09-04T10:00:11Z') }))
+        .toMatchObject({ ownerToken: 'owner-2', state: 'in_progress' })
+    })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('row locking prevents concurrent expired-lease takeover while the owner transaction commits', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    const repository = createIdempotencyRepository(pool)
+    const scope = { actorId, method: 'POST', resourceId: 'locked-campaign', key: 'locked-key', fingerprint: 'b'.repeat(64) }
+    await repository.claim({ ...scope, ownerToken: 'owner-1', now: new Date('2026-09-04T10:00:00Z'), leaseExpiresAt: new Date('2026-09-04T10:00:10Z') })
+
+    const client = await pool.connect()
+    await client.query('BEGIN')
+    const transactional = createIdempotencyRepository(client)
+    expect(await transactional.lockOwner({ ...scope, ownerToken: 'owner-1', now: new Date('2026-09-04T10:00:05Z') })).toBeTruthy()
+    let takeoverSettled = false
+    const takeover = repository.claim({
+      ...scope, ownerToken: 'owner-2', now: new Date('2026-09-04T10:00:11Z'), leaseExpiresAt: new Date('2026-09-04T10:00:21Z'),
+    }).finally(() => { takeoverSettled = true })
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(takeoverSettled).toBe(false)
+    await transactional.complete({ ...scope, ownerToken: 'owner-1', responseStatus: 200, responseBody: { committed: true } })
+    await client.query('COMMIT')
+    client.release()
+
+    expect(await takeover).toEqual({ kind: 'replay', responseStatus: 200, responseBody: { committed: true } })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('rolls domain writes back when response completion fails in the owner transaction', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    const repositoryFactory = (client) => {
+      const repository = createIdempotencyRepository(client)
+      return { ...repository, complete: async () => { throw new Error('forced completion failure') } }
+    }
+    const service = createIdempotencyService({ pool, repositoryFactory, idGenerator: () => 'rollback-owner' })
+
+    await expect(service.executeDatabaseCommand({
+      actorId, method: 'POST', resourceId: 'rollback-campaign', key: 'rollback-key', payload: { title: 'Rollback' },
+      operation: async (client) => {
+        await createCampaignRepository(client).create({ id: 'rolled-back-campaign', title: 'Rollback', brief: { product: 'P', audience: 'A', objective: 'O', offer: '', locale: 'en', notes: '' }, createdBy: actorId })
+        return { status: 201, body: { id: 'rolled-back-campaign' } }
+      },
+    })).rejects.toThrow('forced completion failure')
+
+    expect((await pool.query('SELECT id FROM campaigns WHERE id = $1', ['rolled-back-campaign'])).rowCount).toBe(0)
+    expect(await createIdempotencyRepository(pool).find({ actorId, method: 'POST', resourceId: 'rollback-campaign', key: 'rollback-key' }))
+      .toMatchObject({ state: 'failed', ownerToken: 'rollback-owner' })
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('persists JSON null and replays it instead of violating SQL null constraints', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    let ownerNumber = 0
+    const service = createIdempotencyService({ pool, idGenerator: () => `null-owner-${++ownerNumber}` })
+    const operation = vi.fn(async () => ({ status: 204, body: null }))
+    const command = { actorId, method: 'POST', resourceId: 'null-campaign', key: 'null-key', payload: {}, operation }
+
+    expect(await service.executeDatabaseCommand(command)).toEqual({ status: 204, body: null, replayed: false })
+    expect(await service.executeDatabaseCommand(command)).toEqual({ status: 204, body: null, replayed: true })
+    expect(operation).toHaveBeenCalledOnce()
+    await pool.end()
+    pools.delete(pool)
+  })
+
+  test('replays a committed response after the caller loses the commit response', async () => {
+    const pool = makePool()
+    const actorId = await insertUser(pool)
+    let loseResponse = true
+    const commitThenLose = async (targetPool, operation) => {
+      const result = await withTransaction(targetPool, operation)
+      if (loseResponse) {
+        loseResponse = false
+        throw new Error('connection lost after commit')
+      }
+      return result
+    }
+    let ownerNumber = 0
+    const service = createIdempotencyService({ pool, transaction: commitThenLose, idGenerator: () => `loss-owner-${++ownerNumber}` })
+    const operation = vi.fn(async () => ({ status: 201, body: { id: 'committed-version' } }))
+    const command = { actorId, method: 'POST', resourceId: 'loss-campaign', key: 'loss-key', payload: {}, operation }
+
+    await expect(service.executeDatabaseCommand(command)).rejects.toThrow('connection lost after commit')
+    expect(await service.executeDatabaseCommand(command)).toEqual({ status: 201, body: { id: 'committed-version' }, replayed: true })
+    expect(operation).toHaveBeenCalledOnce()
+    await pool.end()
+    pools.delete(pool)
+  })
+
   test('marks owner failures and allows only the same fingerprint to retry ownership', async () => {
     const pool = makePool()
     const actorId = await insertUser(pool)
@@ -609,15 +753,15 @@ describe('idempotency coordination', () => {
   test('enforces the unique actor/method/resource/key scope', async () => {
     const pool = makePool()
     const actorId = await insertUser(pool)
-    const values = [actorId, 'POST', 'campaign-1', 'retry-key', 'f'.repeat(64), 'owner-1']
+    const values = [actorId, 'POST', 'campaign-1', 'retry-key', 'f'.repeat(64), 'owner-1', new Date(Date.now() + 30_000)]
     await pool.query(
-      `INSERT INTO idempotency_records (actor_id, method, resource_id, key, fingerprint, owner_token)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO idempotency_records (actor_id, method, resource_id, key, fingerprint, owner_token, lease_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       values,
     )
     await expect(pool.query(
-      `INSERT INTO idempotency_records (actor_id, method, resource_id, key, fingerprint, owner_token)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO idempotency_records (actor_id, method, resource_id, key, fingerprint, owner_token, lease_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       values,
     )).rejects.toMatchObject({ code: '23505' })
     await pool.end()

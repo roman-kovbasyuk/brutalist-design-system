@@ -16,13 +16,14 @@ All routes are versioned under `/api/v1` and are registered through `buildApp` o
 | `POST` | `/api/v1/campaigns` | Marketer/Admin | response ETag |
 | `GET` | `/api/v1/campaigns/:campaignId` | invited actor | response ETag |
 | `PATCH` | `/api/v1/campaigns/:campaignId` | Marketer/Admin | required quoted integer `If-Match`; response ETag |
+| `DELETE` | `/api/v1/campaigns/:campaignId` | Marketer/Admin | required quoted integer `If-Match`; soft archive; `204` + response ETag |
 | `GET` | `/api/v1/templates` | invited actor | — |
 | `GET` | `/api/v1/templates/:templateId/versions` | invited actor | — |
 | `GET` | `/api/v1/templates/:templateId/versions/:version` | invited actor | — |
 | `POST` | `/api/v1/templates` | Admin | immutable version creation |
 | `GET` | `/api/v1/settings` | invited actor | response ETag |
 | `PATCH` | `/api/v1/settings` | Admin | required quoted integer `If-Match`; response ETag |
-| `POST` | `/api/v1/invitations` | Admin | service-generated ID and seven-day expiry |
+| `POST` | `/api/v1/users/invitations` | Admin | service-generated ID and seven-day expiry |
 | `POST` | `/api/v1/users/:userId/disable` | Admin | explicit command |
 
 Campaign PATCH is a strict `title`/full-`brief` payload. Unknown keys—including status, selections, versions, review/delivery data, open-version fields, and composition/template/slot fields—return `400 invalid_request`. Module 1 exposes no generic action, generation, arbitrary review-event, or delivery route.
@@ -49,18 +50,22 @@ Settings updates and user disable commands use the equivalent lock-first transac
 
 ## Reusable idempotency
 
-`createIdempotencyService` provides:
+`createIdempotencyService` provides a database-only `executeDatabaseCommand` boundary:
 
 - required visible-ASCII keys of 1–255 characters;
 - persistent scope `(actorId, method, resourceId, key)`;
 - canonical JSON SHA-256 payload fingerprints;
-- one persistent owner claim;
-- stored status/body completion and same-fingerprint replay;
+- one short, committed, leased owner claim;
+- a row-locked owner transaction that runs the domain write on the supplied PostgreSQL client and stores status/body before the same commit;
+- owner-token fencing, expired/failed lease recovery, and guarded best-effort failure marking;
+- stored status/body completion (including JSON null) and same-fingerprint replay;
 - `409 idempotency_conflict` for changed payloads;
 - injected-clock/injected-wait polling with a bounded timeout for concurrent callers;
-- deterministic `failed` persistence and same-fingerprint ownership retry after owner failure.
+- rollback of both the domain write and response completion when either part fails.
 
-Migration `003_retryable_idempotency.sql` adds the constrained failed lifecycle. PostgreSQL integration verifies that changed fingerprints remain conflicts while the same fingerprint can reclaim a failed record and complete it.
+Migration `003_retryable_idempotency.sql` adds the constrained failed lifecycle. Forward migration `004_crash_safe_commands.sql` adds lease expiry and campaign archival. PostgreSQL integration verifies changed-payload conflict, failed and expired lease reclaim, old-token fencing, row-lock protection against concurrent takeover, completion-failure rollback, JSON-null replay, and replay after the caller loses a committed response.
+
+This helper must not wrap paid-provider calls. Task 9 must use the persisted generation-job recovery protocol for those external side effects.
 
 Ordinary campaign, template, and settings operations do not require idempotency keys.
 
@@ -110,3 +115,71 @@ The build retains the pre-existing VitePress chunk-size advisory; it does not fa
 - `server/start.js` intentionally does not inject an actor resolver or workflow service yet. Consequently, production startup exposes only the existing health/readiness shell until Task 8 wires authentication and its persistent actor resolver. This preserves the explicit no-insecure-fallback requirement.
 - The public `executeCampaignCommand` service method exists for later narrow paid/version/review/delivery commands, but Task 7 registers no HTTP endpoint for it.
 - Template identity (`id`, `version`, and `name`) must match its immutable manifest; the service computes the canonical manifest hash.
+
+## Fix round 1 — crash safety and review findings
+
+### Root causes addressed
+
+- Domain operations previously ran before a separate completion write, so a completion failure could leave a committed domain change with no replay record.
+- In-progress records had no lease, so process death could leave permanent ownership.
+- PostgreSQL received JavaScript `null` as SQL NULL rather than JSONB `null`.
+- Campaign callbacks received the locked object directly, so mutation could corrupt `beforeStatus`; returned campaign identity/state was not fenced.
+- Success responses were declared in shared schemas but not validated before transmission.
+- Campaign deletion and the documented nested invitation route were missing.
+
+### Exact RED evidence
+
+- `npm test -- --run server/routes/routes.test.js shared/contracts.test.js`
+  - 4 failures observed before route/contract fixes:
+  - campaign DELETE returned `404` instead of required `428` without `If-Match`;
+  - `/api/v1/users/invitations` returned `404` instead of reaching role authorization;
+  - response drift returned `200` instead of failing closed with `500`;
+  - campaign response schema rejected the new `archivedAt` contract.
+- `npm test -- --run server/services/workflowService.test.js`
+  - 2 failures observed before workflow fixes:
+  - callback mutation changed audit `beforeStatus` from `draft` to `copy_ready`;
+  - `archiveCampaign` did not exist.
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "reclaims expired leases|row locking prevents|rolls domain writes back|persists JSON null|replays a committed response|soft-archives"`
+  - 6 targeted failures observed before persistence/service fixes:
+  - DELETE was missing;
+  - expired claims were not reclaimed;
+  - owner row locking did not exist;
+  - the service had no transactional database-command API;
+  - null replay and committed-response-loss replay could not execute under the required boundary.
+
+### Focused GREEN evidence
+
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "reclaims expired leases|rolls domain writes back|persists JSON null|replays a committed response"`
+  - 4 passed, 33 skipped.
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "row locking prevents"`
+  - 1 passed, 36 skipped.
+- `npm test -- --run server/services/idempotencyService.test.js`
+  - 6 passed.
+- `npm test -- --run server/routes/routes.test.js server/app.test.js`
+  - 19 passed.
+- `npm test -- --run server/services/workflowService.test.js shared/contracts.test.js`
+  - 24 passed.
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js`
+  - 37 passed.
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server/repositories/repositories.integration.test.js -t "reclaims expired leases"`
+  - RED follow-up: persisted `leaseExpiresAt` mapped as `undefined`, proving polling could not observe expiry through `find`.
+  - GREEN after selecting/mapping `lease_expires_at`: 1 passed, 36 skipped.
+
+### Fix details
+
+- Added forward migration `004_crash_safe_commands.sql`; prior migrations remain unchanged. It persists lease expiry and a unique owner-token index as well as campaign archival.
+- Campaign DELETE performs a revision-checked soft archive, increments revision, appends `campaign.archived`, returns no body, and preserves campaign/version/audit rows. Archived campaigns are excluded from list and direct GET returns 404.
+- Invitation creation moved to `POST /api/v1/users/invitations`; the former top-level route is not registered.
+- Every Task 7 success response is parsed through its strict shared response schema with the server request ID before transmission. Schema drift produces a generic non-leaking 500.
+- Campaign callbacks receive deep clones. Locked state and callback output are strict-validated, identity cannot change, repository writes and audit entities use the locked ID, and persisted output is revalidated.
+- Leased idempotency claims are committed separately. Owner execution locks and verifies the token/fingerprint/lease, runs database-only work on the transaction client, and stores the response in that transaction. Completion failure rolls back domain work; guarded failure marking and lease expiry provide recovery.
+
+### Fix-round final verification
+
+- `TEST_DATABASE_URL=postgresql:///banner_studio_test npm test -- --run server shared`
+  - 9 test files passed.
+  - 139 tests passed.
+- `npm run build`
+  - exit 0.
+  - Vite application and VitePress builds succeeded.
+  - The pre-existing chunk-size advisory remains non-fatal.

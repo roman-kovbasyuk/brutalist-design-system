@@ -48,6 +48,7 @@ describe('MVP contracts', () => {
       id: 'campaign-1', title: 'Launch', brief, status: 'draft', revision: 0,
       selectedCopyId: null, selectedDirectionId: null, compositionId: null,
       currentVersionNumber: 0, openVersionId: null, createdBy: 'user-1',
+      archivedAt: null,
       createdAt: '2026-09-04T10:00:00.000Z', updatedAt: '2026-09-04T10:00:00.000Z',
       requestId: 'request-1',
     }).success).toBe(true)

@@ -11,6 +11,7 @@ function campaign(overrides = {}) {
     id: 'campaign-1', title: 'Autumn launch', brief, status: 'draft', revision: 0,
     selectedCopyId: null, selectedDirectionId: null, compositionId: null,
     currentVersionNumber: 0, openVersionId: null, createdBy: 'marketer-1',
+    archivedAt: null,
     createdAt: '2026-09-04T10:00:00.000Z', updatedAt: '2026-09-04T10:00:00.000Z',
     ...overrides,
   }
@@ -48,6 +49,7 @@ function services(overrides = {}) {
       displayName: 'Person', disabled: true, createdAt: '2026-09-01T10:00:00.000Z',
       updatedAt: '2026-09-04T10:00:00.000Z',
     })),
+    archiveCampaign: vi.fn(async () => campaign({ revision: 1, archivedAt: '2026-09-04T10:00:00.000Z' })),
     ...overrides,
   }
 }
@@ -99,6 +101,21 @@ describe('versioned workflow routes', () => {
     expect(edited.headers.etag).toBe('"1"')
     expect(workflowService.patchCampaign).toHaveBeenCalledOnce()
     expect(workflowService.patchCampaign).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 0, patch: { title: 'Winter launch' } }))
+    await app.close()
+  })
+
+  test('soft-archives campaigns through revision-protected DELETE with headers and no body', async () => {
+    const { app, workflowService } = makeApp()
+
+    const missing = await app.inject({ method: 'DELETE', url: '/api/v1/campaigns/campaign-1' })
+    const archived = await app.inject({ method: 'DELETE', url: '/api/v1/campaigns/campaign-1', headers: { 'if-match': '"0"' } })
+
+    expect(missing.statusCode).toBe(428)
+    expect(archived.statusCode).toBe(204)
+    expect(archived.body).toBe('')
+    expect(archived.headers.etag).toBe('"1"')
+    expect(archived.headers['x-request-id']).toBeTruthy()
+    expect(workflowService.archiveCampaign).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'campaign-1', expectedRevision: 0 }))
     await app.close()
   })
 
@@ -162,15 +179,17 @@ describe('versioned workflow routes', () => {
 
     expect((await marketer.app.inject({ method: 'GET', url: '/api/v1/settings' })).statusCode).toBe(200)
     expect((await marketer.app.inject({ method: 'PATCH', url: '/api/v1/settings', headers: { 'if-match': '"0"' }, payload: { generationDisabled: true } })).statusCode).toBe(403)
-    expect((await marketer.app.inject({ method: 'POST', url: '/api/v1/invitations', payload: { email: 'PERSON@EXAMPLE.COM', role: 'designer' } })).statusCode).toBe(403)
+    expect((await marketer.app.inject({ method: 'POST', url: '/api/v1/users/invitations', payload: { email: 'PERSON@EXAMPLE.COM', role: 'designer' } })).statusCode).toBe(403)
 
     const settings = await admin.app.inject({ method: 'PATCH', url: '/api/v1/settings', headers: { 'if-match': '"0"' }, payload: { generationDisabled: true } })
-    const invitation = await admin.app.inject({ method: 'POST', url: '/api/v1/invitations', payload: { email: ' PERSON@EXAMPLE.COM ', role: 'designer' } })
+    const invitation = await admin.app.inject({ method: 'POST', url: '/api/v1/users/invitations', payload: { email: ' PERSON@EXAMPLE.COM ', role: 'designer' } })
+    const oldInvitationRoute = await admin.app.inject({ method: 'POST', url: '/api/v1/invitations', payload: { email: 'person@example.com', role: 'designer' } })
     const disabled = await admin.app.inject({ method: 'POST', url: '/api/v1/users/person-1/disable', payload: {} })
 
     expect(settings.statusCode).toBe(200)
     expect(settings.headers.etag).toBe('"1"')
     expect(invitation.statusCode).toBe(201)
+    expect(oldInvitationRoute.statusCode).toBe(404)
     expect(admin.workflowService.createInvitation).toHaveBeenCalledWith(expect.objectContaining({ input: { email: 'person@example.com', role: 'designer' } }))
     expect(disabled.statusCode).toBe(200)
     await Promise.all([marketer.app.close(), admin.app.close()])
@@ -186,6 +205,19 @@ describe('versioned workflow routes', () => {
     ]) {
       expect((await app.inject({ method: 'POST', url, payload: {} })).statusCode).toBe(404)
     }
+    await app.close()
+  })
+
+  test('fails response-schema drift safely without returning undeclared service fields', async () => {
+    const workflowService = services({ getCampaign: vi.fn(async () => campaign({ databaseSecret: 'must-not-leak' })) })
+    const { app } = makeApp({ workflowService })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/campaigns/campaign-1' })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toMatchObject({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' })
+    expect(response.body).not.toContain('databaseSecret')
+    expect(response.body).not.toContain('must-not-leak')
     await app.close()
   })
 })
