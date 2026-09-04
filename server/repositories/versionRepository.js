@@ -52,6 +52,7 @@ function mapAsset(row) {
     generationStatus: row.generation_status,
     generationStep: row.generation_step,
     generationSafety: row.generation_safety,
+    generationRequestFingerprint: row.generation_request_fingerprint,
     generationInput: row.generation_input,
     generationResult: row.generation_result,
   }
@@ -185,7 +186,8 @@ export function createVersionRepository(client) {
       if (!assetId) return null
       const result = await client.query(
         `SELECT a.*, gj.status AS generation_status, gj.step AS generation_step,
-                gj.safety AS generation_safety, gj.input_snapshot AS generation_input,
+                gj.safety AS generation_safety, gj.request_fingerprint AS generation_request_fingerprint,
+                gj.input_snapshot AS generation_input,
                 gj.result_metadata AS generation_result
          FROM assets a
          LEFT JOIN generation_jobs gj ON gj.id = a.generation_job_id AND gj.campaign_id = a.campaign_id
@@ -199,7 +201,8 @@ export function createVersionRepository(client) {
       if (!Array.isArray(assetIds) || assetIds.length === 0) return []
       const result = await client.query(
         `SELECT a.*, gj.status AS generation_status, gj.step AS generation_step,
-                gj.safety AS generation_safety, gj.input_snapshot AS generation_input,
+                gj.safety AS generation_safety, gj.request_fingerprint AS generation_request_fingerprint,
+                gj.input_snapshot AS generation_input,
                 gj.result_metadata AS generation_result
          FROM assets a
          LEFT JOIN generation_jobs gj ON gj.id = a.generation_job_id AND gj.campaign_id = a.campaign_id
@@ -214,7 +217,8 @@ export function createVersionRepository(client) {
       if (!Array.isArray(assetIds) || assetIds.length === 0) return []
       const result = await client.query(
         `SELECT a.*, gj.status AS generation_status, gj.step AS generation_step,
-                gj.safety AS generation_safety, gj.input_snapshot AS generation_input,
+                gj.safety AS generation_safety, gj.request_fingerprint AS generation_request_fingerprint,
+                gj.input_snapshot AS generation_input,
                 gj.result_metadata AS generation_result
          FROM assets a
          LEFT JOIN generation_jobs gj ON gj.id = a.generation_job_id AND gj.campaign_id = a.campaign_id

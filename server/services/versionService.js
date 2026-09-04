@@ -167,8 +167,25 @@ function matchesGeneratedAssetResult(asset) {
     && image.byteSize === asset.byteSize
 }
 
+function verifiedImageInput(asset) {
+  const strict = generateImageInputSchema.safeParse(asset?.generationInput)
+  if (strict.success) return strict.data
+  if (!exactObjectKeys(asset?.generationInput, ['direction']) || !matchesGeneratedAssetResult(asset)) return null
+  const migrated = generateImageInputSchema.safeParse({
+    direction: asset.generationInput.direction,
+    width: asset.width,
+    height: asset.height,
+  })
+  if (!migrated.success) return null
+  const expectedFingerprint = hashCanonical({
+    step: 'image',
+    input: { directionId: migrated.data.direction.id, width: asset.width, height: asset.height },
+  })
+  return asset.generationRequestFingerprint === expectedFingerprint ? migrated.data : null
+}
+
 function verifyImageAssetLineage(asset, direction, { requireGenerated = false } = {}) {
-  const imageInput = generateImageInputSchema.safeParse(asset?.generationInput)
+  const imageInput = verifiedImageInput(asset)
   const validShape = asset && ['direction', 'final_image'].includes(asset.kind)
     && Number.isSafeInteger(asset.byteSize) && asset.byteSize > 0
     && Number.isSafeInteger(asset.width) && asset.width > 0
@@ -177,16 +194,16 @@ function verifyImageAssetLineage(asset, direction, { requireGenerated = false } 
   const generated = asset?.source === 'generation'
     && asset.generationStep === 'image'
     && isSafeGeneration(asset)
-    && imageInput.success
-    && hashCanonical(imageInput.data.direction) === hashCanonical({
+    && imageInput
+    && hashCanonical(imageInput.direction) === hashCanonical({
       id: direction.id,
       title: direction.title,
       prompt: direction.prompt,
       status: 'pending',
       previewAssetId: null,
     })
-    && imageInput.data.width === asset.width
-    && imageInput.data.height === asset.height
+    && imageInput.width === asset.width
+    && imageInput.height === asset.height
     && matchesGeneratedAssetResult(asset)
   const uploaded = asset?.source === 'upload' && asset.generationJobId == null
   if (!validShape || (requireGenerated ? !generated : !(generated || uploaded))) {

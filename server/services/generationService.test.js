@@ -116,6 +116,7 @@ describe('generation service external-call recovery', () => {
     expect(assetStore.get).toHaveBeenCalledWith(expect.objectContaining({ maxBytes: imageBytes.length }))
     expect(controlPlane.completeGeneratedImage).toHaveBeenCalledWith(expect.objectContaining({
       jobId: 'job-1', ownerToken: 'owner-1', directionId: 'direction-1',
+      requestedWidth: 1200, requestedHeight: 628,
       asset: expect.objectContaining({ id: 'asset-1', source: 'generation', kind: 'direction', width: 1200, height: 628, byteSize: imageBytes.length }),
     }))
     expect(provider.generateImage).toHaveBeenCalledOnce()

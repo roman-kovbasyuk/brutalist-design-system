@@ -82,6 +82,28 @@ function conflict(code, message, statusCode = 409) {
   throw new GenerationControlPlaneError(statusCode, code, message)
 }
 
+function exactObjectKeys(value, expected) {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join('\u0000') === [...expected].sort().join('\u0000')
+}
+
+function completionImageInput(current, { directionId, requestedWidth, requestedHeight }) {
+  const strict = generateImageInputSchema.safeParse(current.input_snapshot)
+  if (strict.success) return strict.data
+  if (!exactObjectKeys(current.input_snapshot, ['direction'])) return null
+  const repaired = generateImageInputSchema.safeParse({
+    direction: current.input_snapshot.direction,
+    width: requestedWidth,
+    height: requestedHeight,
+  })
+  if (!repaired.success) return null
+  const expectedFingerprint = hashCanonical({
+    step: 'image',
+    input: { directionId, width: requestedWidth, height: requestedHeight },
+  })
+  return current.request_fingerprint === expectedFingerprint ? repaired.data : null
+}
+
 function validateExpectedRevision(expectedRevision) {
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
     throw new GenerationControlPlaneError(400, 'invalid_revision', 'Expected revision must be a non-negative integer')
@@ -471,7 +493,7 @@ export function createGenerationControlPlane({
       })
     },
 
-    async completeGeneratedImage({ jobId, ownerToken, directionId, asset, safety, usage, actualCostMicrounits, completedAt }) {
+    async completeGeneratedImage({ jobId, ownerToken, directionId, requestedWidth, requestedHeight, asset, safety, usage, actualCostMicrounits, completedAt }) {
       safeMicrounits(actualCostMicrounits, 'actualCostMicrounits')
       return transaction(pool, async (client) => {
         const deadlineResult = await client.query(
@@ -494,9 +516,9 @@ export function createGenerationControlPlane({
         if (current.step !== 'image' || current.campaign_id !== asset.campaignId || current.id !== asset.generationJobId) {
           conflict('generation_asset_mismatch', 'Generated asset does not match its image job')
         }
-        const imageInput = generateImageInputSchema.safeParse(current.input_snapshot)
-        if (!imageInput.success || imageInput.data.direction.id !== directionId
-          || imageInput.data.width !== asset.width || imageInput.data.height !== asset.height) {
+        const imageInput = completionImageInput(current, { directionId, requestedWidth, requestedHeight })
+        if (!imageInput || imageInput.direction.id !== directionId
+          || imageInput.width !== asset.width || imageInput.height !== asset.height) {
           conflict('generation_direction_mismatch', 'Generated image direction does not match its job snapshot')
         }
         if (BigInt(actualCostMicrounits) > BigInt(current.reserved_cost_microunits)) {
@@ -547,10 +569,10 @@ export function createGenerationControlPlane({
         const updated = await client.query(
           `UPDATE generation_jobs
            SET status = 'succeeded', safety = $3, usage = $4, actual_cost_microunits = $5,
-               result_metadata = $6, error_code = NULL, completed_at = $7, updated_at = $7
+               result_metadata = $6, input_snapshot = $7, error_code = NULL, completed_at = $8, updated_at = $8
            WHERE id = $1 AND owner_token = $2 AND clock_timestamp() < timeout_at
            RETURNING *`,
-          [jobId, ownerToken, safety, usage, actualCostMicrounits, persistedResult, completedAt],
+          [jobId, ownerToken, safety, usage, actualCostMicrounits, persistedResult, imageInput, completedAt],
         )
         if (updated.rowCount !== 1) throw persistenceDeadlineError()
         return storeResponse(client, updated.rows[0], 201)

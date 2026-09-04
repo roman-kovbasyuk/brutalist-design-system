@@ -335,6 +335,8 @@ export function createGenerationService({
           jobId: prepared.job.id,
           ownerToken: prepared.ownerToken,
           directionId: command.directionId,
+          requestedWidth: command.width,
+          requestedHeight: command.height,
           asset,
           safety: result.safety,
           usage: result.usage,
