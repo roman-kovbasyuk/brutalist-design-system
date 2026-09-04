@@ -2,6 +2,7 @@ export const pilotCampaignFixture = {
   id: 'campaign-fast-track-norwegian',
   title: 'Fast-Track Norwegian launch',
   status: 'composed',
+  revision: 0,
   brief: {
     product: 'Fast-Track Norwegian intensive',
     audience: 'People preparing to move to Oslo',

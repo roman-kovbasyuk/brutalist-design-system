@@ -1,7 +1,7 @@
 # Banner Studio Lean MVP — Product and Technical Design
 
 **Date:** 2026-09-04  
-**Status:** Approved architecture direction; written specification pending final review  
+**Status:** Approved for modular implementation
 **Product:** Banner Studio  
 **Deployment:** Google Cloud, `europe-west6`
 
@@ -71,9 +71,9 @@ The MVP is not a frontend demo. Campaigns, generation jobs, versions, review eve
 | --- | --- | --- |
 | Marketer | Create campaigns, edit briefs, generate/select content, compose, send for review, approve/reject, export | Mark a version ready, manage users or provider settings |
 | Designer | Open review versions, attach a Figma URL, mark ready, request changes | Generate content, approve, export, manage settings |
-| Admin | Invite users, manage provider/model allowlist and limits, use marketer capabilities | Mark a version ready unless the account is explicitly assigned the Designer role |
+| Admin | Invite users, manage provider/model allowlist and limits, use marketer capabilities | Mark a version ready; Designer remains a separate role |
 
-A user has one role in the MVP. The user who marks a version ready cannot approve that version.
+A user has one role in the MVP. Admin includes Marketer capabilities but never Designer capabilities. The user who marks a version ready cannot approve that version.
 
 ## 5. Workflow and state machine
 
@@ -127,6 +127,24 @@ stateDiagram-v2
 
 Any missing transition returns `409 transition_not_allowed`. Wrong-role actions return `403 forbidden`.
 
+### State ownership and locking
+
+- `campaigns.status` is the authoritative current workflow status. It changes only through a command service in the same database transaction as its side effects and audit event.
+- `campaign_versions` has no mutable status column. A version's review status is derived from append-only `review_events`.
+- `in_review` and `ready` are open-version states. `changes_requested`, `approved`, and `delivered` close the review round.
+- `delivered` is a campaign status and requires a persisted `deliveries` row.
+- Campaign content is locked while status is `in_review`, `ready`, `approved`, or `delivered`. Editing resumes only after Request changes or Reject followed by Reopen.
+
+### Edits and stale data
+
+| Change | New campaign status | Cleared selection or confirmation | Retained history |
+| --- | --- | --- | --- |
+| Brief | `draft` | Selected copy, selected direction, composition confirmation | Earlier copy sets, directions, assets, and compositions marked stale |
+| Selected or edited copy | `copy_ready` | Selected direction, composition confirmation | Earlier directions, assets, and compositions marked stale |
+| Selected direction | `direction_selected` | Composition confirmation | Earlier compositions marked stale |
+
+Generated records and assets are never silently deleted. They remain historical and cannot satisfy workflow guards while stale.
+
 ## 6. Version and review model
 
 A `CampaignVersion` is created only by **Send for review**.
@@ -141,6 +159,11 @@ It copies, rather than references mutable values:
 - validation and safety results.
 
 The version receives a canonical JSON hash. Versions and review events are append-only.
+
+- The snapshot includes the complete normalized template manifest and its SHA-256, not only a semantic version string.
+- Version allocation locks the campaign row and enforces unique `(campaign_id, number)`.
+- Version creation, campaign transition, initial review event, audit event, and asset records are one idempotent command.
+- Objects uploaded before a failed database transaction are recorded for cleanup.
 
 ### Figma boundary
 
@@ -213,8 +236,9 @@ Every result includes:
 - region;
 - usage and estimated cost when available;
 - safety verdict;
-- schema-validated content;
-- generation job ID.
+- schema-validated content.
+
+The generation service owns the job ID and lifecycle. Providers only return provider results or normalized errors.
 
 Provider and model are selected from a server-controlled allowlist. Region and endpoint are deployment configuration, not arbitrary user input. Admin settings may select an allowed provider/model, set regeneration caps, set the daily budget, and activate the kill switch.
 
@@ -222,8 +246,8 @@ Provider and model are selected from a server-controlled allowlist. Region and e
 
 ### Checkpoints
 
-1. **Brief:** length limits, required fields, personal-data warning, injection-pattern scan.
-2. **Copy:** provider safety result, required-claim grounding, forbidden-claim check, template text limits.
+1. **Brief:** length limits, required fields, personal-data warning, and clear separation between user data and provider instructions.
+2. **Copy:** provider safety result, forbidden-claim review flag, and template text limits.
 3. **Image direction and output:** provider safety result; blocked output is visible but cannot be selected.
 4. **Composition:** slot length, safe area, supported ratio, minimum readable size.
 
@@ -239,7 +263,9 @@ Provider and model are selected from a server-controlled allowlist. Region and e
 | `over_budget` | No retry | Admin must change limit |
 | `kill_switch_active` | No retry | Generation temporarily disabled |
 
-Before a paid call, the API checks authentication, the kill switch, per-step regeneration cap, daily budget, and idempotency key.
+Before a paid call, the API checks authentication, the kill switch, per-step regeneration cap, daily budget, and idempotency key. Budget accounting uses integer USD microunits and a UTC calendar day. The service reserves the configured maximum call cost transactionally before dispatch and releases the unused amount after a known result.
+
+Generation jobs use `pending`, `succeeded`, `failed`, `blocked`, and `unknown`. If the process dies or times out after dispatch, the job becomes `unknown`; it is never automatically retried because the provider may already have charged for it. Reserved cost remains counted until an Admin explicitly reconciles the job.
 
 ## 10. Data model
 
@@ -247,24 +273,37 @@ Before a paid call, the API checks authentication, the kill switch, per-step reg
 | --- | --- |
 | `users` | Invited identity and one role. |
 | `settings` | Allowed provider/model choice, limits, budget, kill switch; admin-only. |
-| `campaigns` | Brief, current status, current selections, current version number. |
+| `campaigns` | Brief, authoritative current status, current selections, current version number, and integer `revision` for optimistic concurrency. |
 | `copy_sets` | Append-only generated candidate sets; one selected candidate per campaign. |
 | `visual_directions` | Generated direction records and image assets with ready/blocked/failed status. |
 | `compositions` | Template version, slot values, validation result, stale flag. |
-| `generation_jobs` | One row per provider call with status, model, safety, usage, cost, attempts, idempotency key. |
+| `generation_jobs` | One row per provider call with status including `unknown`, model, safety, usage, reserved and actual cost microunits, attempts, timeout, and idempotency key. |
 | `assets` | Private object location, MIME type, dimensions, SHA-256, source, campaign/version association. |
 | `campaign_versions` | Immutable numbered snapshot and canonical hash. |
 | `review_events` | Append-only sent/changes-requested/ready/approved/rejected/delivered history. |
 | `deliveries` | One ZIP per approved version. |
 | `audit_events` | Actor, role, action, entity, before/after status, version, timestamp. |
 
-Database constraints enforce one active review version per campaign, one delivery per approved version, and unique idempotency keys per actor and endpoint.
+Database constraints enforce one active review version per campaign, one delivery per approved version, unique `(campaign_id, version_number)`, append-only versions/events/audit, and unique idempotency scope.
+
+### Idempotency and concurrency
+
+- Commands that create spend, versions, review transitions, or deliveries require `Idempotency-Key`.
+- Scope is `(actor_id, HTTP method, resource_id, key)`.
+- The server stores a canonical request fingerprint, response status, and response body.
+- A concurrent request with the same scope waits for the first command and receives its stored result.
+- Reusing a key with a different fingerprint returns `409 idempotency_conflict`.
+- Retrying a successful command returns the original response. A second delivery key returns the existing delivery for that approved version.
+- Editable resources expose integer `revision`. Updates require `If-Match`; a stale revision returns `409 revision_conflict`.
+- General campaign PATCH cannot change status, selections, versions, review data, delivery data, or protected composition fields.
 
 ## 11. Authentication and data location
 
 - Firebase Authentication provides Google sign-in and email-link sign-in for invited users.
 - The API verifies the Firebase ID token on every protected request.
 - Roles and invitation status come from PostgreSQL, not token claims.
+- Invitations target a normalized, verified email address. On first accepted sign-in the invitation is atomically bound to that Firebase UID; later requests require the same UID, verified email, active invitation, and non-disabled user.
+- Private asset reads are authorized against the asset's campaign and the current database role. Storage object names are immutable, and every persisted asset records its generation source and SHA-256.
 - App, database, storage, logs, and Vertex AI calls remain in approved EU locations, with the application resources in `europe-west6`.
 - Firebase Authentication identity processing outside the EU is documented for pilot users.
 - Figma and optional Slack receive review metadata only, never the full brief.
@@ -304,18 +343,34 @@ The public application API is versioned under `/api/v1`.
 
 Core resources:
 
-- `/session` and `/users`
+- `/session`, `/users`, and `/users/invitations`
 - `/settings`
 - `/campaigns`
-- `/campaigns/:id/copy`
-- `/campaigns/:id/directions`
+- `/templates`
+- `/generation-jobs`
 - `/campaigns/:id/composition`
 - `/campaigns/:id/versions`
-- `/versions/:id/review-events`
-- `/versions/:id/delivery`
 - `/assets/:id`
 
-Mutating requests include an `Idempotency-Key`. Error responses use `{ code, message, details?, requestId }`.
+The API exposes narrow commands rather than a generic action or event endpoint:
+
+- `POST /campaigns/:id/analyse-brief`
+- `POST /campaigns/:id/copy-generations` and `PUT /campaigns/:id/copy-selection`
+- `POST /campaigns/:id/direction-generations` and `PUT /campaigns/:id/direction-selection`
+- `POST /campaigns/:id/image-generations`
+- `PUT /campaigns/:id/composition`
+- `POST /campaigns/:id/versions`
+- `POST /versions/:id/request-changes`
+- `POST /versions/:id/mark-ready`
+- `POST /versions/:id/reject`
+- `POST /versions/:id/approve`
+- `POST /campaigns/:id/reopen`
+- `POST /versions/:id/delivery`
+- `POST /users/invitations` and `POST /users/:id/disable`
+
+Review and audit events are server-created consequences of these commands; clients cannot post arbitrary events or statuses. `GET /generation-jobs/:id` exposes persisted job state. Templates are readable by all invited users and writable only by Admins.
+
+Commands that spend money, create versions, change review state, or create deliveries require `Idempotency-Key`. Editable campaign, selection, composition, settings, and template requests require `If-Match`. Error responses use `{ code, message, details?, requestId }`.
 
 ## 14. Modular development and review gates
 

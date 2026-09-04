@@ -19,7 +19,7 @@
 - Do not add a standalone Campaign navigation item or move campaigns to dashboard-only cards.
 - No provider credential or unrestricted endpoint/model choice reaches the browser.
 - PNG in ZIP is the only live MVP delivery format; the video branch remains visible but unavailable in live mode.
-- Every mutating API request uses an `Idempotency-Key`.
+- Paid generation, version, review-transition, and delivery commands use an `Idempotency-Key`; editable resources use `If-Match` revisions.
 - Each module ends at its review checkpoint; do not begin the next module until the user reviews the current one.
 - Use test-first development for every behaviour change.
 - This agent and any subagent it starts work only on backend and MVP functionality. They do not modify React screens, components, styles, responsive layout, or animation.
@@ -46,7 +46,7 @@
 - `server/db/pool.js` — PostgreSQL pool creation.
 - `server/db/migrate.js` — ordered SQL migration runner.
 - `server/db/migrations/*.sql` — schema migrations.
-- `server/repositories/*.js` — persistence boundaries for campaigns, jobs, versions, users, settings, and assets.
+- `server/repositories/*.js` — persistence boundaries for campaigns, templates, jobs, versions, invitations/users, settings, assets, idempotency, and audit events.
 - `server/services/*.js` — workflow, generation, review, delivery, audit, storage, and rendering orchestration.
 - `server/providers/mockProvider.js` — deterministic provider.
 - `server/providers/geminiProvider.js` — Vertex AI provider using `@google/genai` v2.
@@ -181,9 +181,9 @@ git commit -m "feat: define MVP campaign contracts"
 - Consumes: `roleSchema`, `campaignStatusSchema` from `shared/contracts.js`
 - Produces: `transitionCampaign({ campaign, action, actor, input }): TransitionResult`
 - Produces: `allowedActions({ campaign, actor }): string[]`
-- Produces: `markDownstreamStale(campaign, changedArtifact): Campaign`
+- Produces: `applyArtifactEdit(campaign, changedArtifact): EditResult`
 
-`TransitionResult` is `{ ok: true, campaign, event }` or `{ ok: false, code, status, message }`.
+`TransitionResult` is `{ ok: true, campaign, event }` or `{ ok: false, code, status, message }`. `EditResult` uses the same success/error shape without an event.
 
 - [ ] **Step 1: Write one failing test per allowed transition**
 
@@ -191,7 +191,7 @@ Cover `select_copy`, `select_direction`, `save_composition`, `send_for_review`, 
 
 - [ ] **Step 2: Write failing tests for forbidden behaviour**
 
-Cover wrong role (`403`), missing guard (`409`), self-approval (`403`), delivery before approval (`409`), and duplicate delivery (`409`).
+Cover wrong role (`403`), missing guard (`409`), self-approval (`403`), delivery before approval (`409`), content edits while locked, and Admin inheriting Marketer capabilities without inheriting Designer capabilities. Duplicate command replay is handled by the service idempotency layer, not this pure transition module.
 
 - [ ] **Step 3: Run the tests and verify RED**
 
@@ -200,11 +200,11 @@ Expected: FAIL because the rules module does not exist.
 
 - [ ] **Step 4: Implement a data-driven transition table**
 
-Each transition entry contains `from`, `action`, `to`, `roles`, `guard`, and `eventType`. Keep the module pure: no time, random IDs, database, or network calls. Receive event ID and timestamp through `input` where required.
+Each transition entry contains `from`, `action`, `to`, `roles`, `guard`, and an optional pure state updater. Keep the module pure: no time, random IDs, database, or network calls. Return an event fact containing only transition data; the server service assigns event IDs and timestamps.
 
-- [ ] **Step 5: Implement stale propagation**
+- [ ] **Step 5: Implement stale propagation and edit regression**
 
-Changing `brief` marks copy, directions, and composition stale; changing `copy` marks directions and composition stale; changing `direction` marks composition stale.
+Changing `brief` returns to `draft`, clears current copy/direction/composition, and marks their history stale. Changing copy returns to `copy_ready`, clears direction/composition, and marks their history stale. Changing direction returns to `direction_selected`, clears composition, and marks its history stale. Edits are refused in `in_review`, `changes_requested`, `ready`, `approved`, and `delivered`; `changes_requested` must first use Reopen.
 
 - [ ] **Step 6: Run the tests and verify GREEN**
 
@@ -285,34 +285,36 @@ git commit -m "feat: validate versioned banner templates"
 **Files:**
 - Create: `server/db/migrations/001_core.sql`
 - Create: `server/db/pool.js`, `server/db/migrate.js`
-- Create: `server/repositories/campaignRepository.js`, `settingsRepository.js`, `auditRepository.js`
+- Create: `server/repositories/campaignRepository.js`, `settingsRepository.js`, `templateRepository.js`, `userRepository.js`, `auditRepository.js`, `idempotencyRepository.js`
 - Create: repository integration tests
 - Create: `docker-compose.yml`, `.env.example`
 
 **Interfaces:**
-- Produces transactional repository methods `createCampaign`, `getCampaign`, `updateCampaignState`, `getSettings`, `updateSettings`, `appendAuditEvent`.
+- Produces transactional repository methods for campaigns, revisions, settings, templates, invitations/users, audit events, and idempotency records.
 
-- [ ] Write integration tests against PostgreSQL 16 for persistence after reconnect, one open review version, one delivery per version, and append-only event tables.
+- [ ] Write integration tests against PostgreSQL 16 for persistence after reconnect, unique campaign version numbers, one open review version, one delivery per version, append-only event tables, revision conflicts, and unique idempotency scope.
 - [ ] Run the tests; verify missing migration/repository failures.
-- [ ] Add the SQL migration with explicit constraints and indexes.
+- [ ] Add the SQL migration with explicit constraints, indexes, migration locking, and database guards that reject updates/deletes on append-only tables.
 - [ ] Implement repositories using parameterized `pg` queries and injected transaction clients.
-- [ ] Run migrations twice to prove idempotent migration tracking.
+- [ ] Run two migration processes concurrently and then rerun migrations to prove locking and idempotent migration tracking.
 - [ ] Run focused integration tests; verify GREEN.
 - [ ] Commit `feat: persist campaigns and audit records`.
 
-### Task 7: Campaign and settings API
+### Task 7: Campaign, template, invitation, and settings API
 
 **Files:**
-- Create: `server/routes/campaigns.js`, `server/routes/settings.js`
-- Create: `server/services/workflowService.js`
+- Create: `server/routes/campaigns.js`, `server/routes/templates.js`, `server/routes/users.js`, `server/routes/settings.js`
+- Create: `server/services/workflowService.js`, `server/services/idempotencyService.js`
 - Create: route and service tests
 
 **Interfaces:**
-- Routes: `GET/POST /api/v1/campaigns`, `GET/PATCH /api/v1/campaigns/:id`, `POST /api/v1/campaigns/:id/actions/:action`, `GET/PATCH /api/v1/settings`.
+- Routes: campaign CRUD and brief edits, template reads/Admin writes, invitation creation/user disable, and settings reads/Admin writes. Module 1 does not expose future generation, review, or delivery transitions.
 
-- [ ] Write failing tests for CRUD, schema errors, idempotent actions, and forbidden transitions.
+- [ ] Write failing tests for CRUD, schema errors, `If-Match` conflicts, protected fields, invitation normalization, and template/settings role rules.
 - [ ] Implement routes that parse with shared Zod schemas and call the service only.
-- [ ] Implement workflow service transaction: load → pure transition → persist → append audit → return.
+- [ ] Make general campaign PATCH reject status, selection, version, review, delivery, and protected-composition changes.
+- [ ] Implement the idempotency service for later command routes with scope `(actor, method, resource, key)`, canonical fingerprints, stored status/body, concurrent waiting, replay, and `409 idempotency_conflict`.
+- [ ] Implement workflow service transaction: lock/load → validate revision and command → persist → append audit → return.
 - [ ] Verify focused tests and restart persistence.
 - [ ] Commit `feat: expose persistent campaign workflow API`.
 
@@ -327,16 +329,16 @@ git commit -m "feat: validate versioned banner templates"
 **Files:**
 - Modify dependencies with `firebase-admin@13`
 - Create: `server/auth/verifyToken.js`, `server/auth/authorize.js`
-- Create: `server/repositories/userRepository.js`
 - Create: auth and route tests
 
 **Interfaces:**
 - Produces: `authenticate(request): Actor`
 - Produces: `requireRole(...roles)` Fastify pre-handler
 
-- [ ] Write failing tests for valid invited user, expired token, uninvited email, wrong role, and self-approval.
+- [ ] Write failing tests for valid invited user, expired token, unverified email, uninvited email, first-login UID binding, UID mismatch, disabled user, wrong role, and self-approval.
 - [ ] Implement token verification behind an injected verifier so tests never call Firebase.
-- [ ] Resolve role and invitation from PostgreSQL on every new session.
+- [ ] Atomically bind the normalized verified invitation email to its Firebase UID on first acceptance.
+- [ ] Resolve UID, verified email, role, invitation, and disabled status from PostgreSQL on every protected request.
 - [ ] Add `GET /api/v1/session` and protect all mutation routes.
 - [ ] Verify tests and commit `feat: enforce invited user roles`.
 
@@ -351,15 +353,17 @@ git commit -m "feat: validate versioned banner templates"
 **Files:**
 - Create: `server/providers/provider.js`, `mockProvider.js`, provider tests
 - Create: `server/repositories/generationJobRepository.js`
-- Create: `server/services/generationService.js`
+- Create: `server/services/generationService.js`, `server/routes/generation.js`
 
 **Interfaces:**
-- Produces `generateCopy`, `generateDirections`, `generateImage` with shared result schemas.
+- Provider produces `generateCopy`, `generateDirections`, `generateImage` results without owning job IDs. The service exposes brief analysis, copy/direction/image generation commands, and generation-job reads.
 
 - [ ] Write failing adapter contract tests that run against the mock.
 - [ ] Implement deterministic fixture-based mock results and schema parsing.
-- [ ] Persist pending/succeeded/failed generation jobs around every call.
-- [ ] Add idempotency, caps, budget, and kill-switch tests before implementation.
+- [ ] Write route tests for `POST /campaigns/:id/analyse-brief`, copy/direction/image generation commands, and `GET /generation-jobs/:id`.
+- [ ] Persist service-owned jobs with `pending`, `succeeded`, `failed`, `blocked`, and `unknown` states around every call.
+- [ ] Add idempotency, regeneration-cap, UTC budget-reservation, kill-switch, timeout, crash-recovery, and ambiguous-call tests before implementation.
+- [ ] Reserve the maximum integer cost in microunits before dispatch; release only known unused cost and never automatically retry an `unknown` job.
 - [ ] Verify and commit `feat: add generation provider boundary`.
 
 ### Task 10: Vertex AI Gemini provider
@@ -371,7 +375,7 @@ git commit -m "feat: validate versioned banner templates"
 
 - [ ] Write failing tests using an injected SDK client for structured copy, five directions, image bytes, blocked output, rate limit, unavailable provider, and invalid schema.
 - [ ] Initialize `GoogleGenAI({ vertexai: true, project, location, apiVersion: 'v1' })` server-side.
-- [ ] Restrict location and model IDs through config allowlists.
+- [ ] Verify the exact Gemini model availability and supported Vertex AI location against official documentation during implementation; restrict both through server config allowlists.
 - [ ] Map SDK responses into shared schemas and normalized error codes.
 - [ ] Run adapter tests and one opt-in staging smoke command; commit `feat: generate campaign assets with Gemini`.
 
@@ -388,8 +392,9 @@ git commit -m "feat: validate versioned banner templates"
 - Create: `server/rendering/bannerRenderer.js`, `inProcessRenderer.js`
 - Create: storage/renderer tests
 
-- [ ] Write failing contract tests for private storage, SHA-256 verification, exact dimensions, and deterministic manifest output.
-- [ ] Implement memory adapters first, then GCS using `@google-cloud/storage`.
+- [ ] Run a renderer feasibility spike against the pilot template before committing to the in-process renderer; record exact font, line-wrapping, safe-area, and pixel-output findings.
+- [ ] Write failing contract tests for private storage authorization, immutable object names, generation source, SHA-256 verification, exact dimensions, fonts, line limits, safe areas, minimum readable size, and deterministic manifest output.
+- [ ] Implement memory adapters first, then GCS using `@google-cloud/storage`; every asset read checks campaign access and role.
 - [ ] Wrap rendering behind `renderComposition({ manifest, slots, ratio })`.
 - [ ] Verify tests and commit `feat: store and render review assets`.
 
@@ -400,9 +405,9 @@ git commit -m "feat: validate versioned banner templates"
 - Create: `server/services/versionService.js`
 - Create: version service and API tests
 
-- [ ] Write failing tests for version 1, open-version conflict, canonical hash, write-once snapshot, and version N+1 after changes.
-- [ ] Implement `POST /api/v1/campaigns/:id/versions` transactionally.
-- [ ] Store rendered PNGs and manifest before committing the version.
+- [ ] Write failing tests for version 1, concurrent version allocation, open-version conflict, full normalized manifest/hash, canonical snapshot hash, write-once data, and version N+1 after changes.
+- [ ] Implement `POST /api/v1/campaigns/:id/versions` as one idempotent command with a campaign row lock and unique `(campaign_id, version_number)`.
+- [ ] Store rendered PNGs and manifest before committing the version; atomically commit assets, snapshot, sent event, campaign transition, and audit event, and register orphaned uploads for cleanup on rollback.
 - [ ] Verify and commit `feat: create immutable review versions`.
 
 **Module 4 review checkpoint:** compare the existing preview with stored review PNGs and prove that any changed composition creates a new version.
@@ -419,9 +424,11 @@ git commit -m "feat: validate versioned banner templates"
 - Create: `server/routes/review.js`
 - Create: review tests
 
-- [ ] Write failing tests for Figma URL attachment, request changes, mark ready, reject, approve, wrong role, missing comment, and self-approval.
+- [ ] Write failing tests for request changes, mark ready, reject, approve, wrong role, missing comment, self-approval, locked content, and closed review rounds.
 - [ ] Implement append-only review events and derived review status.
-- [ ] Add endpoints under `/api/v1/versions/:id/review-events`.
+- [ ] Add narrow commands: `POST /versions/:id/request-changes`, `/mark-ready`, `/reject`, and `/approve`, plus `POST /campaigns/:id/reopen`; do not expose arbitrary event creation.
+- [ ] Store the complete readiness checklist answers in the ready event and make its Figma URL immutable after ready.
+- [ ] Require idempotency for every command and update authoritative `campaigns.status` in the same transaction as review/audit events.
 - [ ] Verify and commit `feat: enforce human review gates`.
 
 ### Task 14: Delivery ZIP
@@ -430,8 +437,8 @@ git commit -m "feat: validate versioned banner templates"
 - Create: `server/services/deliveryService.js`, `server/routes/delivery.js`
 - Create: delivery tests
 
-- [ ] Write failing tests for unapproved export, one delivery per version, hash mismatch, ZIP filenames, and manifest contents.
-- [ ] Implement export from stored approved assets without re-rendering.
+- [ ] Write failing tests for unapproved export, idempotent replay, one delivery per version, authorized asset reads, hash mismatch, ZIP hash, ZIP filenames, and manifest contents.
+- [ ] Implement `POST /api/v1/versions/:id/delivery` by streaming stored approved bytes without re-rendering, verifying every asset hash, persisting the ZIP hash, and changing the campaign to `delivered` only after the delivery record succeeds.
 - [ ] Verify and commit `feat: export approved banner packages`.
 
 **Module 5 review checkpoint:** complete the happy and rejection paths, inspect version/audit history, and download a hash-verified ZIP.
@@ -483,7 +490,7 @@ git commit -m "feat: validate versioned banner templates"
 
 ---
 
-## Module 7 — Cloud Deployment and Pilot Hardening
+## Module 7A — Cloud Deployment Baseline
 
 ### Task 18: One-container production build
 
@@ -496,7 +503,7 @@ git commit -m "feat: validate versioned banner templates"
 - [ ] Build SPA/docs, copy them into the Node image, and serve through Fastify static routes.
 - [ ] Verify route parity and commit `build: serve app docs and API together`.
 
-### Task 19: Google Cloud resources and runbooks
+### Task 19: Google Cloud resources and deployment runbooks
 
 **Files:**
 - Create: `scripts/gcloud/setup-staging.sh`, `scripts/gcloud/setup-production.sh`
@@ -506,10 +513,26 @@ git commit -m "feat: validate versioned banner templates"
 - [ ] Add shell syntax checks and dry-run assertions before scripts.
 - [ ] Script Cloud SQL, bucket, service accounts, Firebase config references, Vertex AI enablement, and Cloud Run deployment.
 - [ ] Add CI test/build and staged deployment jobs.
-- [ ] Rehearse backup restore, alert test, and one-command traffic rollback.
+- [ ] Verify health/readiness, private assets, configuration, secrets, structured logs, alert delivery, and one-command traffic rollback in staging.
 - [ ] Verify production smoke tests and commit `ops: harden Banner Studio pilot deployment`.
 
-**Module 7 review checkpoint:** deploy a tagged release, complete one real campaign, receive a test alert, restore staging from backup, and route traffic back to the previous revision.
+**Module 7A review checkpoint:** deploy a tagged staging release, complete one real campaign, receive a test alert, and route traffic back to the previous revision.
+
+## Module 7B — Pilot Hardening
+
+### Task 20: Recovery and operational rehearsal
+
+**Files:**
+- Modify: `.github/workflows/ci.yml`
+- Create or modify: `docs/runbooks/backup-restore.md`, `incident-generation-unknown.md`, `asset-cleanup.md`
+
+- [ ] Add a scheduled orphan-object cleanup with dry-run output and audit logging.
+- [ ] Add an Admin-only reconciliation path for `unknown` generation jobs and reserved budget.
+- [ ] Rehearse Cloud SQL backup restore into staging and document measured recovery time.
+- [ ] Exercise alert delivery, delivery integrity, disabled-user revocation, and rollback after a database-compatible deployment.
+- [ ] Verify and commit `ops: rehearse Banner Studio pilot recovery`.
+
+**Module 7B review checkpoint:** review restoration evidence, alert evidence, unknown-job reconciliation, cleanup output, and final pilot go/no-go checklist.
 
 ---
 

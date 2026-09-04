@@ -4,6 +4,7 @@ import {
   campaignSchema,
   campaignStatusSchema,
   campaignVersionSnapshotSchema,
+  generationJobSchema,
   visualDirectionSchema,
 } from './contracts.js'
 import { pilotCampaignFixture } from './fixtures/pilotCampaign.js'
@@ -45,5 +46,34 @@ describe('MVP contracts', () => {
     expect(assetHashSchema.safeParse('a'.repeat(64)).success).toBe(true)
     expect(assetHashSchema.safeParse('not-a-hash').success).toBe(false)
     expect(assetHashSchema.safeParse('A'.repeat(64)).success).toBe(false)
+  })
+
+  test('requires an integer revision for optimistic concurrency', () => {
+    const { revision: _revision, ...withoutRevision } = pilotCampaignFixture
+
+    expect(campaignSchema.safeParse({ ...pilotCampaignFixture, revision: 0 }).success).toBe(true)
+    expect(campaignSchema.safeParse(withoutRevision).success).toBe(false)
+    expect(campaignSchema.safeParse({ ...pilotCampaignFixture, revision: 0.5 }).success).toBe(false)
+  })
+
+  test('supports an unknown generation job without floating-point cost', () => {
+    const job = {
+      id: 'job-1',
+      campaignId: pilotCampaignFixture.id,
+      step: 'image',
+      provider: 'gemini',
+      model: 'approved-model',
+      region: 'approved-region',
+      status: 'unknown',
+      attempts: 1,
+      safety: {},
+      usage: {},
+      reservedCostMicrounits: 250_000,
+      actualCostMicrounits: null,
+      timeoutAt: '2026-09-04T12:05:00.000Z',
+    }
+
+    expect(generationJobSchema.safeParse(job).success).toBe(true)
+    expect(generationJobSchema.safeParse({ ...job, reservedCostMicrounits: 2.5 }).success).toBe(false)
   })
 })
