@@ -18,3 +18,4 @@ __pycache__/
 # Lingu Studio web app
 node_modules/
 dist/
+.worktrees/
