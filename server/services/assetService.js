@@ -18,6 +18,14 @@ function forbidden() {
   throw new AssetServiceError(403, 'forbidden', 'This actor cannot read the requested asset')
 }
 
+const mimeTypesByKind = Object.freeze({
+  direction: new Set(['image/png', 'image/jpeg', 'image/webp']),
+  final_image: new Set(['image/png', 'image/jpeg', 'image/webp']),
+  review_png: new Set(['image/png']),
+  manifest: new Set(['application/json']),
+  delivery_zip: new Set(['application/zip']),
+})
+
 export function createAssetService({ pool, assetStore, repositoryFactory = createAssetRepository } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   validateAssetStore(assetStore)
@@ -31,6 +39,9 @@ export function createAssetService({ pool, assetStore, repositoryFactory = creat
       }
       const record = await repositoryFactory(pool).findReadableById({ assetId, actorId: actor.id })
       if (!record) return null
+      if (!mimeTypesByKind[record.kind]?.has(record.mimeType)) {
+        throw new AssetServiceError(502, 'invalid_asset_content_type', 'Stored asset content type is invalid')
+      }
       try {
         assertSafeObjectKey(record.objectKey)
       } catch {

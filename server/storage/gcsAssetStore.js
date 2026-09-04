@@ -17,7 +17,7 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
   const bucket = client.bucket(bucketName)
 
   return Object.freeze({
-    async put({ objectKey, bytes, contentType }) {
+    async put({ objectKey, bytes, contentType, timeoutMs }) {
       assertSafeObjectKey(objectKey)
       assertContentType(contentType)
       const source = assertAssetBytes(bytes)
@@ -27,6 +27,7 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
           validation: 'crc32c',
           preconditionOpts: { ifGenerationMatch: 0 },
           metadata: { contentType, cacheControl: 'private, max-age=31536000, immutable' },
+          ...(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : {}),
         })
       } catch (error) {
         if ([409, 412].includes(statusCode(error))) throw storageFailure('object_exists', 'Asset object already exists')

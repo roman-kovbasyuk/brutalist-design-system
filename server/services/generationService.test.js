@@ -46,7 +46,7 @@ function harness(overrides = {}) {
   const serviceOptions = {
       pool: { query: vi.fn() }, controlPlane, providers: { mock: provider },
       idGenerator: () => 'job-1', assetIdGenerator: () => 'asset-1', ownerTokenGenerator: () => 'owner-1', timeoutMs: 25,
-      clock: () => new Date('2026-09-04T10:00:00.000Z'),
+      clock: overrides.clock ?? (() => new Date('2026-09-04T10:00:00.000Z')),
       ...(overrides.assetStore ? { assetStore: overrides.assetStore } : {}),
     }
   return {
@@ -88,7 +88,10 @@ describe('generation service external-call recovery', () => {
 
   test('uploads validated image bytes before atomically committing the asset, direction, and job response', async () => {
     const imageBytes = await sharp({ create: { width: 1200, height: 628, channels: 3, background: '#2563eb' } }).png().toBuffer()
-    const assetStore = { put: vi.fn(async ({ objectKey, bytes }) => ({ objectKey, byteSize: bytes.length })), get: vi.fn(), delete: vi.fn() }
+    const assetStore = {
+      put: vi.fn(async ({ objectKey, bytes }) => ({ objectKey, byteSize: bytes.length })),
+      get: vi.fn(async () => Buffer.from(imageBytes)), delete: vi.fn(),
+    }
     const { service, controlPlane, provider } = harness({
       assetStore,
       provider: { generateImage: vi.fn(async () => ({
@@ -109,13 +112,82 @@ describe('generation service external-call recovery', () => {
       bytes: expect.anything(), contentType: 'image/png',
     }))
     expect(Buffer.isBuffer(assetStore.put.mock.calls[0][0].bytes)).toBe(true)
-    expect(assetStore.put.mock.invocationCallOrder[0]).toBeLessThan(controlPlane.completeGeneratedImage.mock.invocationCallOrder[0])
+    expect(assetStore.put.mock.invocationCallOrder[0]).toBeLessThan(assetStore.get.mock.invocationCallOrder[0])
+    expect(assetStore.get.mock.invocationCallOrder[0]).toBeLessThan(controlPlane.completeGeneratedImage.mock.invocationCallOrder[0])
     expect(controlPlane.completeGeneratedImage).toHaveBeenCalledWith(expect.objectContaining({
       jobId: 'job-1', ownerToken: 'owner-1', directionId: 'direction-1',
       asset: expect.objectContaining({ id: 'asset-1', source: 'generation', kind: 'direction', width: 1200, height: 628, byteSize: imageBytes.length }),
     }))
     expect(provider.generateImage).toHaveBeenCalledOnce()
     expect(controlPlane.completeProviderResult).not.toHaveBeenCalled()
+  })
+
+  test('fails closed when storage readback differs from the uploaded provider bytes', async () => {
+    const imageBytes = await sharp({ create: { width: 1200, height: 628, channels: 3, background: '#2563eb' } }).png().toBuffer()
+    const corrupt = Buffer.from(imageBytes)
+    corrupt[corrupt.length - 1] ^= 1
+    const assetStore = {
+      put: vi.fn(async ({ objectKey, bytes }) => ({ objectKey, byteSize: bytes.length })),
+      get: vi.fn(async () => corrupt), delete: vi.fn(),
+    }
+    const { service, controlPlane } = harness({
+      assetStore,
+      provider: { generateImage: vi.fn(async () => ({
+        provider: 'mock', model: 'mock-v1', region: 'europe-west6', usage: {}, actualCostMicrounits: 1_000,
+        safety: { verdict: 'safe', categories: [] }, image: { bytes: new Uint8Array(imageBytes), mimeType: 'image/png', width: 1200, height: 628 },
+      })) },
+    })
+
+    const result = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'corrupt-readback', input: { directionId: 'direction-1', width: 1200, height: 628 } })
+
+    expect(result.body.job.status).toBe('unknown')
+    expect(controlPlane.registerOrphanUpload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'generation_image_readback_failed' }))
+    expect(controlPlane.completeGeneratedImage).not.toHaveBeenCalled()
+  })
+
+  test('does not register another owner\'s object as an orphan when create-only upload reports object_exists', async () => {
+    const imageBytes = await sharp({ create: { width: 1200, height: 628, channels: 3, background: '#2563eb' } }).png().toBuffer()
+    const assetStore = {
+      put: vi.fn(async () => { throw Object.assign(new Error('exists'), { code: 'object_exists' }) }),
+      get: vi.fn(), delete: vi.fn(),
+    }
+    const { service, controlPlane } = harness({
+      assetStore,
+      provider: { generateImage: vi.fn(async () => ({
+        provider: 'mock', model: 'mock-v1', region: 'europe-west6', usage: {}, actualCostMicrounits: 1_000,
+        safety: { verdict: 'safe', categories: [] }, image: { bytes: new Uint8Array(imageBytes), mimeType: 'image/png', width: 1200, height: 628 },
+      })) },
+    })
+
+    const result = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'object-exists', input: { directionId: 'direction-1', width: 1200, height: 628 } })
+
+    expect(result.body.job.status).toBe('unknown')
+    expect(controlPlane.registerOrphanUpload).not.toHaveBeenCalled()
+    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'asset_object_exists' }))
+  })
+
+  test('does not start an upload after the persisted durability deadline has elapsed', async () => {
+    const imageBytes = await sharp({ create: { width: 1200, height: 628, channels: 3, background: '#2563eb' } }).png().toBuffer()
+    let now = new Date('2026-09-04T10:00:00.000Z')
+    const assetStore = { put: vi.fn(), get: vi.fn(), delete: vi.fn() }
+    const { service, controlPlane } = harness({
+      clock: () => now,
+      assetStore,
+      provider: { generateImage: vi.fn(async () => {
+        now = new Date('2026-09-04T10:00:31.000Z')
+        return {
+          provider: 'mock', model: 'mock-v1', region: 'europe-west6', usage: {}, actualCostMicrounits: 1_000,
+          safety: { verdict: 'safe', categories: [] }, image: { bytes: new Uint8Array(imageBytes), mimeType: 'image/png', width: 1200, height: 628 },
+        }
+      }) },
+    })
+
+    const result = await service.generateImage({ actor, campaignId: 'campaign-1', idempotencyKey: 'expired-upload', input: { directionId: 'direction-1', width: 1200, height: 628 } })
+
+    expect(result.body.job.status).toBe('unknown')
+    expect(assetStore.put).not.toHaveBeenCalled()
+    expect(controlPlane.registerOrphanUpload).not.toHaveBeenCalled()
+    expect(controlPlane.markUnknown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'asset_upload_timeout' }))
   })
 
   test('marks an upload failure unknown without redispatching and registers the possible object for cleanup', async () => {
@@ -139,7 +211,10 @@ describe('generation service external-call recovery', () => {
 
   test('registers an uploaded object for cleanup and never reports success when the database commit fails', async () => {
     const imageBytes = await sharp({ create: { width: 1200, height: 628, channels: 3, background: '#2563eb' } }).png().toBuffer()
-    const assetStore = { put: vi.fn(async ({ objectKey }) => ({ objectKey, byteSize: imageBytes.length })), get: vi.fn(), delete: vi.fn() }
+    const assetStore = {
+      put: vi.fn(async ({ objectKey }) => ({ objectKey, byteSize: imageBytes.length })),
+      get: vi.fn(async () => Buffer.from(imageBytes)), delete: vi.fn(),
+    }
     const { service, controlPlane } = harness({
       assetStore,
       controlPlane: { completeGeneratedImage: vi.fn(async () => { throw new Error('transaction rolled back') }) },

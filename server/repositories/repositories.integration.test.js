@@ -211,6 +211,14 @@ describe('migration runner', () => {
                '2026-01-01T00:00:00Z', '2025-12-31T23:30:00Z', '2025-12-31T23:30:00Z')`,
       [legacyCampaign.id],
     )
+    await pool.query(
+      `INSERT INTO assets
+         (id, campaign_id, kind, object_key, mime_type, byte_size, sha256, source, generation_job_id)
+       VALUES
+         ('legacy-generated-1', $1, 'direction', 'legacy/generated-1.png', 'image/png', 10, $2, 'generation', 'legacy-generation-job'),
+         ('legacy-generated-2', $1, 'direction', 'legacy/generated-2.png', 'image/png', 11, $3, 'generation', 'legacy-generation-job')`,
+      [legacyCampaign.id, '5'.repeat(64), '6'.repeat(64)],
+    )
     await pool.query('UPDATE users SET disabled = true WHERE id = $1', [actorId])
     await pool.query(
       'UPDATE settings SET daily_budget_microunits = $1, updated_by = $2 WHERE singleton = $3',
@@ -234,6 +242,29 @@ describe('migration runner', () => {
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
     expect((await pool.query('SELECT disabled, disabled_at FROM users WHERE id = $1', [actorId])).rows[0])
       .toMatchObject({ disabled: true, disabled_at: expect.any(Date) })
+    expect((await pool.query(
+      `SELECT id, integrity_version FROM assets WHERE id LIKE 'legacy-generated-%' ORDER BY id`,
+    )).rows).toEqual([
+      { id: 'legacy-generated-1', integrity_version: 0 },
+      { id: 'legacy-generated-2', integrity_version: 0 },
+    ])
+    await expect(pool.query(
+      `INSERT INTO assets (id, campaign_id, kind, object_key, mime_type, byte_size, sha256, source)
+       VALUES ('new-invalid-generated', $1, 'direction', 'new/invalid.png', 'image/png', 12, $2, 'generation')`,
+      [legacyCampaign.id, '7'.repeat(64)],
+    )).rejects.toMatchObject({ code: '23514' })
+    await pool.query(
+      `INSERT INTO assets
+         (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id)
+       VALUES ('new-generated-1', $1, 'direction', 'new/generated-1.png', 'image/png', 13, 1, 1, $2, 'generation', 'legacy-generation-job')`,
+      [legacyCampaign.id, '8'.repeat(64)],
+    )
+    await expect(pool.query(
+      `INSERT INTO assets
+         (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id)
+       VALUES ('new-generated-2', $1, 'direction', 'new/generated-2.png', 'image/png', 14, 1, 1, $2, 'generation', 'legacy-generation-job')`,
+      [legacyCampaign.id, '9'.repeat(64)],
+    )).rejects.toMatchObject({ code: '23505' })
     expect(await createTemplateRepository(pool).listLatest())
       .toEqual([expect.objectContaining({ id: 'upgrade-template', version: '1.10.0', manifest: { version: '1.10.0' } })])
     const sequences = await pool.query(
@@ -1188,6 +1219,7 @@ describe('persisted generation control plane', () => {
     controlPlaneOptions = {}, advanceClockOnWait = false,
     now = new Date('2026-09-04T10:00:00Z'), timeoutMs = 50,
     assetStore,
+    decorateControlPlane = (value) => value,
   } = {}) {
     const pool = makePool()
     const actorId = await insertUser(pool)
@@ -1206,8 +1238,9 @@ describe('persisted generation control plane', () => {
       },
     } : {}
     const controlPlane = createGenerationControlPlane({ pool, clock: () => currentTime, providerRegistry, ...waitOptions, ...controlPlaneOptions })
+    const advanceClock = (duration) => { currentTime = new Date(currentTime.getTime() + duration) }
     const service = createGenerationService({
-      pool, controlPlane, providers: { [providerName]: provider }, timeoutMs, clock: () => currentTime,
+      pool, controlPlane: decorateControlPlane(controlPlane, { advanceClock }), providers: { [providerName]: provider }, timeoutMs, clock: () => currentTime,
       ...(assetStore ? { assetStore } : {}),
     })
     return {
@@ -1306,6 +1339,96 @@ describe('persisted generation control plane', () => {
     expect(asset).toMatchObject({ campaign_id: harness.campaign.id, generation_job_id: first.body.job.id, source: 'generation', byte_size: String(stored.length) })
     expect(JSON.stringify(first.body)).not.toContain('bytes')
     expect(generateImage).toHaveBeenCalledOnce()
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('replays committed image success without registering its referenced object as an orphan after an ambiguous acknowledgement', async () => {
+    const assetStore = createMemoryAssetStore()
+    const harness = await generationHarness({
+      assetStore,
+      timeoutMs: 500,
+      decorateControlPlane: (controlPlane) => ({
+        ...controlPlane,
+        async completeGeneratedImage(input) {
+          await controlPlane.completeGeneratedImage(input)
+          throw new Error('commit acknowledgement lost')
+        },
+      }),
+    })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('ambiguous-commit-direction', $1, 'Clean focus', 'Soft daylight.', 'pending')`,
+      [harness.campaign.id],
+    )
+
+    const result = await harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'ambiguous-image-commit',
+      input: { directionId: 'ambiguous-commit-direction', width: 800, height: 800 },
+    })
+
+    expect(result).toMatchObject({ status: 201, body: { job: { status: 'succeeded' } } })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM assets')).rows[0].count).toBe(1)
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM orphaned_uploads')).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('makes an expired image persistence attempt unknown with only an unreferenced orphan', async () => {
+    const assetStore = createMemoryAssetStore()
+    const harness = await generationHarness({
+      assetStore,
+      timeoutMs: 500,
+      decorateControlPlane: (controlPlane, { advanceClock }) => ({
+        ...controlPlane,
+        completeGeneratedImage(input) {
+          advanceClock(1_000)
+          return controlPlane.completeGeneratedImage(input)
+        },
+      }),
+    })
+    await harness.pool.query(
+      `INSERT INTO visual_directions (id, campaign_id, title, prompt, status)
+       VALUES ('expired-commit-direction', $1, 'Clean focus', 'Soft daylight.', 'pending')`,
+      [harness.campaign.id],
+    )
+
+    const result = await harness.service.generateImage({
+      actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'expired-image-commit',
+      input: { directionId: 'expired-commit-direction', width: 800, height: 800 },
+    })
+
+    expect(result).toMatchObject({ status: 202, body: { job: { status: 'unknown' } } })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM assets')).rows[0].count).toBe(0)
+    const orphans = await harness.pool.query(
+      `SELECT o.object_key FROM orphaned_uploads o
+       WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.object_key = o.object_key)`,
+    )
+    expect(orphans.rowCount).toBe(1)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('re-checks asset references under the object lock before future orphan cleanup deletes bytes', async () => {
+    const harness = await generationHarness()
+    await harness.pool.query(
+      `INSERT INTO assets (id, campaign_id, kind, object_key, mime_type, byte_size, sha256, source)
+       VALUES ('referenced-cleanup-asset', $1, 'manifest', 'versions/referenced-manifest.json', 'application/json', 2, $2, 'upload')`,
+      [harness.campaign.id, 'a'.repeat(64)],
+    )
+    await harness.pool.query(
+      `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason)
+       VALUES ('referenced-orphan', 'versions/referenced-manifest.json', $1, 'legacy_race')`,
+      [harness.campaign.id],
+    )
+    const deleteObject = vi.fn(async () => ({ deleted: true }))
+
+    await expect(harness.controlPlane.cleanupOrphanUpload({
+      orphanId: 'referenced-orphan', deleteObject, cleanedAt: new Date('2026-09-04T10:01:00Z'),
+    })).resolves.toEqual({ kind: 'referenced', objectKey: 'versions/referenced-manifest.json' })
+    expect(deleteObject).not.toHaveBeenCalled()
+    expect((await harness.pool.query('SELECT status FROM orphaned_uploads WHERE id = $1', ['referenced-orphan'])).rows[0].status)
+      .toBe('pending')
     await harness.pool.end()
     pools.delete(harness.pool)
   })

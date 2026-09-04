@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { create as createFont } from 'fontkit'
 import sharp from 'sharp'
 import { hashCanonical } from '../../shared/canonicalJson.js'
 import { templateManifestSchema } from '../../shared/templateManifest.js'
@@ -8,9 +9,14 @@ import { decodeGeneratedImage } from '../images/imageDecoder.js'
 
 const require = createRequire(import.meta.url)
 const fontFiles = Object.freeze({
-  400: require.resolve('inter-ui/web/Inter-Regular.woff2'),
-  600: require.resolve('inter-ui/web/Inter-SemiBold.woff2'),
-  700: require.resolve('inter-ui/web/Inter-Bold.woff2'),
+  400: require.resolve('inter-ui/display/InterDisplay-Regular.woff2'),
+  600: require.resolve('inter-ui/display/InterDisplay-SemiBold.woff2'),
+  700: require.resolve('inter-ui/display/InterDisplay-Bold.woff2'),
+})
+const expectedPostscriptNames = Object.freeze({
+  400: 'InterDisplay-Regular',
+  600: 'InterDisplay-SemiBold',
+  700: 'InterDisplay-Bold',
 })
 const supportedWeights = new Set(Object.keys(fontFiles).map(Number))
 
@@ -26,10 +32,6 @@ function fail(code, message) {
   throw new RendererError(code, message)
 }
 
-function escapeXml(value) {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-}
-
 function roundCoordinate(value) {
   return Math.round(value * 1_000_000) / 1_000_000
 }
@@ -38,43 +40,83 @@ function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value)
 }
 
-async function loadFonts(paths) {
-  return Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([weight, path]) => [
-    weight,
-    (await readFile(path)).toString('base64'),
-  ])))
+function loadFonts(paths) {
+  try {
+    if (!paths || typeof paths !== 'object'
+      || Object.keys(paths).length !== supportedWeights.size
+      || [...supportedWeights].some((weight) => typeof paths[weight] !== 'string')) {
+      fail('invalid_font', 'Bundled Inter font set is incomplete')
+    }
+    return Object.fromEntries(Object.entries(paths).map(([weight, path]) => {
+      const font = createFont(readFileSync(path))
+      if (font.postscriptName !== expectedPostscriptNames[weight]
+        || font['OS/2']?.usWeightClass !== Number(weight)
+        || !Number.isFinite(font.unitsPerEm) || font.unitsPerEm <= 0) {
+        fail('invalid_font', `Bundled Inter ${weight} font is invalid`)
+      }
+      return [weight, font]
+    }))
+  } catch (error) {
+    if (error instanceof RendererError) throw error
+    fail('invalid_font', 'Bundled Inter fonts could not be loaded')
+  }
 }
 
-function fontCss(font) {
-  return `@font-face{font-family:BundledInter;src:url(data:font/woff2;base64,${font})}`
+function shapeLine(font, value, fontSize) {
+  if (value.length === 0) return { width: 0, glyphs: [] }
+  const scale = fontSize / font.unitsPerEm
+  const run = font.layout(value)
+  let cursor = 0
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  const positioned = run.glyphs.map((glyph, index) => {
+    const position = run.positions[index]
+    const x = cursor + position.xOffset
+    const box = glyph.bbox
+    minX = Math.min(minX, x + box.minX)
+    maxX = Math.max(maxX, x + box.maxX)
+    cursor += position.xAdvance
+    return { path: glyph.path.toSVG(), x, yOffset: position.yOffset }
+  })
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return { width: 0, glyphs: [] }
+  return {
+    width: (maxX - minX) * scale,
+    glyphs: positioned.map((glyph) => ({
+      path: glyph.path,
+      x: (glyph.x - minX) * scale,
+      yOffset: glyph.yOffset * scale,
+      scale,
+    })),
+  }
+}
+
+export function svgGlyphLayer({ width, height, lines, fill = '#111827' }) {
+  const paths = lines.flatMap((line) => line.glyphs.map((glyph) => (
+    `<path d="${glyph.path}" fill="${fill}" transform="translate(${roundCoordinate(glyph.x)} ${roundCoordinate(line.baseline - glyph.yOffset)}) scale(${roundCoordinate(glyph.scale)} ${roundCoordinate(-glyph.scale)})"/>`
+  ))).join('')
+  return Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${paths}</svg>`)
 }
 
 function textLayer({ lines, placement, fontSize, font, fill = '#111827' }) {
   const lineHeight = Math.ceil(fontSize * 1.2)
-  const text = lines.map((line, index) => line.length === 0 ? '' : (
-    `<text x="2" y="${fontSize + index * lineHeight}" font-family="BundledInter" font-size="${fontSize}" fill="${fill}">${escapeXml(line)}</text>`
-  )).join('')
-  return Buffer.from(`<svg width="${placement.width}" height="${placement.height}" xmlns="http://www.w3.org/2000/svg"><style>${fontCss(font)}</style>${text}</svg>`)
+  const shapedLines = lines.map((line, index) => ({
+    ...shapeLine(font, line, fontSize),
+    baseline: fontSize + index * lineHeight,
+  }))
+  return svgGlyphLayer({ width: placement.width, height: placement.height, lines: shapedLines, fill })
 }
 
 export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) {
-  const fontPromise = loadFonts(resolvedFontFiles)
+  const fonts = loadFonts(resolvedFontFiles)
   const measurements = new Map()
 
-  async function measure(value, fontSize, fontWeight) {
+  function measure(value, fontSize, fontWeight) {
     if (value.length === 0) return 0
     const key = `${fontWeight}:${fontSize}:${value}`
     if (measurements.has(key)) return measurements.get(key)
-    const fonts = await fontPromise
-    const width = Math.max(16, Math.ceil(value.length * fontSize * 1.5) + 8)
-    const height = Math.ceil(fontSize * 1.5)
-    const input = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><style>${fontCss(fonts[fontWeight])}</style><text x="2" y="${fontSize}" font-family="BundledInter" font-size="${fontSize}">${escapeXml(value)}</text></svg>`)
-    const { info } = await sharp(input)
-      .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .png()
-      .toBuffer({ resolveWithObject: true })
-    measurements.set(key, info.width)
-    return info.width
+    const width = shapeLine(fonts[fontWeight], value, fontSize).width
+    measurements.set(key, width)
+    return width
   }
 
   async function wrapText(value, slot, placement) {
@@ -88,11 +130,11 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
       }
       let line = ''
       for (const word of words) {
-        if (await measure(word, slot.fontSize, slot.fontWeight) > placement.width) {
+        if (measure(word, slot.fontSize, slot.fontWeight) > placement.width) {
           fail('unbreakable_overflow', `Slot ${slot.id} contains a word wider than its placement`)
         }
         const candidate = line ? `${line} ${word}` : word
-        if (await measure(candidate, slot.fontSize, slot.fontWeight) <= placement.width) line = candidate
+        if (measure(candidate, slot.fontSize, slot.fontWeight) <= placement.width) line = candidate
         else {
           lines.push(line)
           line = word
@@ -125,7 +167,6 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
         if (!slotDefinitions.has(slotId)) fail('unknown_slot', `Unknown render slot ${slotId}`)
       }
 
-      const fonts = await fontPromise
       const compiledSlots = []
       const composites = []
       for (const slot of manifest.slots) {

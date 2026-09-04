@@ -9,7 +9,7 @@ import {
 } from '../../shared/contracts.js'
 import { invokeProvider, validateGenerationProvider } from '../providers/provider.js'
 import { decodeGeneratedImage } from '../images/imageDecoder.js'
-import { validateAssetStore } from '../storage/assetStore.js'
+import { assertAssetBytes, validateAssetStore } from '../storage/assetStore.js'
 
 const editorRoles = ['marketer', 'admin']
 const readerRoles = ['marketer', 'designer', 'admin']
@@ -96,19 +96,20 @@ function generatedObjectKey({ campaignId, jobId, assetId, mimeType }) {
 async function beforeDeadline(operation, timeoutAt, clock, code) {
   const remaining = safeInstant(timeoutAt, 'Generation timeout').getTime() - safeInstant(clock(), 'Generation clock').getTime()
   if (remaining <= 0) {
-    Promise.resolve(operation).catch(() => {})
     const error = new Error('Generation durability deadline elapsed')
     error.code = code
+    error.operationStarted = false
     throw error
   }
   let timer
   try {
     return await Promise.race([
-      operation,
+      Promise.resolve().then(() => operation(remaining)),
       new Promise((_, reject) => {
         timer = setTimeout(() => {
           const error = new Error('Generation durability deadline elapsed')
           error.code = code
+          error.operationStarted = true
           reject(error)
         }, remaining)
       }),
@@ -273,13 +274,23 @@ export function createGenerationService({
       }
       try {
         const stored = await beforeDeadline(
-          assetStore.put({ objectKey, bytes, contentType: decoded.mimeType }),
+          (remaining) => assetStore.put({ objectKey, bytes, contentType: decoded.mimeType, timeoutMs: remaining }),
           prepared.job.timeoutAt,
           clock,
           'asset_upload_timeout',
         )
         if (stored?.objectKey !== objectKey || stored?.byteSize !== bytes.length) throw new Error('Asset store response mismatch')
-      } catch {
+      } catch (error) {
+        if (error?.code === 'object_exists') {
+          return controlPlane.markUnknown({
+            jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_object_exists',
+          })
+        }
+        if (error?.code === 'asset_upload_timeout' && error.operationStarted === false) {
+          return controlPlane.markUnknown({
+            jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_upload_timeout',
+          })
+        }
         await controlPlane.registerOrphanUpload({
           objectKey, campaignId, reason: 'generation_image_upload_ambiguous',
         }).catch(() => {})
@@ -288,7 +299,27 @@ export function createGenerationService({
         })
       }
       try {
-        return await beforeDeadline(controlPlane.completeGeneratedImage({
+        const readback = await beforeDeadline(
+          (remaining) => assetStore.get({ objectKey, timeoutMs: remaining }),
+          prepared.job.timeoutAt,
+          clock,
+          'asset_readback_timeout',
+        )
+        const readbackBytes = assertAssetBytes(readback)
+        const readbackSha256 = createHash('sha256').update(readbackBytes).digest('hex')
+        if (readbackBytes.length !== asset.byteSize || readbackSha256 !== asset.sha256) {
+          throw new Error('Stored asset readback did not match the provider bytes')
+        }
+      } catch {
+        await controlPlane.registerOrphanUpload({
+          objectKey, campaignId, reason: 'generation_image_readback_failed',
+        }).catch(() => {})
+        return controlPlane.markUnknown({
+          jobId: prepared.job.id, ownerToken: prepared.ownerToken, reason: 'asset_readback_failed',
+        })
+      }
+      try {
+        const completion = await controlPlane.completeGeneratedImage({
           jobId: prepared.job.id,
           ownerToken: prepared.ownerToken,
           directionId: command.directionId,
@@ -297,7 +328,12 @@ export function createGenerationService({
           usage: result.usage,
           actualCostMicrounits: result.actualCostMicrounits,
           completedAt: safeInstant(clock(), 'Generation clock'),
-        }), prepared.job.timeoutAt, clock, 'asset_persistence_timeout')
+        })
+        if (completion.status === 201) return completion
+        await controlPlane.registerOrphanUpload({
+          objectKey, campaignId, reason: 'generation_image_persistence_declined',
+        }).catch(() => {})
+        return completion
       } catch {
         await controlPlane.registerOrphanUpload({
           objectKey, campaignId, reason: 'generation_image_persistence_failed',

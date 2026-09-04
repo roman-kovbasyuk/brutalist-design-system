@@ -50,6 +50,20 @@ describe('authorized asset reads', () => {
       .rejects.toMatchObject({ code })
   })
 
+  test.each([
+    ['direction', 'text/html'],
+    ['final_image', 'application/json'],
+    ['review_png', 'image/jpeg'],
+    ['manifest', 'text/html'],
+    ['delivery_zip', 'text/html'],
+  ])('rejects %s assets with unsafe or inconsistent MIME %s before storage access', async (kind, mimeType) => {
+    const { service, assetStore } = harness({ row: { ...record, kind, mimeType } })
+
+    await expect(service.readAsset({ actor: { id: 'marketer-1', role: 'marketer' }, assetId: 'asset-1' }))
+      .rejects.toMatchObject({ code: 'invalid_asset_content_type' })
+    expect(assetStore.get).not.toHaveBeenCalled()
+  })
+
   test('rejects a disabled actor before repository or storage access', async () => {
     const { service, repository, assetStore } = harness()
     await expect(service.readAsset({ actor: { id: 'marketer-1', role: 'marketer', disabledAt: new Date() }, assetId: 'asset-1' }))

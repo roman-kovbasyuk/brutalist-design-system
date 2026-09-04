@@ -1,6 +1,15 @@
 ALTER TABLE assets
+  ADD COLUMN integrity_version smallint;
+
+UPDATE assets SET integrity_version = 0;
+
+ALTER TABLE assets
+  ALTER COLUMN integrity_version SET DEFAULT 1,
+  ALTER COLUMN integrity_version SET NOT NULL,
+  ADD CONSTRAINT assets_integrity_version_check CHECK (integrity_version IN (0, 1)) NOT VALID,
   ADD CONSTRAINT assets_generated_shape_check CHECK (
-    source <> 'generation'
+    integrity_version = 0
+    OR source <> 'generation'
     OR (
       generation_job_id IS NOT NULL
       AND version_id IS NULL
@@ -8,8 +17,8 @@ ALTER TABLE assets
       AND width IS NOT NULL
       AND height IS NOT NULL
     )
-  );
+  ) NOT VALID;
 
 CREATE UNIQUE INDEX assets_generation_job_unique_idx
   ON assets (generation_job_id)
-  WHERE source = 'generation';
+  WHERE source = 'generation' AND integrity_version = 1;

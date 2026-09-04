@@ -88,6 +88,10 @@ function validateExpectedRevision(expectedRevision) {
   }
 }
 
+async function lockAssetObjectKey(client, objectKey) {
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+}
+
 function providerContextError(step) {
   const requirements = {
     copy: ['brief_analysis_required', 'Analyse the campaign brief before generating copy'],
@@ -395,6 +399,17 @@ export function createGenerationControlPlane({
         if (BigInt(actualCostMicrounits) > BigInt(current.reserved_cost_microunits)) {
           conflict('generation_cost_exceeded_reservation', 'Provider cost exceeded its reservation')
         }
+        const observedAt = clock()
+        if (current.timeout_at <= observedAt) {
+          const expired = await client.query(
+            `UPDATE generation_jobs
+             SET status = 'unknown', unknown_reason = 'asset_persistence_timeout', updated_at = $2
+             WHERE id = $1 AND owner_token = $3 AND status = 'pending' AND dispatch_state = 'dispatched'
+             RETURNING *`,
+            [jobId, observedAt, ownerToken],
+          )
+          return storeResponse(client, expired.rows[0], 202)
+        }
         const campaign = await client.query('SELECT id FROM campaigns WHERE id = $1 FOR UPDATE', [current.campaign_id])
         if (campaign.rowCount !== 1) conflict('not_found', 'Campaign was not found', 404)
         const direction = await client.query(
@@ -404,6 +419,7 @@ export function createGenerationControlPlane({
           [directionId, current.campaign_id],
         )
         if (direction.rowCount !== 1) conflict('generation_direction_mismatch', 'Generated image direction is not pending for this campaign')
+        await lockAssetObjectKey(client, asset.objectKey)
         await client.query(
           `INSERT INTO assets
              (id, campaign_id, kind, object_key, mime_type, byte_size, width, height, sha256, source, generation_job_id, version_id, created_at)
@@ -436,12 +452,42 @@ export function createGenerationControlPlane({
     },
 
     async registerOrphanUpload({ objectKey, campaignId, reason }) {
-      await pool.query(
-        `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (object_key) DO NOTHING`,
-        [idGenerator(), objectKey, campaignId, reason],
-      )
+      return transaction(pool, async (client) => {
+        await lockAssetObjectKey(client, objectKey)
+        const inserted = await client.query(
+          `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason)
+           SELECT $1, $2, $3, $4
+           WHERE NOT EXISTS (SELECT 1 FROM assets WHERE object_key = $2)
+           ON CONFLICT (object_key) DO NOTHING`,
+          [idGenerator(), objectKey, campaignId, reason],
+        )
+        return inserted.rowCount === 1
+      })
+    },
+
+    async cleanupOrphanUpload({ orphanId, deleteObject, cleanedAt }) {
+      if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
+      return transaction(pool, async (client) => {
+        const selected = await client.query(
+          `SELECT id, object_key FROM orphaned_uploads
+           WHERE id = $1 AND status <> 'cleaned'
+           FOR UPDATE`,
+          [orphanId],
+        )
+        const orphan = selected.rows[0]
+        if (!orphan) return { kind: 'missing' }
+        await lockAssetObjectKey(client, orphan.object_key)
+        const referenced = await client.query('SELECT 1 FROM assets WHERE object_key = $1', [orphan.object_key])
+        if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
+        await deleteObject({ objectKey: orphan.object_key })
+        await client.query(
+          `UPDATE orphaned_uploads
+           SET status = 'cleaned', attempts = attempts + 1, last_error = NULL, cleaned_at = $2
+           WHERE id = $1`,
+          [orphanId, cleanedAt ?? clock()],
+        )
+        return { kind: 'cleaned', objectKey: orphan.object_key }
+      })
     },
 
     async markUnknown({ jobId, ownerToken, reason }) {

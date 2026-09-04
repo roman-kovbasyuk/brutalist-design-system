@@ -13,6 +13,11 @@ export function registerAssetRoutes(app, { requireRole, assetService }) {
     reply.header('ETag', `"${asset.sha256}"`)
     reply.header('Cache-Control', 'private, max-age=31536000, immutable')
     reply.header('X-Content-Type-Options', 'nosniff')
+    if (asset.kind === 'manifest') {
+      reply.header('Content-Disposition', `attachment; filename="manifest-${asset.sha256.slice(0, 16)}.json"`)
+    } else if (asset.kind === 'delivery_zip') {
+      reply.header('Content-Disposition', `attachment; filename="delivery-${asset.sha256.slice(0, 16)}.zip"`)
+    }
     return reply.send(asset.bytes)
   })
 }

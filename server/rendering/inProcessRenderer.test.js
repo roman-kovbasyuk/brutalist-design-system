@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import sharp from 'sharp'
 import { pilotTemplateFixture } from '../../shared/fixtures/pilotTemplate.js'
-import { createInProcessRenderer, RendererError } from './inProcessRenderer.js'
+import { createInProcessRenderer, RendererError, svgGlyphLayer } from './inProcessRenderer.js'
+
+const require = createRequire(import.meta.url)
 
 async function sourceImage({ width = 1000, height = 1000, color = '#db2777' } = {}) {
   return sharp({ create: { width, height, channels: 4, background: color } }).png().toBuffer()
@@ -23,6 +29,58 @@ async function validInput(overrides = {}) {
 }
 
 describe('deterministic in-process banner renderer', () => {
+  test('rejects unreadable font bytes instead of falling back to a host font', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'banner-fonts-'))
+    const invalidFont = join(directory, 'invalid.woff2')
+    await writeFile(invalidFont, Buffer.from('not a font'))
+    try {
+      expect(() => createInProcessRenderer({
+        resolvedFontFiles: { 400: invalidFont, 600: invalidFont, 700: invalidFont },
+      })).toThrow(expect.objectContaining({ code: 'invalid_font' }))
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test('rejects an incomplete bundled Inter weight set during renderer construction', () => {
+    expect(() => createInProcessRenderer({ resolvedFontFiles: {} }))
+      .toThrow(expect.objectContaining({ code: 'invalid_font' }))
+  })
+
+  test('rejects a readable but wrong Inter face instead of substituting it', () => {
+    expect(() => createInProcessRenderer({
+      resolvedFontFiles: {
+        400: require.resolve('inter-ui/web/Inter-Regular.woff2'),
+        600: require.resolve('inter-ui/display/InterDisplay-SemiBold.woff2'),
+        700: require.resolve('inter-ui/display/InterDisplay-Bold.woff2'),
+      },
+    })).toThrow(expect.objectContaining({ code: 'invalid_font' }))
+  })
+
+  test('renders the same glyphs with visibly distinct bundled Inter 400, 600, and 700 outlines', async () => {
+    const renderer = createInProcessRenderer()
+    const hashes = []
+    for (const fontWeight of [400, 600, 700]) {
+      const input = await validInput()
+      input.manifest.slots[0].fontWeight = fontWeight
+      hashes.push((await renderer.renderComposition(input)).sha256)
+    }
+
+    expect(new Set(hashes)).toHaveLength(3)
+  })
+
+  test('emits shaped glyph paths without SVG text or host-font instructions', () => {
+    const svg = svgGlyphLayer({
+      width: 200,
+      height: 80,
+      lines: [{ baseline: 32, glyphs: [{ path: 'M0 0L10 0L10 10Z', x: 2, yOffset: 0, scale: 0.04 }] }],
+    }).toString('utf8')
+
+    expect(svg).toContain('<path ')
+    expect(svg).not.toContain('<text')
+    expect(svg).not.toContain('font-family')
+  })
+
   test('renders exact pilot pixels with pinned Inter weights and a normalized deterministic manifest', async () => {
     const renderer = createInProcessRenderer()
     const input = await validInput()
@@ -33,6 +91,7 @@ describe('deterministic in-process banner renderer', () => {
     expect(metadata).toMatchObject({ format: 'png', width: 1080, height: 1080 })
     expect(Buffer.from(second.bytes)).toEqual(Buffer.from(first.bytes))
     expect(second.sha256).toBe(first.sha256)
+    expect(first.sha256).toBe('e505e233174b40069ad84377bec91b9980db8ebbe3994ab27b7655961c94f917')
     expect(first).toMatchObject({ mimeType: 'image/png', width: 1080, height: 1080, byteSize: first.bytes.length })
     expect(first.renderManifest).toMatchObject({
       schemaVersion: 1,

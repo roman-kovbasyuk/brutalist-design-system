@@ -45,4 +45,17 @@ describe('private asset route', () => {
     expect(response.json()).toMatchObject({ code: 'not_found' })
     await app.close()
   })
+
+  test.each([
+    ['manifest', 'application/json', 'json'],
+    ['delivery_zip', 'application/zip', 'zip'],
+  ])('forces %s downloads with a safe server-owned filename', async (kind, mimeType, extension) => {
+    const { app } = makeApp({ result: { ...asset, kind, mimeType } })
+    const response = await app.inject({ method: 'GET', url: '/api/v1/assets/asset-1' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-disposition'])
+      .toBe(`attachment; filename="${kind === 'manifest' ? 'manifest' : 'delivery'}-${asset.sha256.slice(0, 16)}.${extension}"`)
+    await app.close()
+  })
 })
