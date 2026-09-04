@@ -6,6 +6,7 @@ import { DesignSystemScreen } from './screens/DesignSystemScreen.jsx'
 import { DesignerReviewScreen } from './screens/DesignerReviewScreen.jsx'
 import { TemplatesScreen } from './screens/TemplatesScreen.jsx'
 import { WorkflowScreen } from './screens/WorkflowScreen.jsx'
+import { MvpApp } from './mvp/MvpApp.jsx'
 
 const defaultCampaignId = campaignHistory[0].id
 
@@ -15,6 +16,8 @@ export default function App() {
   const [requestedTemplate, setRequestedTemplate] = useState(null)
   const route = getRoute(pathname)
   const activeCampaignId = route.campaignId ?? campaignContextId
+
+  if (route.view === 'mvp') return <MvpApp />
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' })
@@ -61,6 +64,8 @@ export default function App() {
 }
 
 function getRoute(pathname) {
+  if (pathname === '/mvp' || pathname.startsWith('/mvp/')) return { view: 'mvp' }
+
   const campaignMatch = pathname.match(/^\/campaign\/([^/]+)$/)
   if (campaignMatch) return { view: 'campaign', campaignId: campaignMatch[1] }
 

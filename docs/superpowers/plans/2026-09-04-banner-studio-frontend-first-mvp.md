@@ -205,23 +205,23 @@ git commit -m "feat: add persistent mock campaign gateway"
 - Produces: `/mvp` and `/mvp/campaign/:id` routes.
 - `MvpApp` owns loading/error state and selected campaign ID; stage components receive a campaign and action callbacks.
 
-- [ ] **Step 1: Write failing shell tests**
+- [x] **Step 1: Write failing shell tests**
 
 Assert that `/mvp` shows `Banner Studio MVP`, provider badge `Mock provider`, campaign list, phase progress, and a `Create campaign` action.
 
-- [ ] **Step 2: Run and confirm RED**
+- [x] **Step 2: Run and confirm RED**
 
 Run: `npm test -- --run src/mvp/MvpApp.test.jsx src/mvp/MvpShell.test.jsx`
 
-- [ ] **Step 3: Implement the minimal shell and isolated route**
+- [x] **Step 3: Implement the minimal shell and isolated route**
 
 The shell has three areas at desktop width: campaign rail, main stage, and current-version summary. At mobile width they become one column, with the phase rail above the stage.
 
-- [ ] **Step 4: Run and confirm GREEN**
+- [x] **Step 4: Run and confirm GREEN**
 
 Run: `npm test -- --run src/mvp/MvpApp.test.jsx src/mvp/MvpShell.test.jsx`
 
-- [ ] **Step 5: Build and commit**
+- [x] **Step 5: Build and commit**
 
 Run: `npm run build`
 
