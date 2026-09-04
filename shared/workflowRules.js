@@ -1,4 +1,10 @@
-import { compositionSchema, copyVariantSchema, visualDirectionSchema } from './contracts.js'
+import {
+  campaignStatusSchema,
+  compositionSchema,
+  copyVariantSchema,
+  roleSchema,
+  visualDirectionSchema,
+} from './contracts.js'
 
 const lockedStatuses = new Set(['in_review', 'changes_requested', 'ready', 'approved', 'delivered'])
 const marketerRoles = ['marketer', 'admin']
@@ -37,6 +43,22 @@ function validVersion(value) {
 
 function roleAllowed(actor, roles) {
   return actor != null && roles.includes(actor.role)
+}
+
+function hasValidRole(actor) {
+  return roleSchema.safeParse(actor?.role).success
+}
+
+function hasValidCampaignStatus(campaign) {
+  return campaignStatusSchema.safeParse(campaign?.status).success
+}
+
+function mergeStaleHistory(existing, invalidated) {
+  const stale = { ...existing }
+  for (const [artifact, isStale] of Object.entries(invalidated)) {
+    stale[artifact] = existing?.[artifact] === true || isStale === true
+  }
+  return stale
 }
 
 function guardResult(value) {
@@ -162,12 +184,22 @@ const transitions = [
 ]
 
 export function allowedActions({ campaign, actor }) {
+  if (!hasValidCampaignStatus(campaign) || !hasValidRole(actor)) return []
+
   return transitions
     .filter((transition) => transition.from === campaign.status && roleAllowed(actor, transition.roles))
     .map((transition) => transition.action)
 }
 
 export function transitionCampaign({ campaign, action, actor, input = {} }) {
+  if (!hasValidCampaignStatus(campaign)) {
+    return failure('invalid_campaign_status', 400, 'Campaign status is invalid.')
+  }
+
+  if (!hasValidRole(actor)) {
+    return failure('invalid_actor_role', 400, 'Actor role is invalid.')
+  }
+
   const transition = transitions.find((candidate) => (
     candidate.from === campaign.status && candidate.action === action
   ))
@@ -203,6 +235,10 @@ export function transitionCampaign({ campaign, action, actor, input = {} }) {
 }
 
 export function applyArtifactEdit(campaign, changedArtifact) {
+  if (!hasValidCampaignStatus(campaign)) {
+    return failure('invalid_campaign_status', 400, 'Campaign status is invalid.')
+  }
+
   if (lockedStatuses.has(campaign.status)) {
     return failure('content_locked', 409, `Campaign content is locked while status is ${campaign.status}.`)
   }
@@ -237,7 +273,7 @@ export function applyArtifactEdit(campaign, changedArtifact) {
     ...campaign,
     status: rule.status,
     revision: campaign.revision + 1,
-    stale: rule.stale,
+    stale: mergeStaleHistory(campaign.stale, rule.stale),
   }
   for (const field of rule.clear) delete updated[field]
 

@@ -190,6 +190,30 @@ describe('transitionCampaign', () => {
     expect(allowedActions({ campaign: campaignAt('draft'), actor: admin })).toEqual(['select_copy'])
     expect(allowedActions({ campaign: campaignAt('in_review'), actor: admin })).toEqual([])
   })
+
+  test('rejects an invalid actor role at the workflow boundary', () => {
+    const actor = { id: 'user-unknown', role: 'reviewer' }
+
+    expect(transitionCampaign({
+      campaign: campaignAt('draft'),
+      action: 'select_copy',
+      actor,
+      input: { copy: pilotCampaignFixture.selectedCopy },
+    })).toMatchObject({ ok: false, code: 'invalid_actor_role', status: 400 })
+    expect(allowedActions({ campaign: campaignAt('draft'), actor })).toEqual([])
+  })
+
+  test('rejects an invalid campaign status at the workflow boundary', () => {
+    const campaign = campaignAt('waiting-for-magic')
+
+    expect(transitionCampaign({
+      campaign,
+      action: 'select_copy',
+      actor: marketer,
+      input: { copy: pilotCampaignFixture.selectedCopy },
+    })).toMatchObject({ ok: false, code: 'invalid_campaign_status', status: 400 })
+    expect(allowedActions({ campaign, actor: marketer })).toEqual([])
+  })
 })
 
 describe('applyArtifactEdit', () => {
@@ -204,7 +228,20 @@ describe('applyArtifactEdit', () => {
     for (const field of cleared) expect(result.campaign[field]).toBeUndefined()
   })
 
-  test.each(['in_review', 'ready', 'approved', 'delivered'])('refuses edits while the campaign is %s', (status) => {
+  test('preserves an existing upstream stale marker while invalidating downstream artifacts', () => {
+    const result = applyArtifactEdit(campaignAt('composed', {
+      stale: { copy: true, directions: false, composition: false },
+    }), 'direction')
+
+    expect(result).toMatchObject({
+      ok: true,
+      campaign: {
+        stale: { copy: true, directions: false, composition: true },
+      },
+    })
+  })
+
+  test.each(['in_review', 'changes_requested', 'ready', 'approved', 'delivered'])('refuses edits while the campaign is %s', (status) => {
     expect(applyArtifactEdit(campaignAt(status), 'brief'))
       .toMatchObject({ ok: false, code: 'content_locked', status: 409 })
   })
