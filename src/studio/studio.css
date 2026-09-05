@@ -1,5 +1,5 @@
 .bs-root{--bs-canvas:var(--v2-canvas,#f4f4f0);--bs-accent:var(--v2-accent,#79d9ff);--bs-ink:#111;--bs-muted:#595959;--bs-line:#d5d5ce;display:flex;min-height:100dvh;color:var(--bs-ink);background:var(--bs-canvas);font-family:var(--v2-font);font-size:15px;line-height:1.5;letter-spacing:0}
-.bs-prompt .v2-block-composer textarea{min-height:210px;max-height:400px;resize:vertical;font-size:16px;padding:10px 4px;line-height:1.6}
+.bs-prompt .v2-block-composer textarea{min-height:150px;max-height:280px;resize:vertical;font-size:16px;padding:10px 4px;line-height:1.6}
 .bs-prompt .v2-block-composer{padding:20px}
 .bs-prompt .v2-block-toolbar{gap:10px}
 .bs-prompt .bs-prompt-send{margin-left:auto;min-height:44px}
