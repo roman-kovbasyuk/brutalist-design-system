@@ -13,6 +13,6 @@ export function CampaignOverview({ workspace }) {
     <dl className="bs-campaign-facts">
       {facts.map(([label, value]) => <div key={label} data-fact={label.toLowerCase()}><dt>{label}</dt><dd data-empty={!value?.trim()}>{value?.trim() || 'Not specified'}</dd></div>)}
     </dl>
-    {summary && <div className="bs-campaign-summary"><p>{summary}</p></div>}
+    {summary && <div className="bs-campaign-summary"><p className="bs-lead">{summary}</p></div>}
   </section>
 }

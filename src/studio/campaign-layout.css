@@ -31,8 +31,7 @@
 .bs-campaign-facts dd { font-size: 20px; font-weight: 500; line-height: 1.3; margin: 0; overflow-wrap: anywhere; }
 .bs-campaign-facts dd[data-empty='true'] { font-size: 16px; font-weight: 400; color: #5a5a51; }
 .bs-campaign-summary { margin-top: 24px; }
-.bs-root .bs-campaign-summary h2 { font-size: 16px; margin: 0 0 12px; }
-.bs-campaign-summary p { font-size: 14px; line-height: 1.65; color: #55554d; max-width: 72ch; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bs-campaign-summary p.bs-lead { font-size: 20px; line-height: 1.5; letter-spacing: -.015em; color: #111; max-width: 60ch; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .bs-direction-list { display: flex; flex-direction: column; gap: 24px; }
 .bs-direction-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid #111; border-radius: 3px; background: #fff; overflow: hidden; }
 .bs-direction-row[data-selected='true'] { outline: 2px solid #111; outline-offset: 3px; }
@@ -66,4 +65,5 @@
   .bs-direction-row { grid-template-columns: minmax(0, 1fr); }
   .bs-direction-media { border-right: 0; border-bottom: 1px solid #111; }
   .bs-direction-description { padding: 24px; }
+  .bs-campaign-summary p.bs-lead { font-size: 17px; }
 }
