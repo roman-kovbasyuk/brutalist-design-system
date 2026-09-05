@@ -17,6 +17,13 @@ function mockAssets() {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('standalone animation draft export', () => {
+  test('embeds the optional tag safely in the exported banner', async () => {
+    mockAssets()
+    const html = await readBlob(await createAnimatedBannerHtml({ tag: '20% off <today>' }))
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    expect(document.querySelector('.studio-banner__copy--tag')?.textContent).toBe('20% off <today>')
+    expect(document.querySelector('today')).toBeNull()
+  })
   test.each(['editorial-split', 'product-spotlight', 'bold-announcement'])('embeds %s with image, fonts, motion and explicit draft status', async (templateId) => {
     const fetcher = mockAssets()
     const blob = await createAnimatedBannerHtml({ templateId, ratioId: 'story', imageUrl: 'blob:http://localhost:3000/test-image' })

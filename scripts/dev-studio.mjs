@@ -49,8 +49,8 @@ export async function startDemoServer({ port = 3010 } = {}) {
       provider: 'mock', model: 'mock-v1', region: 'europe-west6', dailyBudgetMicrounits: 1_000_000_000,
       perStepRegenerationLimit: 20, generationDisabled: false,
     } })
-    const { studioTemplates } = await import('../shared/studioTemplates.js')
-    for (const manifest of studioTemplates) {
+    const { legacyStudioTemplates, studioTemplates } = await import('../shared/studioTemplates.js')
+    for (const manifest of [...legacyStudioTemplates, ...studioTemplates]) {
       const existing = await workflowService.getTemplateVersion({ actor: admin, templateId: manifest.id, version: manifest.version })
       if (!existing) await workflowService.createTemplateVersion({ actor: admin, input: { id: manifest.id, name: manifest.name, version: manifest.version, manifest } })
     }

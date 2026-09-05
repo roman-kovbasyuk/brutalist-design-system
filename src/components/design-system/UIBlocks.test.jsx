@@ -1,0 +1,60 @@
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, test } from 'vitest'
+import { PromptInputBlock, SchedulingBlock, SettingsBlock } from './UIBlocks.jsx'
+
+describe('UI blocks', () => {
+  test('uses slash commands, manages attachments, and can stop generation', async () => {
+    const user = userEvent.setup()
+    render(<PromptInputBlock />)
+    const prompt = screen.getByRole('textbox', {name: 'Campaign prompt'})
+    expect(screen.getByRole('button', {name: 'Send prompt'})).toBeDisabled()
+    await user.type(prompt, '/rewrite{Enter}')
+    expect(prompt).toHaveValue('Rewrite this message for clarity: ')
+    const file = new File(['Brief'], 'campaign.txt', {type: 'text/plain'})
+    await user.upload(screen.getByLabelText('Prompt files'), file)
+    expect(screen.getByText('campaign.txt')).toBeVisible()
+    await user.click(screen.getByRole('button', {name: 'Remove campaign.txt'}))
+    expect(screen.queryByText('campaign.txt')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: 'Send prompt'}))
+    await user.click(screen.getByRole('button', {name: 'Stop generation'}))
+    expect(screen.getByRole('status')).toHaveTextContent('Generation stopped')
+    expect(prompt).toHaveValue('Rewrite this message for clarity: ')
+  })
+
+  test('changing a day clears the selected slot and confirms only available choices', async () => {
+    const user = userEvent.setup()
+    render(<SchedulingBlock />)
+    const confirm = screen.getByRole('button', {name: 'Confirm time'})
+    expect(confirm).toBeDisabled()
+    expect(screen.getByRole('radio', {name: 'September 17'})).toBeDisabled()
+    await user.click(screen.getByRole('radio', {name: '09:30'}))
+    await user.click(screen.getByRole('radio', {name: 'September 15'}))
+    expect(confirm).toBeDisabled()
+    expect(screen.queryByRole('radio', {name: '09:30'})).not.toBeInTheDocument()
+    await user.click(screen.getByRole('radio', {name: '14:00'}))
+    await user.click(confirm)
+    expect(screen.getByRole('status')).toHaveTextContent('September 15 at 14:00')
+    expect(screen.getByRole('button', {name: 'Confirmed'})).toBeDisabled()
+  })
+
+  test('settings cancel restores the saved boundary and menus support keyboard selection', async () => {
+    const user = userEvent.setup()
+    render(<SettingsBlock />)
+    const form = screen.getByRole('form', {name: 'Workspace preferences'})
+    const save = within(form).getByRole('button', {name: 'Save preferences'})
+    const mentions = within(form).getByRole('switch', {name: 'Mentions'})
+    expect(save).toBeDisabled()
+    await user.click(mentions)
+    await user.click(within(form).getByRole('button', {name: 'Cancel'}))
+    expect(mentions).toHaveAttribute('aria-checked', 'true')
+    await user.click(within(form).getByRole('button', {name: 'Workspace language: English'}))
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(within(form).getByRole('button', {name: 'Workspace language: Deutsch'})).toHaveFocus()
+    await user.click(save)
+    expect(within(form).getByRole('status')).toHaveTextContent('Preferences saved')
+    await user.click(mentions)
+    await user.click(within(form).getByRole('button', {name: 'Cancel'}))
+    expect(within(form).getByRole('button', {name: 'Workspace language: Deutsch'})).toBeVisible()
+  })
+})

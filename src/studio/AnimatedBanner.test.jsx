@@ -3,6 +3,12 @@ import { describe, expect, test } from 'vitest'
 import { AnimatedBanner } from './AnimatedBanner.jsx'
 
 describe('AnimatedBanner', () => {
+  test('renders an optional tag as escaped text and removes it when blank', () => {
+    const { rerender } = render(<AnimatedBanner tag="20% off until Sunday" playing={false} />)
+    expect(screen.getByRole('img').querySelector('.studio-banner__copy--tag')).toHaveTextContent('20% off until Sunday')
+    rerender(<AnimatedBanner tag="" />)
+    expect(screen.getByRole('img').querySelector('.studio-banner__copy--tag')).toBeNull()
+  })
   test('shows an accessible static thumbnail before the first playback', () => {
     const { rerender } = render(<AnimatedBanner playing={false} headline="Listen & discover" />)
     const canvas = screen.getByRole('img', { name: /Listen & discover/ })

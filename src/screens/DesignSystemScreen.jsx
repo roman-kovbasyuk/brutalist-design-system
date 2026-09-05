@@ -1,88 +1,155 @@
+import { Sparkles } from 'lucide-react'
+import { ResponsiveSpecimen } from '../components/design-system/ResponsiveSpecimen.jsx'
+import { ControlSpecimens, NavigationSpecimens } from '../components/design-system/ControlSpecimens.jsx'
+import {
+  ContentObjectSpecimens,
+  DataSpecimens,
+  FeedbackSpecimens,
+} from '../components/design-system/DataSpecimens.jsx'
+import { MotionSpecimens } from '../components/design-system/MotionSpecimens.jsx'
+import { SpecimenSection } from '../components/design-system/SpecimenSection.jsx'
+import { UIBlocks } from '../components/design-system/UIBlocks.jsx'
+import '../styles/design-system.css'
+
 const colors = [
-  ['Ink', '#111111'],
-  ['Paper', '#F4F4F1'],
-  ['Surface', '#FFFFFF'],
-  ['Rule', '#D9D9D2'],
-  ['Success', '#1D6B43'],
+  { name: 'Canvas', value: '#f4f4f0', token: 'var(--v2-canvas)' },
+  { name: 'Surface', value: '#ffffff', token: 'var(--v2-surface)' },
+  { name: 'Ink', value: '#000000', token: 'var(--v2-ink)' },
+  { name: 'Accent', value: '#79d9ff', token: 'var(--v2-accent)' },
+  { name: 'Success', value: '#23a094', token: 'var(--v2-success)' },
+  { name: 'Danger', value: '#dc341e', token: 'var(--v2-danger)' },
+  { name: 'Muted', value: '50% black', token: 'var(--v2-muted)' },
 ]
 
-const formats = [
-  ['Square', '1080×1080', '1 / 1'],
-  ['Portrait', '1080×1350', '4 / 5'],
-  ['Story', '1080×1920', '9 / 16'],
-  ['Landscape', '1200×628', '1200 / 628'],
+const typeRoles = [
+  { name: 'Page title', value: '48px', className: 'v2-type-sample--page' },
+  { name: 'Display', value: '32px', className: 'v2-type-sample--display' },
+  { name: 'Section title', value: '24px', className: 'v2-type-sample--section' },
+  { name: 'Component title', value: '20px', className: 'v2-type-sample--component' },
+  { name: 'Body and controls', value: '16px / 22px', className: 'v2-type-sample--body' },
+  { name: 'Metadata', value: '14px', className: 'v2-type-sample--meta' },
 ]
+
+const spacingSteps = [4, 8, 12, 16, 24, 32, 48, 64]
+const iconSizes = [16, 20, 24]
 
 export function DesignSystemScreen() {
   return (
-    <section className="reference-screen system-screen">
-      <header className="page-header page-header--split">
+    <div className="system-screen--v2">
+      <header className="v2-page-header">
         <div>
-          <p className="page-context">Reference 01</p>
-          <h1>Design system</h1>
+          <h1>Banner Studio design system</h1>
         </div>
-        <p className="page-description">
-          The interface stays neutral. Color, imagery, and motion belong to the creative,
-          not the tool around it.
+        <p className="v2-page-header__intro">
+          A practical reference for the foundations, components, states, and responsive
+          behavior that shape the Banner Studio interface.
         </p>
       </header>
 
-      <section className="system-section">
-        <div className="section-label"><span>01</span><h2>Color and surfaces</h2></div>
-        <div className="color-strip">
-          {colors.map(([name, value]) => (
-            <div className="color-token" key={name}>
-              <span style={{ background: value }} />
-              <strong>{name}</strong>
-              <small>{value}</small>
+      <SpecimenSection
+        index={1}
+        title="Foundations"
+        description="The shared visual constraints behind every production surface."
+        className="v2-section--foundations"
+      >
+        <div className="v2-foundation-group v2-foundation-group--colors">
+          <div className="v2-foundation-group__heading">
+            <h3>Color</h3>
+            <p>Warm structural neutrals with explicit action and status colors.</p>
+          </div>
+          <div className="v2-color-grid">
+            {colors.map((color) => (
+              <div className="v2-color-swatch" key={color.name}>
+                <span className="v2-color-swatch__sample" style={{ background: color.token }} />
+                <strong>{color.name}</strong>
+                <small>{color.value}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="v2-foundation-group">
+          <div className="v2-foundation-group__heading">
+            <h3>Typography</h3>
+            <p>Regular-weight roles with a compact, readable base rhythm.</p>
+          </div>
+          <div className="v2-type-grid">
+            {typeRoles.map((role) => (
+              <div className={`v2-type-sample ${role.className}`} key={role.name}>
+                <span>{role.name}</span>
+                <p>Make creative work clear.</p>
+                <small>{role.value}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="v2-foundation-group">
+          <div className="v2-foundation-group__heading">
+            <h3>Spacing</h3>
+            <p>4px base unit</p>
+          </div>
+          <div className="v2-spacing-grid">
+            {spacingSteps.map((step) => (
+              <div className="v2-spacing-step" key={step}>
+                <span style={{ width: step, height: step }} />
+                <small>{step}px</small>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="v2-foundation-grid">
+          <div className="v2-foundation-card">
+            <h3>Shape</h3>
+            <div className="v2-shape-samples">
+              <div><span className="v2-shape-sample v2-shape-sample--corner" /><small>4px corner</small></div>
+              <div><span className="v2-shape-sample v2-shape-sample--circle" /><small>Circle</small></div>
+              <div>
+                <span className="v2-status-pill"><span aria-hidden="true" />Ready</span>
+                <small>Compact status</small>
+              </div>
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
 
-      <section className="system-section type-section">
-        <div className="section-label"><span>02</span><h2>Typography</h2></div>
-        <div className="type-samples">
-          <div><span>Display / 72</span><p className="type-display">One idea.<br />Twenty systems.</p></div>
-          <div><span>Body / 16</span><p className="type-body">Copy must survive every resize, preserve its hierarchy, and remain readable in each format.</p></div>
-        </div>
-      </section>
-
-      <section className="system-section">
-        <div className="section-label"><span>03</span><h2>Content contract</h2></div>
-        <div className="contract-table" role="table" aria-label="Banner content contract">
-          {[
-            ['headline', 'up to 54 characters', 'required'],
-            ['body', 'up to 120 characters', 'required'],
-            ['offer', 'up to 28 characters', 'optional'],
-            ['cta', 'up to 24 characters', 'required'],
-            ['visual', 'image / video', 'required'],
-          ].map((row) => (
-            <div role="row" key={row[0]}>{row.map((cell) => <span role="cell" key={cell}>{cell}</span>)}</div>
-          ))}
-        </div>
-      </section>
-
-      <section className="system-section">
-        <div className="section-label"><span>04</span><h2>Formats</h2></div>
-        <div className="format-system-grid">
-          {formats.map(([label, size, ratio]) => (
-            <div className="format-system-item" key={size}>
-              <span className="format-shape" style={{ aspectRatio: ratio }} />
-              <strong>{label}</strong><small>{size}</small>
+          <div className="v2-foundation-card">
+            <h3>Borders</h3>
+            <div className="v2-border-sample">
+              <span />
+              <p><strong>1px black rule</strong><small>No ambient shadows</small></p>
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
 
-      <section className="system-section">
-        <div className="section-label"><span>05</span><h2>Motion</h2></div>
-        <div className="motion-rules">
-          <p><strong>Entrance</strong><span>One primary gesture per scene</span></p>
-          <p><strong>Rhythm</strong><span>Motion follows the message, not decoration</span></p>
-          <p><strong>Transition</strong><span>The composition reflows instead of disappearing</span></p>
+          <div className="v2-foundation-card">
+            <h3>Icon sizes</h3>
+            <div className="v2-icon-sizes">
+              {iconSizes.map((size) => (
+                <div key={size}><Sparkles aria-hidden="true" size={size} /><small>{size}px</small></div>
+              ))}
+            </div>
+          </div>
+
+          <div className="v2-foundation-card">
+            <h3>Motion timing</h3>
+            <dl className="v2-motion-timing">
+              <div><dt>Feedback</dt><dd>150ms</dd></div>
+              <div><dt>Disclosure</dt><dd>200ms</dd></div>
+              <div><dt>Easing</dt><dd>Ease out</dd></div>
+            </dl>
+          </div>
         </div>
-      </section>
-    </section>
+      </SpecimenSection>
+
+      <ControlSpecimens />
+      <NavigationSpecimens />
+      <FeedbackSpecimens />
+      <DataSpecimens />
+      <ContentObjectSpecimens />
+      <MotionSpecimens />
+      <SpecimenSection index={9} title="Responsive behavior" description="Reference reflows for compact and mobile workspaces.">
+        <ResponsiveSpecimen />
+      </SpecimenSection>
+      <UIBlocks />
+    </div>
   )
 }

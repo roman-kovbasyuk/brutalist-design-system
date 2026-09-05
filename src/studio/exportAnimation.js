@@ -42,14 +42,15 @@ async function embedAsset(url, kind) {
 
 /** Returns a standalone text/html Blob. This is an unapproved draft, never an approved delivery artifact. */
 export async function createAnimatedBannerHtml({
-  templateId = 'editorial-split', headline, body, cta, imageUrl = studioSampleImage, ratioId = 'square',
+  templateId = 'editorial-split', headline, body, cta, tag = '', imageUrl = studioSampleImage, ratioId = 'square',
 } = {}) {
   const template = studioTemplates.find((item) => item.id === templateId)
   if (!template) throw new Error('Choose one of the bundled animation templates.')
   const ratio = template.ratios.find((item) => item.id === ratioId)
   if (!ratio) throw new Error('Choose a supported animation format.')
   const defaults = studioTemplateSamples[template.id]
-  const values = { headline: headline ?? defaults.headline, body: body ?? defaults.body, cta: cta ?? defaults.cta }
+  const values = { headline: headline ?? defaults.headline, body: body ?? defaults.body, cta: cta ?? defaults.cta, tag }
+  if (typeof tag !== 'string' || tag.length > 40) throw new Error('The tag must be text of no more than 40 characters.')
   for (const field of ['headline', 'body', 'cta']) {
     if (typeof values[field] !== 'string' || values[field].length > 2000) throw new Error(`The ${field} must be text of no more than 2,000 characters.`)
   }

@@ -26,7 +26,7 @@ const editorialCta = placements(box(88, 800, 330, 40), box(88, 545, 330, 40), bo
 const spotlightCta = placements(box(88, 946, 330, 40), box(88, 1200, 330, 40), box(88, 1720, 330, 40), box(88, 478, 330, 40))
 const announcementCta = placements(box(88, 898, 350, 40), box(88, 1180, 350, 40), box(88, 1738, 350, 40), box(88, 490, 350, 40))
 
-export const studioTemplates = [
+export const legacyStudioTemplates = [
   {
     id: 'editorial-split', version: '1.0.0', name: 'Editorial split', ratios: studioRatios,
     presentation: {
@@ -79,6 +79,19 @@ export const studioTemplates = [
     ],
   },
 ]
+
+const tagPlacements = {
+  'editorial-split': placements(box(64, 724, 440, 54), box(490, 546, 510, 54), box(490, 680, 510, 54), box(64, 532, 570, 48)),
+  'product-spotlight': placements(box(550, 946, 466, 54), box(550, 1200, 466, 54), box(550, 1720, 466, 54), box(64, 530, 570, 48)),
+  'bold-announcement': placements(box(64, 962, 505, 54), box(550, 1180, 466, 54), box(550, 1738, 466, 54), box(64, 536, 654, 44)),
+}
+
+// Published versions are immutable. Old compositions keep their original manifest.
+export const studioTemplates = legacyStudioTemplates.map(template => ({
+  ...structuredClone(template), version: '1.1.0',
+  presentation: { ...structuredClone(template.presentation), slotColors: { ...template.presentation.slotColors, tag: template.presentation.slotColors.body } },
+  slots: [...structuredClone(template.slots), { ...text('tag', 18, 600, [40, 2], tagPlacements[template.id]), required: false }],
+}))
 
 export const studioTemplateSamples = {
   'editorial-split': { headline: 'A little more quiet.', body: 'Make room for the sounds you love. Thoughtfully made for your everyday.', cta: 'Find your focus' },

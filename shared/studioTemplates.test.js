@@ -9,6 +9,16 @@ const renderer = createInProcessRenderer()
 const image = await readFile('src/studio/assets/headphones.png')
 
 describe('production studio template family', () => {
+  test.each(studioTemplates)('$name includes a tag in actual PNG output and omits a blank tag', async manifest => {
+    const slots = { ...studioTemplateSamples[manifest.id], image: { bytes: image, mimeType: 'image/png' } }
+    for (const ratio of manifest.ratios) {
+      const tagged = await renderer.renderComposition({ manifest, ratio: ratio.id, slots: { ...slots, tag: '20% off until Sunday' } })
+      const blank = await renderer.renderComposition({ manifest, ratio: ratio.id, slots })
+      expect(tagged.renderManifest.slots.find(slot => slot.id === 'tag')?.lines.join(' ')).toBe('20% off until Sunday')
+      expect(tagged.sha256).not.toBe(blank.sha256)
+      expect(blank.renderManifest.slots.some(slot => slot.id === 'tag')).toBe(false)
+    }
+  }, 30000)
   test.each(studioTemplates)('$name renders actual PNGs in all four delivery sizes', async (manifest) => {
     expect(templateManifestSchema.parse(manifest)).toEqual(manifest)
     for (const ratio of manifest.ratios) {
