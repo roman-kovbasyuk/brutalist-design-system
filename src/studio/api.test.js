@@ -2,6 +2,16 @@ import { describe, expect, test, vi } from 'vitest'
 import { createStudioApi, StudioApiError } from './api.js'
 
 describe('Studio HTTP client', () => {
+  test('posts brief files to the authenticated extraction endpoint', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ text: 'Extracted copy' })))
+    const api = createStudioApi({ fetchImpl, getToken: () => 'token' })
+
+    await expect(api.extractBriefFile({ name: 'brief.md', mimeType: 'text/markdown', data: 'IyBMYXVuY2g=' }))
+      .resolves.toEqual({ text: 'Extracted copy' })
+    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/brief-files/extract', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ name: 'brief.md', mimeType: 'text/markdown', data: 'IyBMYXVuY2g=' }),
+    }))
+  })
   test('sends token, local headers, exact revision and retry identity', async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ campaign: { revision: 8 } })))
     const api = createStudioApi({ fetchImpl, getToken: () => 'token', getHeaders: () => ({ 'X-Studio-Demo-Role': 'marketer' }), baseUrl: 'http://localhost:3010/' })

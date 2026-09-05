@@ -12,7 +12,9 @@ const job = {
 const copyResult = {
   provider: 'mock', model: 'mock-v1', region: 'europe-west6', usage: { inputUnits: 20, outputUnits: 30 },
   actualCostMicrounits: 240, safety: { verdict: 'safe', categories: [] },
-  copies: [{ id: 'copy-1', headline: 'Learn now', body: 'Short lessons.', offer: '', cta: 'Start', visualPrompt: 'A clear desk.' }],
+  copies: Array.from({ length: 5 }, (_, index) => ({
+    id: `copy-${index + 1}`, headline: `Learn now ${index + 1}`, body: 'Short lessons.', offer: '', cta: 'Start', visualPrompt: 'A clear desk.',
+  })),
 }
 
 function harness(overrides = {}) {

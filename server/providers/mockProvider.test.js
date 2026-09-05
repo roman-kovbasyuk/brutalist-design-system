@@ -40,13 +40,27 @@ describe('deterministic mock generation provider contract', () => {
     const second = await provider.generateCopy({ analysis: { warnings: [], themes: ['speed'], summary: 'Focused launch' }, brief: { notes: briefA.notes, locale: briefA.locale, offer: briefA.offer, objective: briefA.objective, audience: briefA.audience, product: briefA.product } }, new AbortController().signal)
 
     expect(first).toEqual(second)
-    expect(first.copies).toHaveLength(3)
+    expect(first.copies).toHaveLength(5)
     expect(first.copies[0].headline).toContain('Nordic language course')
     expect(first).toMatchObject({
       provider: 'mock', model: 'mock-pilot-v1', region: 'europe-west6',
       safety: { verdict: 'safe' }, actualCostMicrounits: expect.any(Number),
     })
     expect(Number.isSafeInteger(first.actualCostMicrounits)).toBe(true)
+  })
+
+  test('analyses notes-only input and returns five deterministic options without invented tags', async () => {
+    const provider = createMockProvider()
+    const brief = { notes: 'Promote a Norwegian course to busy German-speaking adults. Encourage trial signups.' }
+    const signal = new AbortController().signal
+
+    const analysis = await provider.analyseBrief({ brief }, signal)
+    const result = await provider.generateCopy({ brief, analysis: analysis.analysis }, signal)
+
+    expect(analysis.analysis.summary).toContain('Norwegian course')
+    expect(result.copies).toHaveLength(5)
+    expect(new Set(result.copies.map((item) => item.id)).size).toBe(5)
+    expect(result.copies.every((item) => item.offer === '')).toBe(true)
   })
 
   test('implements brief analysis, five directions, and a temporary PNG without job IDs or video claims', async () => {

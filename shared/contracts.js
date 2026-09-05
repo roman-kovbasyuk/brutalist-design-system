@@ -36,17 +36,31 @@ export const reviewStatusSchema = z.enum([
 export const assetHashSchema = z.string().regex(/^[a-f0-9]{64}$/)
 
 export const briefSchema = z.strictObject({
-  product: nonEmptyString.max(200),
-  audience: nonEmptyString.max(500),
-  objective: nonEmptyString.max(500),
-  offer: z.string().trim().max(500),
-  locale: nonEmptyString.max(35),
-  notes: z.string().trim().max(2_000),
-})
+  product: z.string().trim().max(200).default(''),
+  audience: z.string().trim().max(500).default(''),
+  objective: z.string().trim().max(500).default(''),
+  offer: z.string().trim().max(500).default(''),
+  locale: z.string().trim().min(1).max(35).default('auto'),
+  notes: z.string().trim().max(20_000).default(''),
+}).refine(
+  (brief) => brief.notes.length > 0 || (brief.product.length > 0 && brief.audience.length > 0 && brief.objective.length > 0),
+  { message: 'Provide campaign notes or the product, audience, and objective fields.' },
+)
 
 export const createCampaignRequestSchema = z.strictObject({
   title: nonEmptyString.max(200),
   brief: briefSchema,
+})
+
+export const extractBriefFileRequestSchema = z.strictObject({
+  name: nonEmptyString.max(255),
+  mimeType: nonEmptyString.max(200),
+  data: z.string().max(7_000_000),
+})
+
+export const extractBriefFileResponseSchema = z.strictObject({
+  text: nonEmptyString.max(20_000),
+  requestId: requestIdSchema,
 })
 
 export const campaignPatchRequestSchema = z.strictObject({
@@ -187,10 +201,10 @@ export const apiErrorResponseSchema = z.strictObject({
 
 export const copyVariantSchema = z.strictObject({
   id: nonEmptyString,
-  headline: nonEmptyString.max(160),
-  body: nonEmptyString.max(500),
-  offer: z.string().trim().max(200),
-  cta: nonEmptyString.max(80),
+  headline: nonEmptyString.max(80),
+  body: nonEmptyString.max(160),
+  offer: z.string().trim().max(40).default(''),
+  cta: nonEmptyString.max(24),
   visualPrompt: nonEmptyString.max(2_000),
 })
 
@@ -555,7 +569,7 @@ export const analyseBriefResultSchema = z.union([
   providerFailureSchema,
 ])
 export const generateCopyResultSchema = z.union([
-  z.strictObject({ ...providerMetadataFields, copies: z.array(copyVariantSchema).min(1).max(10) }),
+  z.strictObject({ ...providerMetadataFields, copies: z.array(copyVariantSchema).length(5) }),
   providerFailureSchema,
 ])
 export const generateDirectionsResultSchema = z.union([

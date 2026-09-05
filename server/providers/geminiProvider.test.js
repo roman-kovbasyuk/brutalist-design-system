@@ -48,7 +48,7 @@ function textResponse(value, overrides = {}) {
   }
 }
 
-function copyVariants(count = 3) {
+function copyVariants(count = 5) {
   return Array.from({ length: count }, (_, index) => ({
     id: `copy-${index + 1}`,
     headline: `Headline ${index + 1}`,
@@ -137,28 +137,28 @@ describe('Gemini Vertex AI generation provider', () => {
     }))
   })
 
-  test('returns exactly three strict copy variants and rejects a different count', async () => {
-    const valid = harness(textResponse({ copies: copyVariants(3) }))
+  test('returns exactly five strict copy variants and rejects a different count', async () => {
+    const valid = harness(textResponse({ copies: copyVariants(5) }))
     const validResult = await valid.provider.generateCopy({ brief, analysis }, new AbortController().signal)
-    expect(validResult.copies).toHaveLength(3)
+    expect(validResult.copies).toHaveLength(5)
     expect(valid.client.models.generateContent).toHaveBeenCalledWith(expect.objectContaining({
       model: 'gemini-3.5-flash',
       contents: buildCopyPrompt({ brief, analysis }),
       config: expect.objectContaining({
         responseMimeType: 'application/json',
         responseJsonSchema: expect.objectContaining({
-          properties: expect.objectContaining({ copies: expect.objectContaining({ minItems: 3, maxItems: 3 }) }),
+          properties: expect.objectContaining({ copies: expect.objectContaining({ minItems: 5, maxItems: 5 }) }),
         }),
       }),
     }))
 
-    const invalid = harness(textResponse({ copies: copyVariants(2) }))
+    const invalid = harness(textResponse({ copies: copyVariants(4) }))
     await expect(invalid.provider.generateCopy({ brief, analysis }, new AbortController().signal))
       .resolves.toMatchObject({ error: { code: 'invalid_output', retryable: true } })
   })
 
   test('rejects duplicate copy IDs as normalized invalid output', async () => {
-    const copies = copyVariants(3)
+    const copies = copyVariants(5)
     copies[2].id = copies[0].id
     const { provider } = harness(textResponse({ copies }))
 
@@ -166,6 +166,22 @@ describe('Gemini Vertex AI generation provider', () => {
 
     expect(result).toMatchObject({ error: { code: 'invalid_output', retryable: true } })
     expect(result).not.toHaveProperty('copies')
+  })
+
+  test('accepts a missing optional tag and instructs inference from notes-only campaign data', async () => {
+    const notesOnly = { notes: 'Launch a Norwegian course for German-speaking adults and invite trial signups.' }
+    const copies = copyVariants(5).map(({ offer: _offer, ...item }) => item)
+    const analysisHarness = harness(textResponse({ analysis }))
+
+    const analysisResult = await analysisHarness.provider.analyseBrief({ brief: notesOnly }, new AbortController().signal)
+    expect(analysisResult.analysis).toEqual(analysis)
+    expect(analysisHarness.client.models.generateContent.mock.calls[0][0].config.systemInstruction).toMatch(/infer.*subject.*audience.*intent.*language/i)
+
+    const { provider } = harness(textResponse({ copies }))
+    const result = await provider.generateCopy({ brief: notesOnly, analysis }, new AbortController().signal)
+
+    expect(result.copies).toHaveLength(5)
+    expect(result.copies.every((item) => item.offer === '')).toBe(true)
   })
 
   test('returns exactly five strict visual directions with deterministic no-text image instructions', async () => {

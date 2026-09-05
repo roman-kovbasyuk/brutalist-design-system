@@ -44,6 +44,7 @@ export function createStudioApi({ getToken, getHeaders, fetchImpl = globalThis.f
     getSession: () => request('GET', '/api/v1/session'),
     listCampaigns: () => request('GET', '/api/v1/campaigns'),
     createCampaign: (input) => request('POST', '/api/v1/campaigns', { body: input }),
+    extractBriefFile: (input) => request('POST', '/api/v1/brief-files/extract', { body: input }),
     getWorkspace: (id) => request('GET', `${campaignPath(id)}/workspace`),
     patchCampaign: (id, patch, revision) => request('PATCH', campaignPath(id), { body: patch, revision }),
     generate(id, step, input = {}, key) {

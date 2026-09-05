@@ -88,9 +88,12 @@ export function createMockProvider({ model = 'mock-v1', region = 'europe-west6' 
       abortIfNeeded(signal)
       const command = analyseBriefInputSchema.parse(input)
       if (isBlocked(command)) return analyseBriefResultSchema.parse(blockedResult(options, command))
+      const subject = command.brief.product || command.brief.notes
+      const audience = command.brief.audience || 'the audience described in the campaign notes'
+      const intent = command.brief.objective || 'the campaign intent described in the notes'
       const analysis = {
-        summary: short(`${command.brief.product} for ${command.brief.audience}, focused on ${command.brief.objective}.`, 1_000),
-        themes: [command.brief.objective, command.brief.offer || 'clear value', 'confident simplicity'],
+        summary: short(`${subject} for ${audience}, focused on ${intent}.`, 1_000),
+        themes: [intent, command.brief.offer || 'clear value', 'confident simplicity'],
         warnings: command.brief.notes.toLowerCase().includes('personal data') ? ['Review the brief for personal data before publishing.'] : [],
       }
       return analyseBriefResultSchema.parse({ ...metadata({ ...options, input: command, outputUnits: 36, actualCostMicrounits: 80 }), analysis })
@@ -105,14 +108,18 @@ export function createMockProvider({ model = 'mock-v1', region = 'europe-west6' 
         ['Make progress with', 'Build momentum through short, focused sessions designed for', 'Start learning'],
         ['A clearer way to choose', 'A practical path for', 'Explore the offer'],
         ['Your next step:', 'Turn intention into action with a focused experience for', 'Get started'],
+        ['A fresh approach to', 'Discover an approachable experience created for', 'Discover more'],
+        ['Ready for', 'Move forward with a clear next step shaped for', 'Try it today'],
       ]
+      const subject = command.brief.product || 'your next goal'
+      const audience = command.brief.audience || 'the audience in your brief'
       const copies = angles.map(([lead, bodyLead, cta], index) => ({
         id: `copy-${seed.slice(index * 8, index * 8 + 8)}`,
-        headline: short(`${lead} ${command.brief.product}`, 160),
-        body: short(`${bodyLead} ${command.brief.audience}. ${command.brief.offer}`.trim(), 500),
-        offer: short(command.brief.offer, 200),
+        headline: short(`${lead} ${subject}`, 80),
+        body: short(`${bodyLead} ${audience}. ${command.brief.offer}`.trim(), 160),
+        offer: short(command.brief.offer, 40),
         cta,
-        visualPrompt: short(`Editorial campaign visual for ${command.brief.product}; ${command.analysis.themes.join(', ')}; locale ${command.brief.locale}.`, 2_000),
+        visualPrompt: short(`Editorial campaign visual for ${subject}; ${command.analysis.themes.join(', ')}; locale ${command.brief.locale}.`, 2_000),
       }))
       return generateCopyResultSchema.parse({ ...metadata({ ...options, input: command, outputUnits: 180, actualCostMicrounits: 240 }), copies })
     },

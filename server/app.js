@@ -11,6 +11,7 @@ import { registerVersionRoutes } from './routes/versions.js'
 import { registerReviewRoutes } from './routes/review.js'
 import { registerDeliveryRoutes } from './routes/delivery.js'
 import { registerWorkspaceRoutes } from './routes/workspace.js'
+import { registerBriefFileRoutes } from './routes/briefFiles.js'
 import { apiErrorResponseSchema } from '../shared/contracts.js'
 import { createAuthorizer } from './auth/authorize.js'
 import { registerStaticFiles } from './staticFiles.js'
@@ -76,6 +77,7 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
     const dependencies = { requireRole, workflowService }
     registerSessionRoute(app, dependencies)
     registerCampaignRoutes(app, dependencies)
+    registerBriefFileRoutes(app, { requireRole })
     if (workspaceService) registerWorkspaceRoutes(app, { requireRole, workspaceService })
     registerTemplateRoutes(app, dependencies)
     registerUserRoutes(app, dependencies)

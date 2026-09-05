@@ -12,6 +12,8 @@ import {
   campaignVersionSnapshotSchema,
   generationJobSchema,
   visualDirectionSchema,
+  briefSchema,
+  copyVariantSchema,
 } from './contracts.js'
 import { pilotCampaignFixture } from './fixtures/pilotCampaign.js'
 import { pilotTemplateFixture } from './fixtures/pilotTemplate.js'
@@ -27,6 +29,30 @@ const validVersionSnapshot = () => ({
 })
 
 describe('MVP contracts', () => {
+  test('accepts useful notes alone and supplies legacy brief defaults', () => {
+    expect(briefSchema.parse({ notes: 'Launch a calm autumn language-learning campaign for busy adults.' })).toEqual({
+      product: '', audience: '', objective: '', offer: '', locale: 'auto',
+      notes: 'Launch a calm autumn language-learning campaign for busy adults.',
+    })
+  })
+
+  test('rejects an empty brief while retaining complete legacy briefs', () => {
+    expect(briefSchema.safeParse({ notes: '   ' }).success).toBe(false)
+    expect(briefSchema.safeParse({
+      product: 'Course', audience: 'Adults', objective: 'Signups', offer: '', locale: 'en-GB', notes: '',
+    }).success).toBe(true)
+  })
+
+  test('enforces banner copy limits and defaults a missing optional tag', () => {
+    expect(copyVariantSchema.parse({
+      id: 'copy-1', headline: 'Learn Norwegian today', body: 'Short lessons for busy adults.',
+      cta: 'Start now', visualPrompt: 'A calm Nordic desk scene.',
+    }).offer).toBe('')
+    expect(copyVariantSchema.safeParse({
+      id: 'copy-1', headline: 'h'.repeat(81), body: 'b'.repeat(161),
+      cta: 'c'.repeat(25), offer: 'o'.repeat(41), visualPrompt: 'A visual.',
+    }).success).toBe(false)
+  })
   test('accepts only title and brief in campaign edit payloads', () => {
     expect(campaignPatchRequestSchema.parse({ title: 'Winter launch' })).toEqual({ title: 'Winter launch' })
     expect(campaignPatchRequestSchema.safeParse({}).success).toBe(false)
