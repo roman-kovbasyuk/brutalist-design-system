@@ -570,6 +570,15 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                     : 'Campaigns'}
             </strong>
           </div>
+          {route.view === 'campaign' && workspace && (
+            <span
+              className="bs-status bs-topbar-status"
+              data-status={workspace.campaign.status}
+              data-attention={['in_review', 'changes_requested', 'ready'].includes(workspace.campaign.status) || undefined}
+            >
+              {statusLabel(workspace.campaign.status)}
+            </span>
+          )}
           <div className="bs-topbar-right">
             <a href="/docs/" aria-label="Help and documentation">
               <CircleHelp size={19} />
@@ -647,12 +656,6 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                 <div>
                   <h1>{workspace.campaign.title}</h1>
                   {demo && <span className="bs-tag bs-demo-tag">Local demo</span>}
-                  <span
-                    className="bs-status"
-                    data-status={workspace.campaign.status}
-                  >
-                    {statusLabel(workspace.campaign.status)}
-                  </span>
                 </div>
               </div>
               <CampaignTimeline workspace={workspace} stage={stage} pending={pending} onChange={goStage} />
