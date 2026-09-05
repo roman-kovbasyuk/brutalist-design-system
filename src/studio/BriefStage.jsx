@@ -95,17 +95,7 @@ export function BriefStage({
   }
   return (
     <section className="bs-brief">
-      {campaign ? (
-        <p className="bs-brief-intro">
-          Paste your idea or attach a brief. AI will use the context to write five
-          banner options.
-        </p>
-      ) : (
-        <SectionHeading title="What are we creating?">
-          Paste your idea or attach a brief. AI will use the context to write five
-          banner options.
-        </SectionHeading>
-      )}
+      {!campaign && <SectionHeading title="What are we creating?" />}
       <PromptComposer
         value={message}
         onChange={(value) => {
@@ -124,6 +114,7 @@ export function BriefStage({
         busy={extracting || Boolean(pending)}
         canSubmit={Boolean(notes.trim()) && !tooLong}
         submitLabel="Analyze brief"
+        placeholder="Paste your idea or attach a brief. AI will use the context to write five banner options."
         hint={campaign ? '' : readOnly ? 'This brief is read-only.' : 'Up to 5 MB per file · 20,000 characters total · Ctrl / ⌘ + Enter to send'}
       />
       {extracting && (

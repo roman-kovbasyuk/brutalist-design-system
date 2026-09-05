@@ -16,6 +16,7 @@ export function PromptComposer({
   canSubmit = false,
   submitLabel = 'Send prompt',
   hint,
+  placeholder = 'Describe what you’re promoting, or drop your campaign brief here…',
 }) {
   const id = useId()
   const picker = useRef(null)
@@ -76,7 +77,7 @@ export function PromptComposer({
           rows={7}
           disabled={locked}
           aria-describedby={hint ? `${id}-hint` : undefined}
-          placeholder="Describe what you’re promoting, or drop your campaign brief here…"
+          placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             if (
