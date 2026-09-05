@@ -571,7 +571,6 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
             </strong>
           </div>
           <div className="bs-topbar-right">
-            {demo && <span className="bs-tag bs-demo-tag">Local demo</span>}
             <a href="/docs/" aria-label="Help and documentation">
               <CircleHelp size={19} />
             </a>
@@ -647,6 +646,7 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
               <div className="bs-campaign-heading">
                 <div>
                   <h1>{workspace.campaign.title}</h1>
+                  {demo && <span className="bs-tag bs-demo-tag">Local demo</span>}
                   <span
                     className="bs-status"
                     data-status={workspace.campaign.status}
