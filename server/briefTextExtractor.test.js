@@ -66,6 +66,7 @@ describe('brief text extraction', () => {
   test.each([
     ['brief.txt', 'text/plain'],
     ['brief.md', 'text/markdown'],
+    ['brief.markdown', 'text/markdown'],
   ])('extracts non-empty UTF-8 text from %s', async (name, mimeType) => {
     await expect(extractBriefText({ name, mimeType, data: Buffer.from('Autumn launch\nFor busy adults').toString('base64') }))
       .resolves.toBe('Autumn launch\nFor busy adults')
@@ -80,6 +81,18 @@ describe('brief text extraction', () => {
     await expect(extractBriefText({
       name: 'brief.pdf', mimeType: 'application/pdf', data: textPdf('Autumn launch').toString('base64'),
     })).resolves.toContain('Autumn launch')
+  })
+
+  test('locates the document parser independently of the process working directory', async () => {
+    const originalDirectory = process.cwd()
+    process.chdir('/tmp')
+    try {
+      await expect(extractBriefText({
+        name: 'brief.pdf', mimeType: 'application/pdf', data: textPdf('Portable parser path').toString('base64'),
+      })).resolves.toContain('Portable parser path')
+    } finally {
+      process.chdir(originalDirectory)
+    }
   })
 
   test('extracts text from a DOCX', async () => {

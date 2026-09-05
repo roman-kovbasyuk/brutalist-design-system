@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { BriefStage } from './BriefStage.jsx'
 
@@ -20,6 +21,44 @@ describe('brief composer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Generate five options' }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ brief: { notes: expect.stringContaining('Save 20% this weekend.') } })))
     expect(api.extractBriefFile).toHaveBeenCalledWith({ name: 'campaign.txt', mimeType: 'text/plain', data: expect.any(String) })
+  })
+  test.each([
+    ['campaign.md', '', 'text/markdown'],
+    ['campaign.md', 'application/octet-stream', 'text/markdown'],
+    ['campaign.markdown', '', 'text/markdown'],
+  ])('normalizes browser MIME %p for file-only %s briefs', async (name, browserType, expectedType) => {
+    const onSave = vi.fn(async () => {})
+    const api = { extractBriefFile: vi.fn(async () => ({ text: 'Campaign launch notes' })) }
+    render(<BriefStage onSave={onSave} api={api} />)
+    fireEvent.change(screen.getByLabelText('Brief files'), {
+      target: { files: [new File(['Campaign launch notes'], name, { type: browserType })] },
+    })
+    await screen.findByRole('button', { name: `Remove ${name}` })
+    expect(api.extractBriefFile).toHaveBeenCalledWith({ name, mimeType: expectedType, data: expect.any(String) })
+    fireEvent.click(screen.getByRole('button', { name: 'Generate five options' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ brief: { notes: expect.stringContaining('Campaign launch notes') } })))
+  })
+  test('preserves contradictory browser MIME for server-side rejection', async () => {
+    const api = { extractBriefFile: vi.fn(async () => { throw new Error('Unsupported attachment') }) }
+    render(<BriefStage onSave={vi.fn()} api={api} />)
+    fireEvent.change(screen.getByLabelText('Brief files'), {
+      target: { files: [new File(['Campaign'], 'campaign.md', { type: 'application/pdf' })] },
+    })
+    await screen.findByRole('alert')
+    expect(api.extractBriefFile).toHaveBeenCalledWith(expect.objectContaining({ mimeType: 'application/pdf' }))
+  })
+  test('preserves an over-limit paste so the user can edit it while blocking submission', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn(async () => {})
+    render(<BriefStage onSave={onSave} />)
+    const composer = screen.getByLabelText('Campaign description')
+    const pasted = 'x'.repeat(20_001)
+    await user.click(composer)
+    await user.paste(pasted)
+    expect(composer).toHaveValue(pasted)
+    expect(screen.getByRole('alert')).toHaveTextContent('exceeds 20,000 characters')
+    expect(screen.getByRole('button', { name: 'Generate five options' })).toBeDisabled()
+    expect(onSave).not.toHaveBeenCalled()
   })
   test('preserves typed input and explains extraction failure', async () => {
     const api = { extractBriefFile: vi.fn(async () => { throw new Error('This PDF has no readable text. Paste the brief instead.') }) }

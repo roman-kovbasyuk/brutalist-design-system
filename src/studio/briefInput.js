@@ -1,6 +1,14 @@
 export const MAX_BRIEF_CHARACTERS = 20000
 export const MAX_BRIEF_FILE_BYTES = 5 * 1024 * 1024
 
+const MIME_TYPE_BY_EXTENSION = new Map([
+  ['txt', 'text/plain'],
+  ['md', 'text/markdown'],
+  ['markdown', 'text/markdown'],
+  ['pdf', 'application/pdf'],
+  ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+])
+
 export function briefToText(brief) {
   if (!brief) return ''
   const context = [
@@ -35,7 +43,9 @@ export function briefTitle(text) {
 }
 
 export function readBriefFile(file) {
-  if (!/\.(txt|md|markdown|pdf|docx)$/i.test(file.name))
+  const extension = file.name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()
+  const extensionMimeType = MIME_TYPE_BY_EXTENSION.get(extension)
+  if (!extensionMimeType)
     return Promise.reject(new Error('Use a TXT, Markdown, PDF, or DOCX brief.'))
   if (!file.size || file.size > MAX_BRIEF_FILE_BYTES)
     return Promise.reject(
@@ -48,7 +58,10 @@ export function readBriefFile(file) {
     reader.onload = () =>
       resolve({
         name: file.name,
-        mimeType: file.type,
+        mimeType:
+          !file.type || file.type.toLowerCase() === 'application/octet-stream'
+            ? extensionMimeType
+            : file.type,
         data: String(reader.result).split(',')[1],
       })
     reader.readAsDataURL(file)

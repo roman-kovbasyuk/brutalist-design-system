@@ -1,5 +1,5 @@
 import { fork } from 'node:child_process'
-import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const MAX_BRIEF_FILE_BYTES = 5 * 1024 * 1024
 export const MAX_BRIEF_TEXT_CHARACTERS = 20_000
@@ -7,11 +7,13 @@ const MAX_BASE64_LENGTH = Math.ceil(MAX_BRIEF_FILE_BYTES / 3) * 4
 const MAX_DOCX_ENTRIES = 1_000
 const MAX_DOCX_UNCOMPRESSED_BYTES = 25 * 1024 * 1024
 const DEFAULT_PARSE_TIMEOUT_MS = 5_000
-const parserPath = resolve(process.cwd(), 'server/briefDocumentParser.js')
+const parserRelativePath = './briefDocumentParser.js'
+const parserPath = fileURLToPath(new URL(parserRelativePath, import.meta.url))
 
 const supportedTypes = new Map([
   ['.txt', new Set(['text/plain'])],
   ['.md', new Set(['text/markdown', 'text/x-markdown'])],
+  ['.markdown', new Set(['text/markdown', 'text/x-markdown'])],
   ['.pdf', new Set(['application/pdf'])],
   ['.docx', new Set(['application/vnd.openxmlformats-officedocument.wordprocessingml.document'])],
 ])
@@ -138,7 +140,7 @@ export async function extractBriefText({ name, mimeType, data }) {
   if (extension === '.docx') preflightDocx(bytes)
   let text
   try {
-    if (extension === '.txt' || extension === '.md') text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    if (extension === '.txt' || extension === '.md' || extension === '.markdown') text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
     if (extension === '.pdf' || extension === '.docx') text = await parseDocumentInChild({ extension, bytes })
   } catch (error) {
     if (error instanceof BriefFileError) throw error

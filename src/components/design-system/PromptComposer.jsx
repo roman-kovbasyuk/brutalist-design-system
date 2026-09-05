@@ -16,7 +16,6 @@ export function PromptComposer({
   canSubmit = false,
   submitLabel = 'Send prompt',
   hint,
-  maxLength = 20000,
 }) {
   const id = useId()
   const picker = useRef(null)
@@ -75,7 +74,6 @@ export function PromptComposer({
           id={id}
           value={value}
           rows={7}
-          maxLength={maxLength}
           disabled={locked}
           aria-describedby={`${id}-hint`}
           placeholder="Describe what you’re promoting, or drop your campaign brief here…"
