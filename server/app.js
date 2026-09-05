@@ -10,6 +10,7 @@ import { registerAssetRoutes } from './routes/assets.js'
 import { registerVersionRoutes } from './routes/versions.js'
 import { registerReviewRoutes } from './routes/review.js'
 import { registerDeliveryRoutes } from './routes/delivery.js'
+import { registerWorkspaceRoutes } from './routes/workspace.js'
 import { apiErrorResponseSchema } from '../shared/contracts.js'
 import { createAuthorizer } from './auth/authorize.js'
 import { registerStaticFiles } from './staticFiles.js'
@@ -34,7 +35,7 @@ function errorEnvelope(code, message, requestId, details) {
   }
 }
 
-export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService, versionService, reviewService, deliveryService, staticRoot, staticBuild } = {}) {
+export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService, versionService, reviewService, deliveryService, workspaceService, staticRoot, staticBuild } = {}) {
   const app = Fastify({
     logger: false,
     requestIdHeader: false,
@@ -75,6 +76,7 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
     const dependencies = { requireRole, workflowService }
     registerSessionRoute(app, dependencies)
     registerCampaignRoutes(app, dependencies)
+    if (workspaceService) registerWorkspaceRoutes(app, { requireRole, workspaceService })
     registerTemplateRoutes(app, dependencies)
     registerUserRoutes(app, dependencies)
     registerSettingsRoutes(app, dependencies)

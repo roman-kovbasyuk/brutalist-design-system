@@ -16,6 +16,7 @@ import { createAssetService } from './services/assetService.js'
 import { createVersionService } from './services/versionService.js'
 import { createReviewService } from './services/reviewService.js'
 import { createDeliveryService } from './services/deliveryService.js'
+import { createWorkspaceService } from './services/workspaceService.js'
 import { openStaticBuild } from './staticFiles.js'
 
 const productionDependencies = {
@@ -36,6 +37,7 @@ const productionDependencies = {
   createVersionService,
   createReviewService,
   createDeliveryService,
+  createWorkspaceService,
   openStaticBuild,
   runMigrations,
 }
@@ -114,6 +116,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
     const versionService = resolved.createVersionService({ pool, assetStore })
     const reviewService = resolved.createReviewService({ pool })
     const deliveryService = resolved.createDeliveryService({ pool, assetStore })
+    const workspaceService = resolved.createWorkspaceService({ pool })
     const generationService = resolved.createGenerationService({
       pool,
       controlPlane: generationControlPlane,
@@ -134,6 +137,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       versionService,
       reviewService,
       deliveryService,
+      workspaceService,
       staticBuild,
     })
     return { app, close, config }
