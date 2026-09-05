@@ -1,4 +1,4 @@
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import { readFile } from 'node:fs/promises'
 import sharp from 'sharp'
 import { buildApp } from '../server/app.js'
@@ -8,7 +8,7 @@ import { createWorkflowService } from '../server/services/workflowService.js'
 import { createWorkspaceService } from '../server/services/workspaceService.js'
 import { createGenerationService } from '../server/services/generationService.js'
 import { createGenerationControlPlane } from '../server/repositories/generationJobRepository.js'
-import { createMemoryAssetStore } from '../server/storage/memoryAssetStore.js'
+import { createLocalDemoAssetStore } from '../server/storage/localDemoAssetStore.js'
 import { createMockProvider } from '../server/providers/mockProvider.js'
 import { createAssetService } from '../server/services/assetService.js'
 import { createVersionService } from '../server/services/versionService.js'
@@ -54,7 +54,7 @@ export async function startDemoServer({ port = 3010 } = {}) {
       const existing = await workflowService.getTemplateVersion({ actor: admin, templateId: manifest.id, version: manifest.version })
       if (!existing) await workflowService.createTemplateVersion({ actor: admin, input: { id: manifest.id, name: manifest.name, version: manifest.version, manifest } })
     }
-    const assetStore = createMemoryAssetStore()
+    const assetStore = await createLocalDemoAssetStore({ directory: fileURLToPath(new URL('../.studio-demo-assets', import.meta.url)) })
     const mockProvider = createMockProvider()
     const sampleImage = await readFile(new URL('../src/studio/assets/headphones.png', import.meta.url))
     const demoProvider = {
@@ -91,11 +91,11 @@ export async function startDemoServer({ port = 3010 } = {}) {
     })
     app.get('/api/v1/dev/session-info', async (_request, reply) => {
       reply.header('Cache-Control', 'no-store')
-      return { demo: true, roles, provider: 'mock', assets: 'memory' }
+      return { demo: true, roles, provider: 'mock', assets: 'local-files' }
     })
     await app.listen({ host: '127.0.0.1', port })
     const address = app.server.address()
-    return { app, pool, url: `http://127.0.0.1:${address.port}`, close: async () => { await app.close(); await pool.end() } }
+    return { app, pool, url: `http://127.0.0.1:${address.port}`, close: async () => { await app.close(); await assetStore.close(); await pool.end() } }
   } catch (error) {
     await app?.close().catch(() => {})
     await pool.end()
@@ -105,6 +105,6 @@ export async function startDemoServer({ port = 3010 } = {}) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const runtime = await startDemoServer({ port: Number(process.env.STUDIO_DEMO_PORT ?? 3010) })
-  console.log(`Studio demo API: ${runtime.url} (PostgreSQL: banner_studio_demo; mock provider; assets last until restart)`)
+  console.log(`Studio demo API: ${runtime.url} (PostgreSQL: banner_studio_demo; mock provider; persistent local assets)`)
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await runtime.close(); process.exit(0) })
 }
