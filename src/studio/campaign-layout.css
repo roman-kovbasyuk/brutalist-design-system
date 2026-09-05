@@ -11,7 +11,7 @@
 .bs-campaign-timeline { grid-area: timeline; position: sticky; top: 96px; max-height: calc(100dvh - 120px); overflow-y: auto; }
 .bs-timeline-toggle { display: none; }
 .bs-campaign-timeline .bs-timeline-rail { position: static; height: auto; width: auto; padding: 0; border: 0; background: transparent; overflow: visible; }
-.bs-timeline-rail .step-rail-title { margin: 0 0 24px; font: inherit; font-size: 13px; font-weight: 600; color: #111; }
+.bs-timeline-rail .step-rail-title { display: none; }
 .bs-timeline-rail ol { display: grid; width: auto; gap: 0; padding: 0; margin: 0; list-style: none; }
 .bs-timeline-rail li { position: relative; padding: 0 0 12px; }
 .bs-timeline-rail li:not(:last-child)::after { content: ''; position: absolute; top: 38px; bottom: 0; left: 21px; width: 1px; background: #b9b9ad; }

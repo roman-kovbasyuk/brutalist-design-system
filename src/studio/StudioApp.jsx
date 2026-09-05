@@ -654,16 +654,6 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                     {statusLabel(workspace.campaign.status)}
                   </span>
                 </div>
-                <span className="bs-metadata">
-                  {dirty
-                    ? 'Unsaved changes'
-                    : `Revision ${workspace.campaign.revision}`}{' '}
-                  ·{' '}
-                  {new Date(workspace.campaign.updatedAt).toLocaleDateString(
-                    'en',
-                    { month: 'short', day: 'numeric' },
-                  )}
-                </span>
               </div>
               <CampaignTimeline workspace={workspace} stage={stage} pending={pending} onChange={goStage} />
               <div
