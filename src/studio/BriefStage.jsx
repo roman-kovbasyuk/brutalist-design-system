@@ -95,7 +95,7 @@ export function BriefStage({
   }
   return (
     <section className="bs-brief">
-      {!campaign && <SectionHeading title="What are we creating?" />}
+      <SectionHeading as="h1" title={campaign ? 'Brief' : 'What are we creating?'} />
       <PromptComposer
         value={message}
         onChange={(value) => {

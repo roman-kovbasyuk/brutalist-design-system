@@ -55,7 +55,7 @@ export function CopyStage({
   return (
     <section>
       <SectionHeading
-        title="Find the right words"
+        title="Copy"
         action={
           !readOnly && (
             <Button

@@ -4,7 +4,7 @@ import { AssetImage, Button, SectionHeading } from './primitives.jsx'
 export function VisualStage({ workspace, api, pending, readOnly, onGenerate, onImage, onSelect, onNext }) {
   const directions = workspace.directions.filter(item => !item.stale)
   return <section>
-    <SectionHeading title="Choose a visual direction" action={!readOnly && <Button onClick={onGenerate} disabled={Boolean(pending)}><Sparkles size={16} aria-hidden="true" />New directions</Button>}>
+    <SectionHeading title="AI assets" action={!readOnly && <Button onClick={onGenerate} disabled={Boolean(pending)}><Sparkles size={16} aria-hidden="true" />New directions</Button>}>
       Choose the idea, generate its image, then select it for your banners.
     </SectionHeading>
     {directions.length === 0 ? <div className="bs-empty">

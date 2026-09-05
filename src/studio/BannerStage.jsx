@@ -104,7 +104,7 @@ export function BannerStage({
   }
   return (
     <section>
-      <SectionHeading title="Make it your campaign">
+      <SectionHeading title="Banners">
         Choose a layout, adjust the text and pick your formats. The saved
         composition is checked before review.
       </SectionHeading>

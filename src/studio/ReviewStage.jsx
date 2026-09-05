@@ -21,7 +21,7 @@ export function ReviewStage({stage,workspace,api,actor,pending,onVersion,onRevie
     return()=>{active=false}
   },[api,version?.id,workspace.campaign.revision])
   async function download(assetId,name){setDownloading(true);setDownloadError('');try{saveBlob(await api.getAssetBlob(assetId),name)}catch(error){setDownloadError(error.message)}finally{setDownloading(false)}}
-  const title=['','','','','Create a review file','Design review','Approve this campaign','Your campaign assets'][stage]
+  const title=['','','','','Review file','Figma review','Approval','Assets ready'][stage]
   const descriptions={4:'Freeze the current copy, image and layout into a version the team can review.',5:'The designer checks the exact version in Figma and marks it ready.',6:'Review the designer’s checks before approving the exact creative.',7:'Download the approved, versioned banner package.'}
   const reviewAssets=version?.snapshot.assets.filter(asset=>asset.kind==='review_png')??[]
   const readyEvent=history?.events.find(event=>event.eventType==='ready')
