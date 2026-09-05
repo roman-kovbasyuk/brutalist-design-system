@@ -122,11 +122,34 @@ function validateEnvironment(instruction) {
   }
 }
 
-function validateHealthcheck(instruction, argumentsContent) {
+function validateFlags(instruction, keyword, allowedNames, noun = 'flag') {
   const flags = instruction.getFlags?.() ?? []
+  const values = new Map()
+  for (const flag of flags) {
+    const name = flag.getName?.() ?? ''
+    if (!allowedNames.has(name)) throw new Error(`Dockerfile diagnostic: ${keyword} contains an unknown ${noun}: --${name}`)
+    if (values.has(name)) throw new Error(`Dockerfile diagnostic: ${keyword} contains a duplicate ${noun}: --${name}`)
+    values.set(name, flag.getValue?.())
+  }
+  return values
+}
+
+function validateHealthcheck(instruction, argumentsContent) {
+  const durationOptions = new Set(['interval', 'timeout', 'start-period', 'start-interval'])
+  const allowedOptions = new Set([...durationOptions, 'retries'])
+  const options = validateFlags(instruction, Keyword.HEALTHCHECK, allowedOptions, 'option')
   if (/^NONE$/i.test(argumentsContent)) {
-    if (flags.length > 0) throw new Error('Dockerfile diagnostic: HEALTHCHECK NONE cannot use options')
+    if (options.size > 0) throw new Error('Dockerfile diagnostic: HEALTHCHECK NONE cannot use options')
     return
+  }
+  const duration = /^(?:[1-9]\d*(?:ns|us|ms|s|m|h))+$/
+  for (const name of durationOptions) {
+    if (options.has(name) && !duration.test(options.get(name) ?? '')) {
+      throw new Error(`Dockerfile diagnostic: HEALTHCHECK --${name} requires a positive Docker duration`)
+    }
+  }
+  if (options.has('retries') && !/^[1-9]\d*$/.test(options.get('retries') ?? '')) {
+    throw new Error('Dockerfile diagnostic: HEALTHCHECK --retries requires a positive integer')
   }
   const match = argumentsContent.match(/^CMD(?:\s+([\s\S]+))?$/i)
   if (!match) throw new Error('Dockerfile diagnostic: HEALTHCHECK must use NONE or options followed by CMD')
@@ -142,9 +165,33 @@ function validateHealthcheck(instruction, argumentsContent) {
   }
 }
 
-function validateInstructionSemantics(instruction, keyword, argumentsContent) {
+function validateCopyOrAddStage(instruction, keyword, currentStage, stageAliases) {
+  const flags = validateFlags(instruction, keyword, new Set(['from']))
+  if (!flags.has('from')) return
+  const reference = flags.get('from') ?? ''
+  if (!reference) throw new Error(`Dockerfile diagnostic: ${keyword} --from requires a stage value`)
+
+  let referencedStage
+  if (/^(?:0|[1-9]\d*)$/.test(reference)) referencedStage = Number(reference)
+  else referencedStage = stageAliases.get(reference.toLowerCase())
+  if (referencedStage === undefined) {
+    throw new Error(`Dockerfile diagnostic: ${keyword} --from must reference a declared local stage`)
+  }
+  if (referencedStage >= currentStage) {
+    throw new Error(`Dockerfile diagnostic: ${keyword} --from must reference an earlier stage`)
+  }
+}
+
+function validateInstructionSemantics(instruction, keyword, argumentsContent, { currentStage, stageAliases }) {
+  if (keyword === Keyword.ENTRYPOINT) {
+    throw new Error('Dockerfile diagnostic: ENTRYPOINT is not permitted; use the single direct runtime CMD')
+  }
+  if (keyword === Keyword.ONBUILD) {
+    throw new Error('Dockerfile diagnostic: ONBUILD is not permitted in the production image')
+  }
   if (keyword === Keyword.COPY || keyword === Keyword.ADD) {
     validateCopyOrAdd(keyword, argumentsContent)
+    validateCopyOrAddStage(instruction, keyword, currentStage, stageAliases)
     return
   }
   if (keyword === Keyword.ENV) {
@@ -202,6 +249,17 @@ function validateAst(source) {
   }
   const instructions = dockerfile.getInstructions()
   const stages = []
+  const stageAliases = new Map()
+  let declaredStage = 0
+  for (const instruction of instructions) {
+    if (instruction.getKeyword()?.toUpperCase() !== Keyword.FROM) continue
+    const alias = instruction.getBuildStage()?.toLowerCase()
+    if (alias) {
+      if (stageAliases.has(alias)) throw new Error(`Dockerfile diagnostic: duplicate FROM stage alias: ${alias}`)
+      stageAliases.set(alias, declaredStage)
+    }
+    declaredStage += 1
+  }
   let currentStage = -1
   for (const instruction of instructions) {
     const keyword = instruction.getKeyword()?.toUpperCase()
@@ -219,14 +277,15 @@ function validateAst(source) {
 
     if (keyword === Keyword.FROM) {
       currentStage += 1
-      stages.push({ from: instruction, instructions: [] })
+      const alias = instruction.getBuildStage()?.toLowerCase()
+      stages.push({ from: instruction, alias, instructions: [] })
     } else if (currentStage < 0 && keyword !== Keyword.ARG) {
       throw new Error(`Dockerfile diagnostic: ${keyword} cannot appear before the first FROM`)
     } else if (currentStage >= 0) {
       stages[currentStage].instructions.push(instruction)
     }
 
-    validateInstructionSemantics(instruction, keyword, argumentsContent)
+    validateInstructionSemantics(instruction, keyword, argumentsContent, { currentStage, stageAliases })
   }
   if (stages.length === 0) throw new Error('Dockerfile diagnostic: Dockerfile requires a FROM instruction')
   return { dockerfile, stages }
@@ -314,11 +373,19 @@ export async function verifyContainerConfiguration({ dockerfile, dockerignore } 
   }
 
   const environment = parseEnvironment(runtimeInstructions)
+  for (const [name, value] of environment) {
+    if (/migrat/i.test(name) && /^(?:1|on|true|yes)$/i.test(value ?? '')) {
+      throw new Error('Runtime must not enable migrations through environment configuration')
+    }
+  }
   if (environment.get('NODE_ENV') !== 'production') throw new Error('Runtime must set NODE_ENV=production')
   if (environment.get('SERVE_STATIC') !== 'true') throw new Error('Runtime must enable production static serving')
   if (environment.get('STATIC_ROOT') !== '/app/dist') throw new Error('Runtime must serve the copied /app/dist build')
   if (environment.get('PORT') !== '8080') throw new Error('Runtime must set PORT=8080')
   if (environment.get('RUN_MIGRATIONS') !== 'false') throw new Error('Runtime must keep migrations as an explicit release step')
+  if (runtimeInstructions.at(-1)?.getKeyword()?.toUpperCase() !== Keyword.CMD) {
+    throw new Error('Runtime CMD must be the final instruction with no later override')
+  }
 
   const ignored = new Set(ignore.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#')))
   for (const required of ['.git', '.env*', 'node_modules', 'dist']) {

@@ -6,6 +6,16 @@ function replaceHealthcheck(source, replacement) {
   return source.replace(/^HEALTHCHECK[\s\S]*?(?=\n\nCMD )/m, replacement)
 }
 
+function insertBeforeRuntimeCommand(source, instruction) {
+  return source.replace('\nCMD ["node", "server/start.js"]', `\n${instruction}\nCMD ["node", "server/start.js"]`)
+}
+
+function insertBeforeRuntimeStage(source, instruction) {
+  return source.replace(/\n(FROM [^\n]+ AS runtime)/, `\n${instruction}\n$1`)
+}
+
+const safeHealthCommand = 'CMD ["node", "-e", "fetch(\'http://127.0.0.1/healthz\')"]'
+
 describe('production container configuration', () => {
   test('uses one pinned Node 22 runtime serving API, app, and docs as a non-root process', async () => {
     await expect(verifyContainerConfiguration()).resolves.toMatchObject({
@@ -99,5 +109,57 @@ describe('production container configuration', () => {
     const dockerfile = await readFile('Dockerfile', 'utf8')
     const dockerignore = await readFile('.dockerignore', 'utf8')
     await expect(verifyContainerConfiguration({ dockerfile: mutate(dockerfile), dockerignore })).rejects.toThrow(error)
+  })
+
+  test.each([
+    ['an ENTRYPOINT startup override', (source) => insertBeforeRuntimeCommand(source, 'ENTRYPOINT ["sh", "-c", "node server/db/migrate.js && node server/start.js"]'), /ENTRYPOINT.*not permitted|migration/i],
+    ['an ONBUILD trigger', (source) => insertBeforeRuntimeCommand(source, 'ONBUILD RUN node server/db/migrate.js'), /ONBUILD.*not permitted/i],
+    ['an unresolved local stage', (source) => insertBeforeRuntimeCommand(source, 'COPY --from=missing /tmp/source /tmp/destination'), /COPY.*from.*declared|unknown.*stage/i],
+    ['an external image stage', (source) => insertBeforeRuntimeCommand(source, 'COPY --from=node:22-alpine /tmp/source /tmp/destination'), /COPY.*from.*declared|unknown.*stage/i],
+    ['a future stage alias', (source) => insertBeforeRuntimeStage(source, 'COPY --from=runtime /tmp/source /tmp/destination'), /COPY.*from.*earlier|stage.*order/i],
+    ['the current numeric stage', (source) => insertBeforeRuntimeStage(source, 'COPY --from=0 /tmp/source /tmp/destination'), /COPY.*from.*earlier|stage.*order/i],
+    ['duplicate COPY flags', (source) => insertBeforeRuntimeCommand(source, 'COPY --from=builder --from=builder /tmp/source /tmp/destination'), /duplicate.*flag/i],
+    ['an unknown COPY flag', (source) => insertBeforeRuntimeCommand(source, 'COPY --bogus=value /tmp/source /tmp/destination'), /COPY.*flag.*not permitted|unknown.*flag/i],
+    ['an empty COPY stage flag', (source) => insertBeforeRuntimeCommand(source, 'COPY --from= /tmp/source /tmp/destination'), /COPY.*from.*value|unknown.*stage/i],
+  ])('rejects unsafe Docker startup and stage constructs: %s', async (_name, mutate, error) => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+    await expect(verifyContainerConfiguration({ dockerfile: mutate(dockerfile), dockerignore })).rejects.toThrow(error)
+  })
+
+  test.each([
+    ['unknown option', `HEALTHCHECK --bogus=1 ${safeHealthCommand}`, /HEALTHCHECK.*unknown.*option|option.*not permitted/i],
+    ['duplicate option', `HEALTHCHECK --interval=30s --interval=1s ${safeHealthCommand}`, /HEALTHCHECK.*duplicate/i],
+    ['invalid duration', `HEALTHCHECK --timeout=forever ${safeHealthCommand}`, /HEALTHCHECK.*timeout.*duration/i],
+    ['zero retries', `HEALTHCHECK --retries=0 ${safeHealthCommand}`, /HEALTHCHECK.*retries.*positive/i],
+    ['fractional retries', `HEALTHCHECK --retries=1.5 ${safeHealthCommand}`, /HEALTHCHECK.*retries.*positive/i],
+  ])('rejects a HEALTHCHECK with %s', async (_name, replacement, error) => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+    await expect(verifyContainerConfiguration({ dockerfile: replaceHealthcheck(dockerfile, replacement), dockerignore })).rejects.toThrow(error)
+  })
+
+  test('rejects migration-enabling environment and any instruction after the final runtime command', async () => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+    await expect(verifyContainerConfiguration({
+      dockerfile: insertBeforeRuntimeCommand(dockerfile, 'ENV MIGRATE_ON_START=true'),
+      dockerignore,
+    })).rejects.toThrow(/migration.*environment|environment.*migration/i)
+    await expect(verifyContainerConfiguration({
+      dockerfile: `${dockerfile}\nLABEL after.command=true\n`,
+      dockerignore,
+    })).rejects.toThrow(/CMD.*final|instruction.*after.*CMD/i)
+  })
+
+  test('accepts a previous numeric stage and every supported HEALTHCHECK option with strict values', async () => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+    const withNumericStage = insertBeforeRuntimeCommand(dockerfile, 'COPY --from=0 /app/package.json /tmp/package-copy.json')
+    const replacement = `HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --start-interval=2s --retries=3 ${safeHealthCommand}`
+    await expect(verifyContainerConfiguration({
+      dockerfile: replaceHealthcheck(withNumericStage, replacement),
+      dockerignore,
+    })).resolves.toMatchObject({ stages: 2, runtimeUser: 'node' })
   })
 })
