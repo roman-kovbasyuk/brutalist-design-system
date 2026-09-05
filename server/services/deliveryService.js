@@ -733,6 +733,9 @@ export function createDeliveryService({
               const version = prepared.context.version
               await adopt(build, ownerToken, deadlineAt)
               const sourceBytes = build.plan.reviewAssets.reduce((total, asset) => total + asset.byteSize, 0)
+              if (sourceBytes > maxArchiveBytes) {
+                fail(413, 'delivery_too_large', 'Approved assets exceed the delivery size limit')
+              }
               const reservationBytes = sourceBytes + maxArchiveBytes
               return await deliverySpool.run({ reservationBytes, signal: controller.signal }, async (workspace) => {
                 const archive = await buildPackage({

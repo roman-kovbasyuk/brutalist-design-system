@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
+import { finished, pipeline } from 'node:stream/promises'
 import { ZipArchive } from 'archiver'
 
 const safeArchivePath = /^(?:banners\/banner-[0-9]{3}\.png|delivery-manifest\.json|render-manifest\.json)$/
@@ -59,6 +60,7 @@ export async function buildDeterministicDeliveryArchiveFile({
   if (!Array.isArray(entries) || entries.length < 1) throw new TypeError('Delivery archive entries are required')
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new TypeError('A positive archive byte ceiling is required')
   if (typeof outputPath !== 'string' || outputPath.length < 1) throw new TypeError('A server-owned archive output path is required')
+  if (signal?.aborted) throw signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
 
   const prepared = [
     ...entries.map(source),
@@ -70,6 +72,13 @@ export async function buildDeterministicDeliveryArchiveFile({
   if (prepared.reduce((total, entry) => total + entry.byteSize, 0) > maxBytes) {
     throw new DeliveryArchiveError('archive_too_large', 'Delivery archive exceeds its byte ceiling')
   }
+  await Promise.all(prepared.filter((entry) => entry.path).map(async (entry) => {
+    const metadata = await stat(entry.path)
+    if (!metadata.isFile() || metadata.size !== entry.byteSize) {
+      throw new DeliveryArchiveError('invalid_archive_source', 'Archive entry source is not the declared regular file')
+    }
+  }))
+  if (signal?.aborted) throw signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
 
   const zip = new ZipArchive({
     store: true,
@@ -94,25 +103,71 @@ export async function buildDeterministicDeliveryArchiveFile({
     },
   })
   const sink = createWriteStream(outputPath, { flags: 'wx', mode: 0o600, highWaterMark: 64 * 1024 })
-  const date = archiveTimestamp(timestamp)
-  for (const entry of prepared) {
-    const options = {
-      name: entry.filename,
-      date,
-      mode: 0o100644,
-      store: true,
+  const sourceStreams = []
+  const settlements = []
+  let firstFailure
+  let tearingDown = false
+  const teardown = (error) => {
+    if (tearingDown) return
+    tearingDown = true
+    for (const stream of sourceStreams) {
+      try { if (!stream.destroyed) stream.destroy(error) } catch {}
     }
-    if (entry.bytes) zip.append(entry.bytes, options)
-    else zip.append(createReadStream(entry.path, { highWaterMark: 64 * 1024, signal }), options)
+    try { zip.abort() } catch {}
+    for (const stream of [zip, meter, sink]) {
+      try { if (!stream.destroyed) stream.destroy(error) } catch {}
+    }
   }
-  const completed = pipeline(zip, meter, sink, { signal })
+  const observe = (promise, { waitForSettlement = true } = {}) => {
+    const settlement = promise.then(
+      (value) => ({ ok: true, value }),
+      (error) => {
+        firstFailure ??= error
+        teardown(error)
+        return { ok: false, error }
+      },
+    )
+    if (waitForSettlement) settlements.push(settlement)
+    return settlement
+  }
+  observe(finished(zip, { cleanup: true }))
+  observe(finished(meter, { cleanup: true }))
+  observe(finished(sink, { cleanup: true }))
+  const abort = () => {
+    const error = signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
+    firstFailure ??= error
+    teardown(error)
+  }
+  signal?.addEventListener('abort', abort, { once: true })
+  const date = archiveTimestamp(timestamp)
   try {
-    await zip.finalize()
-    await completed
+    for (const entry of prepared) {
+      const options = {
+        name: entry.filename,
+        date,
+        mode: 0o100644,
+        store: true,
+      }
+      if (entry.bytes) {
+        zip.append(entry.bytes, options)
+      } else {
+        const sourceStream = createReadStream(entry.path, { highWaterMark: 64 * 1024, signal })
+        sourceStreams.push(sourceStream)
+        observe(finished(sourceStream, { cleanup: true }))
+        zip.append(sourceStream, options)
+      }
+    }
+    observe(pipeline(zip, meter, sink))
+    const finalized = observe(Promise.resolve().then(() => zip.finalize()), { waitForSettlement: false })
+    await Promise.all(settlements)
+    if (!firstFailure) await finalized
   } catch (error) {
-    zip.abort()
-    await completed.catch(() => {})
-    throw overflow ?? error
+    firstFailure ??= error
+    teardown(error)
+    await Promise.all(settlements)
+  } finally {
+    signal?.removeEventListener('abort', abort)
   }
+  if (firstFailure) throw overflow ?? firstFailure
   return { path: outputPath, byteSize, sha256: hash.digest('hex') }
 }

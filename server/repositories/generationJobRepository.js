@@ -581,123 +581,220 @@ export function createGenerationControlPlane({
 
     async cleanupOrphanUpload({ orphanId, deleteObject, cleanedAt }) {
       if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
-      return transaction(pool, async (client) => {
-        const observed = await client.query(
-          `SELECT o.id, o.object_key, o.claimed_build_id, o.claimed_delivery_build_id,
-                  vb.actor_id AS version_actor_id, vb.method AS version_method,
-                  vb.campaign_id AS version_resource_id, vb.idempotency_key AS version_idempotency_key,
-                  db.actor_id AS delivery_actor_id, db.method AS delivery_method,
-                  db.version_id AS delivery_resource_id, db.idempotency_key AS delivery_idempotency_key
-           FROM orphaned_uploads o
-           LEFT JOIN review_version_builds vb ON vb.id = o.claimed_build_id
-           LEFT JOIN delivery_builds db ON db.id = o.claimed_delivery_build_id
-           WHERE o.id = $1 AND o.status <> 'cleaned'`,
-          [orphanId],
-        )
-        const candidate = observed.rows[0]
-        if (!candidate) return { kind: 'missing' }
+      const cleanupDeadlineAt = Date.now() + recoveryTimeoutMs
+      const maximumAttempts = 3
+      let lastObjectKey
 
-        let idempotency = null
-        let build = null
-        const claim = candidate.claimed_build_id
-          ? {
-              id: candidate.claimed_build_id, type: 'version', table: 'review_version_builds',
-              actorId: candidate.version_actor_id, method: candidate.version_method,
-              resourceId: candidate.version_resource_id, key: candidate.version_idempotency_key,
-              failureCode: 'stale_version_intent_cleanup', column: 'claimed_build_id',
-            }
-          : candidate.claimed_delivery_build_id
-            ? {
-                id: candidate.claimed_delivery_build_id, type: 'delivery', table: 'delivery_builds',
-                actorId: candidate.delivery_actor_id, method: candidate.delivery_method,
-                resourceId: candidate.delivery_resource_id, key: candidate.delivery_idempotency_key,
-                failureCode: 'stale_delivery_intent_cleanup', column: 'claimed_delivery_build_id',
-              }
-            : null
-        if (claim) {
-          const lockedIdempotency = await client.query(
-            `SELECT state, owner_token, fingerprint, lease_expires_at, clock_timestamp() AS observed_at
-             FROM idempotency_records
-             WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
-             FOR UPDATE`,
-            [claim.actorId, claim.method, claim.resourceId, claim.key],
-          )
-          idempotency = lockedIdempotency.rows[0] ?? null
-          const lockedBuild = await client.query(
-            `SELECT id, state, owner_token, request_fingerprint
-             FROM ${claim.table} WHERE id = $1 FOR UPDATE`,
-            [claim.id],
-          )
-          build = lockedBuild.rows[0] ?? null
+      class CleanupIdentityDriftError extends Error {
+        constructor(objectKey) {
+          super('Orphan cleanup identity changed before canonical locks')
+          this.objectKey = objectKey
         }
+      }
 
-        await lockAssetObjectKey(client, candidate.object_key)
-        const selected = await client.query(
-          `SELECT id, object_key, claimed_build_id, claimed_delivery_build_id FROM orphaned_uploads
-           WHERE id = $1 AND object_key = $2 AND status <> 'cleaned'
-           FOR UPDATE`,
-          [orphanId, candidate.object_key],
-        )
-        const orphan = selected.rows[0]
-        if (!orphan) return { kind: 'missing' }
-        const selectedClaimId = orphan.claimed_build_id ?? orphan.claimed_delivery_build_id
-        if (selectedClaimId) {
-          if (!claim || !build || build.id !== selectedClaimId
-            || (claim.type === 'version' && orphan.claimed_delivery_build_id)
-            || (claim.type === 'delivery' && orphan.claimed_build_id)) {
-            return { kind: 'claimed', objectKey: orphan.object_key }
-          }
-          const activeLease = idempotency?.state === 'in_progress'
-            && idempotency.lease_expires_at > idempotency.observed_at
-          if (activeLease) return { kind: 'claimed', objectKey: orphan.object_key }
-          if (idempotency?.state === 'completed' || build.state === 'completed') {
-            return { kind: 'claimed', objectKey: orphan.object_key }
-          } else {
-            if (idempotency?.state === 'in_progress') {
-              await client.query(
-                `UPDATE idempotency_records
-                 SET state = 'failed', failed_at = clock_timestamp(), failure_code = $6
-                 WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
-                   AND state = 'in_progress' AND owner_token = $5 AND lease_expires_at <= clock_timestamp()`,
-                [claim.actorId, claim.method, claim.resourceId, claim.key, idempotency.owner_token, claim.failureCode],
-              )
-            }
-            await client.query(
-              `UPDATE ${claim.table}
-               SET state = 'failed', updated_at = clock_timestamp()
-               WHERE id = $1 AND state = 'in_progress' AND owner_token = $2`,
-              [build.id, build.owner_token],
+      const sameValue = (left, right) => {
+        if (left instanceof Date || right instanceof Date) return new Date(left).getTime() === new Date(right).getTime()
+        return left === right
+      }
+      const sameFields = (left, right, fields) => left != null && right != null
+        && fields.every((field) => sameValue(left[field], right[field]))
+
+      for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+        const timeoutMs = Math.max(0, cleanupDeadlineAt - Date.now())
+        if (timeoutMs < 1) throw recoveryDeadlineError()
+        try {
+          return await recoveryTransaction(pool, async (client, deadline) => {
+            const startedAt = await databaseClock(client)
+            const attemptDeadline = new Date(startedAt.getTime() + deadline.remainingMs())
+            await setTransactionDeadline(client, attemptDeadline, startedAt)
+            const observed = await client.query(
+              `SELECT o.id, o.object_key, o.claimed_build_id, o.claimed_delivery_build_id,
+                      vb.actor_id AS version_actor_id, vb.method AS version_method,
+                      vb.campaign_id AS version_resource_id, vb.idempotency_key AS version_idempotency_key,
+                      vb.request_fingerprint AS version_request_fingerprint,
+                      vb.owner_token AS version_owner_token, vb.state AS version_state,
+                      db.actor_id AS delivery_actor_id, db.method AS delivery_method,
+                      db.version_id AS delivery_resource_id, db.idempotency_key AS delivery_idempotency_key,
+                      db.request_fingerprint AS delivery_request_fingerprint,
+                      db.owner_token AS delivery_owner_token, db.state AS delivery_state
+               FROM orphaned_uploads o
+               LEFT JOIN review_version_builds vb ON vb.id = o.claimed_build_id
+               LEFT JOIN delivery_builds db ON db.id = o.claimed_delivery_build_id
+               WHERE o.id = $1 AND o.status <> 'cleaned'`,
+              [orphanId],
             )
+            const candidate = observed.rows[0]
+            if (!candidate) return { kind: 'missing' }
+            lastObjectKey = candidate.object_key
+            await refreshTransactionDeadline(client, attemptDeadline)
+
+            let idempotency = null
+            let build = null
+            const claim = candidate.claimed_build_id
+              ? {
+                  id: candidate.claimed_build_id, type: 'version', table: 'review_version_builds',
+                  actor_id: candidate.version_actor_id, method: candidate.version_method,
+                  resource_id: candidate.version_resource_id, idempotency_key: candidate.version_idempotency_key,
+                  request_fingerprint: candidate.version_request_fingerprint,
+                  owner_token: candidate.version_owner_token, state: candidate.version_state,
+                  failureCode: 'stale_version_intent_cleanup', column: 'claimed_build_id',
+                  resourceColumn: 'campaign_id',
+                }
+              : candidate.claimed_delivery_build_id
+                ? {
+                    id: candidate.claimed_delivery_build_id, type: 'delivery', table: 'delivery_builds',
+                    actor_id: candidate.delivery_actor_id, method: candidate.delivery_method,
+                    resource_id: candidate.delivery_resource_id, idempotency_key: candidate.delivery_idempotency_key,
+                    request_fingerprint: candidate.delivery_request_fingerprint,
+                    owner_token: candidate.delivery_owner_token, state: candidate.delivery_state,
+                    failureCode: 'stale_delivery_intent_cleanup', column: 'claimed_delivery_build_id',
+                    resourceColumn: 'version_id',
+                  }
+                : null
+            if ((candidate.claimed_build_id || candidate.claimed_delivery_build_id)
+              && (!claim?.actor_id || !claim.method || !claim.resource_id || !claim.idempotency_key)) {
+              return { kind: 'claimed', objectKey: candidate.object_key }
+            }
+            if (claim) {
+              const idempotencyFields = [
+                'actor_id', 'method', 'resource_id', 'key', 'state', 'owner_token', 'fingerprint', 'lease_expires_at',
+              ]
+              const observedIdempotency = (await client.query(
+                `SELECT actor_id, method, resource_id, key, state, owner_token, fingerprint, lease_expires_at
+                 FROM idempotency_records
+                 WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4`,
+                [claim.actor_id, claim.method, claim.resource_id, claim.idempotency_key],
+              )).rows[0] ?? null
+              await refreshTransactionDeadline(client, attemptDeadline)
+              const lockedIdempotency = await client.query(
+                `SELECT actor_id, method, resource_id, key, state, owner_token, fingerprint,
+                        lease_expires_at, clock_timestamp() AS observed_at
+                 FROM idempotency_records
+                 WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
+                 FOR UPDATE`,
+                [claim.actor_id, claim.method, claim.resource_id, claim.idempotency_key],
+              )
+              idempotency = lockedIdempotency.rows[0] ?? null
+              await refreshTransactionDeadline(client, attemptDeadline)
+              const lockedBuild = await client.query(
+                `SELECT id, state, actor_id, method, ${claim.resourceColumn} AS resource_id,
+                        idempotency_key, request_fingerprint, owner_token
+                 FROM ${claim.table} WHERE id = $1 FOR UPDATE`,
+                [claim.id],
+              )
+              build = lockedBuild.rows[0] ?? null
+              await refreshTransactionDeadline(client, attemptDeadline)
+              const buildFields = [
+                'id', 'state', 'actor_id', 'method', 'resource_id', 'idempotency_key', 'request_fingerprint', 'owner_token',
+              ]
+              if (!sameFields(claim, build, buildFields)
+                || observedIdempotency == null !== (idempotency == null)
+                || observedIdempotency && !sameFields(observedIdempotency, idempotency, idempotencyFields)) {
+                throw new CleanupIdentityDriftError(candidate.object_key)
+              }
+              if (!idempotency
+                || idempotency.actor_id !== build.actor_id || idempotency.method !== build.method
+                || idempotency.resource_id !== build.resource_id || idempotency.key !== build.idempotency_key
+                || idempotency.fingerprint !== build.request_fingerprint
+                || idempotency.owner_token !== build.owner_token) {
+                return { kind: 'claimed', objectKey: candidate.object_key }
+              }
+            }
+
+            await lockAssetObjectKey(client, candidate.object_key)
+            await refreshTransactionDeadline(client, attemptDeadline)
+            const selected = await client.query(
+              `SELECT id, object_key, claimed_build_id, claimed_delivery_build_id FROM orphaned_uploads
+               WHERE id = $1 AND object_key = $2 AND status <> 'cleaned'
+               FOR UPDATE`,
+              [orphanId, candidate.object_key],
+            )
+            const orphan = selected.rows[0]
+            if (!orphan) return { kind: 'missing' }
+            if (orphan.claimed_build_id !== candidate.claimed_build_id
+              || orphan.claimed_delivery_build_id !== candidate.claimed_delivery_build_id) {
+              throw new CleanupIdentityDriftError(orphan.object_key)
+            }
+            const selectedClaimId = orphan.claimed_build_id ?? orphan.claimed_delivery_build_id
+            if (selectedClaimId) {
+              if (!claim || !build || build.id !== selectedClaimId
+                || (claim.type === 'version' && orphan.claimed_delivery_build_id)
+                || (claim.type === 'delivery' && orphan.claimed_build_id)) {
+                return { kind: 'claimed', objectKey: orphan.object_key }
+              }
+              const activeLease = idempotency.state === 'in_progress'
+                && idempotency.lease_expires_at > idempotency.observed_at
+              if (activeLease || idempotency.state === 'completed' || build.state === 'completed') {
+                return { kind: 'claimed', objectKey: orphan.object_key }
+              }
+              if (idempotency.state === 'in_progress') {
+                const failedIdempotency = await client.query(
+                  `UPDATE idempotency_records
+                   SET state = 'failed', failed_at = clock_timestamp(), failure_code = $6
+                   WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
+                     AND state = 'in_progress' AND owner_token = $5 AND fingerprint = $7
+                     AND lease_expires_at <= clock_timestamp()`,
+                  [claim.actor_id, claim.method, claim.resource_id, claim.idempotency_key,
+                    idempotency.owner_token, claim.failureCode, idempotency.fingerprint],
+                )
+                if (failedIdempotency.rowCount !== 1) return { kind: 'claimed', objectKey: orphan.object_key }
+              }
+              if (build.state === 'in_progress') {
+                const failedBuild = await client.query(
+                  `UPDATE ${claim.table}
+                   SET state = 'failed', updated_at = clock_timestamp()
+                   WHERE id = $1 AND state = 'in_progress' AND actor_id = $2
+                     AND method = $3 AND ${claim.resourceColumn} = $4 AND idempotency_key = $5
+                     AND request_fingerprint = $6 AND owner_token = $7`,
+                  [build.id, build.actor_id, build.method, build.resource_id, build.idempotency_key,
+                    build.request_fingerprint, build.owner_token],
+                )
+                if (failedBuild.rowCount !== 1) return { kind: 'claimed', objectKey: orphan.object_key }
+              }
+              const cleared = await client.query(
+                `UPDATE orphaned_uploads
+                 SET ${claim.column} = NULL, reason = $3,
+                     status = 'pending', last_error = NULL, cleaned_at = NULL
+                 WHERE id = $1 AND ${claim.column} = $2`,
+                [orphan.id, build.id, claim.failureCode],
+              )
+              if (cleared.rowCount !== 1) throw new CleanupIdentityDriftError(orphan.object_key)
+            }
+            const referenced = await client.query(
+              `SELECT 1 FROM assets WHERE object_key = $1
+               UNION ALL
+               SELECT 1 FROM deliveries delivery JOIN assets asset ON asset.id = delivery.asset_id
+                 WHERE asset.object_key = $1
+               UNION ALL
+               SELECT 1 FROM delivery_builds
+                 WHERE state <> 'failed' AND plan->>'objectKey' = $1
+               LIMIT 1`,
+              [orphan.object_key],
+            )
+            if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
+            await refreshTransactionDeadline(client, attemptDeadline)
+            await deleteObject({ objectKey: orphan.object_key })
+            await refreshTransactionDeadline(client, attemptDeadline)
             await client.query(
               `UPDATE orphaned_uploads
-               SET ${claim.column} = NULL, reason = $3,
-                   status = 'pending', last_error = NULL, cleaned_at = NULL
-               WHERE id = $1 AND ${claim.column} = $2`,
-              [orphan.id, build.id, claim.failureCode],
+               SET status = 'cleaned', attempts = attempts + 1, last_error = NULL, cleaned_at = $2
+               WHERE id = $1`,
+              [orphanId, cleanedAt ?? clock()],
             )
+            return { kind: 'cleaned', objectKey: orphan.object_key }
+          }, { timeoutMs })
+        } catch (error) {
+          if (error instanceof CleanupIdentityDriftError) {
+            if (attempt + 1 === maximumAttempts || Date.now() >= cleanupDeadlineAt) {
+              return { kind: 'claimed', objectKey: error.objectKey ?? lastObjectKey }
+            }
+            continue
           }
+          if (error?.code === 'transaction_deadline_exceeded') throw recoveryDeadlineError()
+          throw error
         }
-        const referenced = await client.query(
-          `SELECT 1 FROM assets WHERE object_key = $1
-           UNION ALL
-           SELECT 1 FROM deliveries delivery JOIN assets asset ON asset.id = delivery.asset_id
-             WHERE asset.object_key = $1
-           UNION ALL
-           SELECT 1 FROM delivery_builds
-             WHERE state <> 'failed' AND plan->>'objectKey' = $1
-           LIMIT 1`,
-          [orphan.object_key],
-        )
-        if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
-        await deleteObject({ objectKey: orphan.object_key })
-        await client.query(
-          `UPDATE orphaned_uploads
-           SET status = 'cleaned', attempts = attempts + 1, last_error = NULL, cleaned_at = $2
-           WHERE id = $1`,
-          [orphanId, cleanedAt ?? clock()],
-        )
-        return { kind: 'cleaned', objectKey: orphan.object_key }
-      })
+      }
+      return { kind: 'claimed', objectKey: lastObjectKey }
     },
 
     async markUnknown({ jobId, ownerToken, reason }) {

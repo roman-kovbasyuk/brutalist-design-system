@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto'
-import { readdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { describe, expect, test } from 'vitest'
 import sharp from 'sharp'
 import {
   createDeliverySpool, streamToVerifiedFile, verifyPngFile, verifyReadable,
 } from './deliverySpool.js'
+import { buildDeterministicDeliveryArchiveFile } from './deliveryArchive.js'
 
 describe('bounded delivery spool', () => {
   test('admits aggregate disk use atomically and releases it after cleanup', async () => {
@@ -96,5 +99,28 @@ describe('bounded delivery spool', () => {
       maxBytes: 4 * 1024 * 1024, signature: Buffer.from('aaaa'),
     })).resolves.toEqual({ byteSize: 4 * 1024 * 1024 })
     expect(emitted).toBe(64)
+  })
+
+  test('archive failure removes its workspace and releases aggregate admission', async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'delivery-spool-abort-'))
+    try {
+      const spool = createDeliverySpool({ tempRoot, maxAggregateBytes: 4096 })
+      let workspaceDirectory
+      await expect(spool.run({ reservationBytes: 4096 }, async (workspace) => {
+        workspaceDirectory = workspace.directory
+        const sourcePath = workspace.file(0)
+        await writeFile(sourcePath, Buffer.alloc(1024, 2))
+        await writeFile(workspace.archivePath, Buffer.from('occupied'))
+        await buildDeterministicDeliveryArchiveFile({
+          entries: [{ filename: 'banners/banner-001.png', path: sourcePath, byteSize: 1024 }],
+          deliveryManifestBytes: Buffer.from('{}'), timestamp: new Date('2026-09-04T10:00:00Z'),
+          maxBytes: 2048, outputPath: workspace.archivePath,
+        })
+      })).rejects.toBeTruthy()
+      await expect(readdir(workspaceDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(spool.run({ reservationBytes: 4096 }, async () => 'readmitted')).resolves.toBe('readmitted')
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
   })
 })

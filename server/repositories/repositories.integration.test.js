@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream'
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Pool } from 'pg'
 import { runMigrations } from '../db/migrate.js'
-import { withTransaction } from '../db/pool.js'
+import { withDeadlineTransaction, withTransaction } from '../db/pool.js'
 import { createCampaignRepository, RevisionConflictError } from './campaignRepository.js'
 import { createSettingsRepository } from './settingsRepository.js'
 import { createTemplateRepository } from './templateRepository.js'
@@ -3707,6 +3707,214 @@ describe('immutable review version workflow', () => {
     pools.delete(harness.pool)
   })
 
+  test('restarts after a delivery build identity changes between observation and canonical locks', async () => {
+    const harness = await approvedDeliveryHarness()
+    const versionId = harness.created.body.version.id
+    const objectKey = 'campaigns/delivery-drift/versions/package.zip'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: versionId,
+      key: 'delivery-drift-old', fingerprint: '3'.repeat(64), ownerToken: 'delivery-drift-old-owner',
+      now: new Date('2020-09-04T10:00:00Z'), leaseExpiresAt: new Date('2020-09-04T10:01:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO delivery_builds
+         (id, campaign_id, version_id, actor_id, idempotency_key, request_fingerprint, owner_token, plan)
+       VALUES ('delivery-drift-build', $1, $2, $3, 'delivery-drift-old', $4,
+               'delivery-drift-old-owner', '{}')`,
+      [harness.campaign.id, versionId, harness.actor.id, '3'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createDeliveryRepository(client).adoptBuildObject({
+      buildId: 'delivery-drift-build', ownerToken: 'delivery-drift-old-owner', campaignId: harness.campaign.id,
+      objectKey, orphanId: 'delivery-drift-orphan', adoptedAt: new Date('2020-09-04T10:00:00Z'),
+    }))
+    const observed = deferred()
+    const resume = deferred()
+    let paused = false
+    let observations = 0
+    const hookedTransaction = (pool, operation, options) => withDeadlineTransaction(pool, async (client, deadline) => {
+      const proxy = {
+        query: async (text, values) => {
+          const result = await client.query(text, values)
+          if (!paused && String(text).includes('FROM orphaned_uploads o')) {
+            observations += 1
+            paused = true
+            observed.resolve()
+            await resume.promise
+          } else if (String(text).includes('FROM orphaned_uploads o')) {
+            observations += 1
+          }
+          return result
+        },
+      }
+      return operation(proxy, deadline)
+    }, options ?? { timeoutMs: 2_000 })
+    const deleted = []
+    const cleanup = createGenerationControlPlane({
+      pool: harness.pool, transaction: hookedTransaction, recoveryTransaction: hookedTransaction,
+      recoveryTimeoutMs: 1_000,
+    }).cleanupOrphanUpload({
+      orphanId: 'delivery-drift-orphan', deleteObject: async ({ objectKey: key }) => deleted.push(key),
+      cleanedAt: new Date(),
+    })
+    await observed.promise
+    await withTransaction(harness.pool, async (client) => {
+      await createIdempotencyRepository(client).claim({
+        actorId: harness.designer.id, method: 'POST', resourceId: versionId,
+        key: 'delivery-drift-new', fingerprint: '4'.repeat(64), ownerToken: 'delivery-drift-new-owner',
+        now: new Date(), leaseExpiresAt: new Date('2099-09-04T10:00:00Z'),
+      })
+      await createDeliveryRepository(client).takeOverBuild({
+        id: 'delivery-drift-build', actorId: harness.designer.id, key: 'delivery-drift-new',
+        fingerprint: '4'.repeat(64), ownerToken: 'delivery-drift-new-owner',
+      })
+    })
+    resume.resolve()
+
+    await expect(cleanup).resolves.toEqual({ kind: 'claimed', objectKey })
+    expect(deleted).toEqual([])
+    expect(observations).toBeGreaterThan(1)
+    expect((await harness.pool.query(
+      "SELECT state, actor_id, idempotency_key, request_fingerprint, owner_token FROM delivery_builds WHERE id = 'delivery-drift-build'",
+    )).rows[0]).toEqual({
+      state: 'in_progress', actor_id: harness.designer.id, idempotency_key: 'delivery-drift-new',
+      request_fingerprint: '4'.repeat(64), owner_token: 'delivery-drift-new-owner',
+    })
+    expect((await harness.pool.query(
+      "SELECT status, claimed_delivery_build_id FROM orphaned_uploads WHERE id = 'delivery-drift-orphan'",
+    )).rows[0]).toEqual({ status: 'pending', claimed_delivery_build_id: 'delivery-drift-build' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('bounds repeated delivery identity churn and never deletes the newest owner intent', async () => {
+    const harness = await approvedDeliveryHarness()
+    const versionId = harness.created.body.version.id
+    const objectKey = 'campaigns/delivery-churn/versions/package.zip'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: versionId,
+      key: 'delivery-churn-0', fingerprint: '6'.repeat(64), ownerToken: 'delivery-churn-owner-0',
+      now: new Date('2020-09-04T10:00:00Z'), leaseExpiresAt: new Date('2020-09-04T10:01:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO delivery_builds
+         (id, campaign_id, version_id, actor_id, idempotency_key, request_fingerprint, owner_token, plan)
+       VALUES ('delivery-churn-build', $1, $2, $3, 'delivery-churn-0', $4,
+               'delivery-churn-owner-0', '{}')`,
+      [harness.campaign.id, versionId, harness.actor.id, '6'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createDeliveryRepository(client).adoptBuildObject({
+      buildId: 'delivery-churn-build', ownerToken: 'delivery-churn-owner-0', campaignId: harness.campaign.id,
+      objectKey, orphanId: 'delivery-churn-orphan', adoptedAt: new Date(),
+    }))
+    let churns = 0
+    const hookedTransaction = (pool, operation, options) => withDeadlineTransaction(pool, async (client, deadline) => {
+      const proxy = {
+        query: async (text, values) => {
+          const result = await client.query(text, values)
+          if (String(text).includes('FROM orphaned_uploads o')) {
+            churns += 1
+            const key = `delivery-churn-${churns}`
+            const fingerprint = String(6 + churns).repeat(64)
+            const ownerToken = `delivery-churn-owner-${churns}`
+            await withTransaction(harness.pool, async (replacement) => {
+              await createIdempotencyRepository(replacement).claim({
+                actorId: harness.actor.id, method: 'POST', resourceId: versionId,
+                key, fingerprint, ownerToken, now: new Date(),
+                leaseExpiresAt: new Date('2099-09-04T10:00:00Z'),
+              })
+              await createDeliveryRepository(replacement).takeOverBuild({
+                id: 'delivery-churn-build', actorId: harness.actor.id, key, fingerprint, ownerToken,
+              })
+            })
+          }
+          return result
+        },
+      }
+      return operation(proxy, deadline)
+    }, options ?? { timeoutMs: 2_000 })
+    const deleteObject = vi.fn()
+    const control = createGenerationControlPlane({
+      pool: harness.pool, transaction: hookedTransaction, recoveryTransaction: hookedTransaction,
+      recoveryTimeoutMs: 1_000,
+    })
+    const observed = await observeSettlementWithin(control.cleanupOrphanUpload({
+      orphanId: 'delivery-churn-orphan', deleteObject, cleanedAt: new Date(),
+    }), 1_500).observed
+
+    expect(observed).toEqual({ kind: 'fulfilled', value: { kind: 'claimed', objectKey } })
+    expect(churns).toBeGreaterThan(1)
+    expect(churns).toBeLessThan(10)
+    expect(deleteObject).not.toHaveBeenCalled()
+    expect((await harness.pool.query(
+      "SELECT state, owner_token FROM delivery_builds WHERE id = 'delivery-churn-build'",
+    )).rows[0]).toEqual({ state: 'in_progress', owner_token: `delivery-churn-owner-${churns}` })
+    expect((await harness.pool.query(
+      "SELECT status, claimed_delivery_build_id FROM orphaned_uploads WHERE id = 'delivery-churn-orphan'",
+    )).rows[0]).toEqual({ status: 'pending', claimed_delivery_build_id: 'delivery-churn-build' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('never fences a replacement version owner after observing the prior owner identity', async () => {
+    const harness = await immutableVersionHarness()
+    const objectKey = 'campaigns/version-owner-drift/versions/review.png'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: harness.campaign.id,
+      key: 'version-owner-drift', fingerprint: '5'.repeat(64), ownerToken: 'version-owner-old',
+      now: new Date('2020-09-04T10:00:00Z'), leaseExpiresAt: new Date('2020-09-04T10:01:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO review_version_builds
+         (id, campaign_id, actor_id, idempotency_key, request_fingerprint, owner_token,
+          version_id, version_number, expected_revision, plan)
+       VALUES ('version-owner-drift-build', $1, $2, 'version-owner-drift', $3,
+               'version-owner-old', 'version-owner-drift-version', 1, 2, '{}')`,
+      [harness.campaign.id, harness.actor.id, '5'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createVersionRepository(client).adoptBuildObjects({
+      buildId: 'version-owner-drift-build', ownerToken: 'version-owner-old', campaignId: harness.campaign.id,
+      objectKeys: [objectKey], orphanIds: ['version-owner-drift-orphan'], adoptedAt: new Date(),
+    }))
+    const observed = deferred()
+    const resume = deferred()
+    let paused = false
+    const hookedTransaction = (pool, operation, options) => withDeadlineTransaction(pool, async (client, deadline) => {
+      const proxy = {
+        query: async (text, values) => {
+          const result = await client.query(text, values)
+          if (!paused && String(text).includes('FROM orphaned_uploads o')) {
+            paused = true
+            observed.resolve()
+            await resume.promise
+          }
+          return result
+        },
+      }
+      return operation(proxy, deadline)
+    }, options ?? { timeoutMs: 2_000 })
+    const deleteObject = vi.fn()
+    const cleanup = createGenerationControlPlane({
+      pool: harness.pool, transaction: hookedTransaction, recoveryTransaction: hookedTransaction,
+      recoveryTimeoutMs: 1_000,
+    }).cleanupOrphanUpload({ orphanId: 'version-owner-drift-orphan', deleteObject, cleanedAt: new Date() })
+    await observed.promise
+    await harness.pool.query(
+      "UPDATE review_version_builds SET owner_token = 'version-owner-new' WHERE id = 'version-owner-drift-build'",
+    )
+    resume.resolve()
+
+    await expect(cleanup).resolves.toEqual({ kind: 'claimed', objectKey })
+    expect(deleteObject).not.toHaveBeenCalled()
+    expect((await harness.pool.query(
+      "SELECT state, owner_token FROM review_version_builds WHERE id = 'version-owner-drift-build'",
+    )).rows[0]).toEqual({ state: 'in_progress', owner_token: 'version-owner-new' })
+    expect((await harness.pool.query(
+      "SELECT status, claimed_build_id FROM orphaned_uploads WHERE id = 'version-owner-drift-orphan'",
+    )).rows[0]).toEqual({ status: 'pending', claimed_build_id: 'version-owner-drift-build' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
   test('keeps a completed version intent tracked when its immutable asset reference is unexpectedly absent', async () => {
     const harness = await immutableVersionHarness()
     const objectKey = 'campaigns/completed-build/versions/review.png'
@@ -6103,6 +6311,46 @@ describe('hash-verified approved deliveries', () => {
       actor: harness.actor, versionId: harness.created.body.version.id,
       idempotencyKey: 'delivery-archive-overhead', input: {},
     })).rejects.toMatchObject({ statusCode: 413, code: 'delivery_too_large' })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM deliveries')).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('rejects declared source bytes above the package ceiling before spool capacity admission', async () => {
+    const harness = await approvedDeliveryHarness()
+    const sourceBytes = Number((await harness.pool.query(
+      "SELECT sum(byte_size)::bigint AS total FROM assets WHERE version_id = $1 AND kind IN ('review_png', 'manifest')",
+      [harness.created.body.version.id],
+    )).rows[0].total)
+    const maxArchiveBytes = sourceBytes - 1
+    const service = createDeliveryService({
+      pool: harness.pool, assetStore: harness.assetStore,
+      maxArchiveBytes, maxSpoolBytes: sourceBytes + maxArchiveBytes - 1,
+    })
+    await expect(service.createDelivery({
+      actor: harness.actor, versionId: harness.created.body.version.id,
+      idempotencyKey: 'delivery-source-declared-overflow', input: {},
+    })).rejects.toMatchObject({ statusCode: 413, code: 'delivery_too_large' })
+    expect((await harness.pool.query('SELECT count(*)::int AS count FROM deliveries')).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('keeps valid package admission contention distinct from an oversized package', async () => {
+    const harness = await approvedDeliveryHarness()
+    const sourceBytes = Number((await harness.pool.query(
+      "SELECT sum(byte_size)::bigint AS total FROM assets WHERE version_id = $1 AND kind IN ('review_png', 'manifest')",
+      [harness.created.body.version.id],
+    )).rows[0].total)
+    const maxArchiveBytes = sourceBytes + 1024
+    const service = createDeliveryService({
+      pool: harness.pool, assetStore: harness.assetStore,
+      maxArchiveBytes, maxSpoolBytes: sourceBytes + maxArchiveBytes - 1,
+    })
+    await expect(service.createDelivery({
+      actor: harness.actor, versionId: harness.created.body.version.id,
+      idempotencyKey: 'delivery-valid-capacity-contention', input: {},
+    })).rejects.toMatchObject({ statusCode: 503, code: 'delivery_capacity_unavailable' })
     expect((await harness.pool.query('SELECT count(*)::int AS count FROM deliveries')).rows[0].count).toBe(0)
     await harness.pool.end()
     pools.delete(harness.pool)

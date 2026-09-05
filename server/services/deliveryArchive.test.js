@@ -1,9 +1,34 @@
 import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, test } from 'vitest'
 import { buildDeterministicDeliveryArchiveFile } from './deliveryArchive.js'
+
+const deliveryArchiveModuleUrl = pathToFileURL(resolve('server/services/deliveryArchive.js')).href
+
+function runArchiveChild(source, timeoutMs = 2_000) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', source], {
+      cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    let killed = false
+    const timer = setTimeout(() => {
+      killed = true
+      child.kill('SIGKILL')
+    }, timeoutMs)
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    child.once('close', (code, signal) => {
+      clearTimeout(timer)
+      resolve({ code, signal, stdout, stderr, killed })
+    })
+  })
+}
 
 function storedEntries(bytes) {
   const entries = []
@@ -163,5 +188,113 @@ describe('deterministic delivery archive', () => {
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
+  })
+
+  test('a pre-aborted archive rejects in an isolated process without an unhandled stream error', async () => {
+    const result = await runArchiveChild(`
+      import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+      import { tmpdir } from 'node:os'
+      import { join } from 'node:path'
+      import { buildDeterministicDeliveryArchiveFile } from ${JSON.stringify(deliveryArchiveModuleUrl)}
+      const directory = await mkdtemp(join(tmpdir(), 'delivery-pre-abort-'))
+      try {
+        const input = join(directory, 'source.png')
+        await writeFile(input, Buffer.alloc(1024, 7))
+        const controller = new AbortController()
+        controller.abort(new Error('reviewer pre-abort'))
+        try {
+          await buildDeterministicDeliveryArchiveFile({
+            entries: [{ filename: 'banners/banner-001.png', path: input, byteSize: 1024 }],
+            deliveryManifestBytes: Buffer.from('{}'), timestamp: new Date('2026-09-04T10:00:00Z'),
+            maxBytes: 4096, outputPath: join(directory, 'package.zip'), signal: controller.signal,
+          })
+          process.exitCode = 2
+        } catch {
+          console.log('caught-pre-abort')
+        }
+        await new Promise((resolve) => setImmediate(resolve))
+      } finally {
+        await rm(directory, { recursive: true, force: true })
+      }
+    `)
+    expect(result, JSON.stringify(result)).toMatchObject({ code: 0, killed: false })
+    expect(result.stdout).toContain('caught-pre-abort')
+    expect(result.stderr).toBe('')
+  })
+
+  test('a stalled source abort settles every archive stream without crashing its process', async () => {
+    const result = await runArchiveChild(`
+      import { spawn, spawnSync } from 'node:child_process'
+      import { mkdtemp, rm } from 'node:fs/promises'
+      import { tmpdir } from 'node:os'
+      import { join } from 'node:path'
+      import { buildDeterministicDeliveryArchiveFile } from ${JSON.stringify(deliveryArchiveModuleUrl)}
+      const directory = await mkdtemp(join(tmpdir(), 'delivery-stalled-abort-'))
+      let writer
+      try {
+        const input = join(directory, 'source.pipe')
+        const made = spawnSync('mkfifo', [input])
+        if (made.status !== 0) throw new Error('mkfifo failed')
+        writer = spawn('sh', ['-c', 'exec 3>"$1"; sleep 10', 'writer', input], { stdio: 'ignore' })
+        const controller = new AbortController()
+        setTimeout(() => controller.abort(new Error('reviewer stalled abort')), 30)
+        const outcome = await Promise.race([
+          buildDeterministicDeliveryArchiveFile({
+            entries: [{ filename: 'banners/banner-001.png', path: input, byteSize: 1024 }],
+            deliveryManifestBytes: Buffer.from('{}'), timestamp: new Date('2026-09-04T10:00:00Z'),
+            maxBytes: 4096, outputPath: join(directory, 'package.zip'), signal: controller.signal,
+          }).then(() => 'resolved', () => 'rejected'),
+          new Promise((resolve) => setTimeout(() => resolve('stalled'), 800)),
+        ])
+        console.log('outcome-' + outcome)
+        if (outcome !== 'rejected') process.exitCode = 3
+        await new Promise((resolve) => setImmediate(resolve))
+      } finally {
+        writer?.kill('SIGKILL')
+        await rm(directory, { recursive: true, force: true })
+      }
+    `, 3_000)
+    expect(result, JSON.stringify(result)).toMatchObject({ code: 0, killed: false })
+    expect(result.stdout).toContain('outcome-rejected')
+    expect(result.stderr).toBe('')
+  })
+
+  test('repeated abort and output-error races remain caught with no background rejection', async () => {
+    const result = await runArchiveChild(`
+      import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
+      import { tmpdir } from 'node:os'
+      import { join } from 'node:path'
+      import { buildDeterministicDeliveryArchiveFile } from ${JSON.stringify(deliveryArchiveModuleUrl)}
+      const directory = await mkdtemp(join(tmpdir(), 'delivery-abort-races-'))
+      try {
+        const input = join(directory, 'source.png')
+        await writeFile(input, Buffer.alloc(4 * 1024 * 1024, 9))
+        let caught = 0
+        for (let index = 0; index < 8; index += 1) {
+          const output = join(directory, 'package-' + index + '.zip')
+          if (index % 2 === 1) await writeFile(output, Buffer.from('occupied'))
+          const controller = new AbortController()
+          setTimeout(() => controller.abort(new Error('race-' + index)), index % 2)
+          try {
+            await buildDeterministicDeliveryArchiveFile({
+              entries: [{ filename: 'banners/banner-001.png', path: input, byteSize: 4 * 1024 * 1024 }],
+              deliveryManifestBytes: Buffer.from('{}'), timestamp: new Date('2026-09-04T10:00:00Z'),
+              maxBytes: 5 * 1024 * 1024, outputPath: output, signal: controller.signal,
+            })
+          } catch {
+            caught += 1
+          }
+          await unlink(output).catch(() => {})
+        }
+        await new Promise((resolve) => setImmediate(resolve))
+        console.log('caught-' + caught)
+        if (caught !== 8) process.exitCode = 4
+      } finally {
+        await rm(directory, { recursive: true, force: true })
+      }
+    `, 5_000)
+    expect(result, JSON.stringify(result)).toMatchObject({ code: 0, killed: false })
+    expect(result.stdout).toContain('caught-8')
+    expect(result.stderr).toBe('')
   })
 })
