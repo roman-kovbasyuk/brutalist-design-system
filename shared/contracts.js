@@ -201,6 +201,15 @@ export const apiErrorResponseSchema = z.strictObject({
 
 export const copyVariantSchema = z.strictObject({
   id: nonEmptyString,
+  headline: nonEmptyString.max(160),
+  body: nonEmptyString.max(500),
+  offer: z.string().trim().max(200),
+  cta: nonEmptyString.max(80),
+  visualPrompt: nonEmptyString.max(2_000),
+})
+
+export const generatedBannerCopySchema = z.strictObject({
+  id: nonEmptyString,
   headline: nonEmptyString.max(80),
   body: nonEmptyString.max(160),
   offer: z.string().trim().max(40).default(''),
@@ -569,7 +578,7 @@ export const analyseBriefResultSchema = z.union([
   providerFailureSchema,
 ])
 export const generateCopyResultSchema = z.union([
-  z.strictObject({ ...providerMetadataFields, copies: z.array(copyVariantSchema).length(5) }),
+  z.strictObject({ ...providerMetadataFields, copies: z.array(generatedBannerCopySchema).length(5) }),
   providerFailureSchema,
 ])
 export const generateDirectionsResultSchema = z.union([

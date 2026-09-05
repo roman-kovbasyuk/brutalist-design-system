@@ -4,7 +4,7 @@ import {
   analyseBriefInputSchema,
   analyseBriefResultSchema,
   briefAnalysisSchema,
-  copyVariantSchema,
+  generatedBannerCopySchema,
   generateCopyInputSchema,
   generateCopyResultSchema,
   generateDirectionsInputSchema,
@@ -104,7 +104,7 @@ function uniqueIds(items, context) {
 }
 
 const copyContentSchema = z.strictObject({
-  copies: z.array(copyVariantSchema).length(5).superRefine(uniqueIds),
+  copies: z.array(generatedBannerCopySchema).length(5).superRefine(uniqueIds),
 })
 const directionsContentSchema = z.strictObject({
   directions: z.array(visualDirectionSchema).length(5).superRefine(uniqueIds),

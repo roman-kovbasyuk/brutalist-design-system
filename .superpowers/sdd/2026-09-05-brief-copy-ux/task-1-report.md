@@ -60,3 +60,39 @@ Observed: exit 0; 13 files passed, 177 tests passed, 0 failed.
 
 - PDF/DOCX parsers process only server-received buffers capped at 5 MB, but highly complex compressed documents can still cost more CPU/memory than plain text. Production deployment should also retain request timeouts and process/container resource limits.
 - `npm audit --omit=dev --json` reports 8 existing moderate production advisories through `firebase-admin`/Google dependencies. It reports no high or critical production advisories and none are attributed to the two extraction dependencies. No unrelated dependency upgrades were attempted.
+
+## Review round 1 fixes
+
+### Findings and root causes
+
+- The first implementation tightened `copyVariantSchema`, but that schema is also used to parse historical workspace copy sets, immutable version snapshots, and completed job metadata. New-generation limits therefore accidentally became migration requirements for stored records.
+- PDF and DOCX parsing ran in the API process. Capping compressed input at 5 MB did not bound decompressed DOCX size or parser CPU/memory consumption.
+
+### RED evidence
+
+Command:
+
+```sh
+npm test -- --run shared/copyCompatibility.test.js server/briefTextExtractor.test.js
+```
+
+Observed: exit 1; 5 targeted failures. Historical long copy failed in snapshot, completed-job, and workspace schemas; a compressed DOCX expansion returned the generic unreadable error instead of being rejected during preflight; and the isolated-parser deadline API did not exist.
+
+### Fixes
+
+- Restored the historical `copyVariantSchema` limits: headline 160, body 500, CTA 80, offer 200 with the legacy required field shape.
+- Added `generatedBannerCopySchema` with headline 80, body 160, CTA 24, and optional/default-empty offer 40. Exactly five copies using this schema are required only at the provider result boundary.
+- Added regressions that parse long historical copy through an immutable snapshot, completed generation job, and full workspace response.
+- Moved PDF and DOCX parsing into a child process with a 64 MB old-generation heap ceiling, reduced stack ceiling, a five-second hard deadline, and forced process termination after success, failure, or timeout.
+- Added DOCX central-directory preflight with a 1,000-entry ceiling, a 25 MB cumulative uncompressed-size ceiling, malformed-directory checks, and ZIP64 rejection before Mammoth sees the archive.
+- The parser child enforces the 20,000-character output ceiling before sending text back to the API process.
+
+### GREEN evidence
+
+Command:
+
+```sh
+npm test -- --run shared/contracts.test.js shared/copyCompatibility.test.js shared/generationContracts.test.js shared/versionContracts.test.js shared/workflowRules.test.js server/providers/mockProvider.test.js server/providers/geminiProvider.test.js server/providers/registry.test.js server/services/generationService.test.js server/routes/generation.test.js server/routes/routes.test.js server/routes/briefFiles.test.js server/app.test.js server/briefTextExtractor.test.js src/studio/api.test.js
+```
+
+Observed: exit 0; 15 files passed, 186 tests passed, 0 failed. This includes real PDF/DOCX extraction, expansion-bomb rejection, and enforced parser timeout coverage.

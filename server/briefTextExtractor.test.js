@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { ZipArchive } from 'archiver'
 import { PassThrough } from 'node:stream'
-import { extractBriefText, MAX_BRIEF_FILE_BYTES } from './briefTextExtractor.js'
+import { resolve } from 'node:path'
+import { extractBriefText, MAX_BRIEF_FILE_BYTES, parseDocumentInChild } from './briefTextExtractor.js'
 
 function textPdf(text) {
   const content = `BT /F1 18 Tf 72 720 Td (${text}) Tj ET`
@@ -44,6 +45,23 @@ async function textDocx(text) {
   return Buffer.concat(chunks)
 }
 
+async function expansionDocx() {
+  const output = new PassThrough()
+  const chunks = []
+  output.on('data', (chunk) => chunks.push(chunk))
+  const complete = new Promise((resolve, reject) => {
+    output.on('end', resolve)
+    output.on('error', reject)
+  })
+  const zip = new ZipArchive({})
+  zip.on('error', (error) => output.destroy(error))
+  zip.pipe(output)
+  zip.append(Buffer.alloc(30 * 1024 * 1024, 97), { name: 'word/document.xml' })
+  await zip.finalize()
+  await complete
+  return Buffer.concat(chunks)
+}
+
 describe('brief text extraction', () => {
   test.each([
     ['brief.txt', 'text/plain'],
@@ -69,6 +87,20 @@ describe('brief text extraction', () => {
     await expect(extractBriefText({
       name: 'brief.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: bytes.toString('base64'),
     })).resolves.toBe('Campaign for busy adults')
+  })
+
+  test('rejects a DOCX whose cumulative uncompressed ZIP size exceeds the parser ceiling', async () => {
+    const bytes = await expansionDocx()
+    expect(bytes.byteLength).toBeLessThan(MAX_BRIEF_FILE_BYTES)
+    await expect(extractBriefText({
+      name: 'bomb.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: bytes.toString('base64'),
+    })).rejects.toMatchObject({ code: 'brief_file_too_complex' })
+  })
+
+  test('kills an isolated parser that exceeds its deadline', async () => {
+    await expect(parseDocumentInChild({ extension: '.pdf', bytes: Buffer.from('%PDF-1.4') }, {
+      childPath: resolve(process.cwd(), 'server/testFixtures/hangingBriefParser.js'), timeoutMs: 25,
+    })).rejects.toMatchObject({ code: 'brief_file_timeout' })
   })
 
   test('rejects decoded content over five megabytes', async () => {

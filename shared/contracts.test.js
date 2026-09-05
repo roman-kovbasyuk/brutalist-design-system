@@ -14,6 +14,7 @@ import {
   visualDirectionSchema,
   briefSchema,
   copyVariantSchema,
+  generatedBannerCopySchema,
 } from './contracts.js'
 import { pilotCampaignFixture } from './fixtures/pilotCampaign.js'
 import { pilotTemplateFixture } from './fixtures/pilotTemplate.js'
@@ -44,11 +45,11 @@ describe('MVP contracts', () => {
   })
 
   test('enforces banner copy limits and defaults a missing optional tag', () => {
-    expect(copyVariantSchema.parse({
+    expect(generatedBannerCopySchema.parse({
       id: 'copy-1', headline: 'Learn Norwegian today', body: 'Short lessons for busy adults.',
       cta: 'Start now', visualPrompt: 'A calm Nordic desk scene.',
     }).offer).toBe('')
-    expect(copyVariantSchema.safeParse({
+    expect(generatedBannerCopySchema.safeParse({
       id: 'copy-1', headline: 'h'.repeat(81), body: 'b'.repeat(161),
       cta: 'c'.repeat(25), offer: 'o'.repeat(41), visualPrompt: 'A visual.',
     }).success).toBe(false)
