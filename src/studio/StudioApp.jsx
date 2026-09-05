@@ -1,6 +1,4 @@
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -33,6 +31,7 @@ import { VisualStage } from './VisualStage.jsx'
 import { BannerStage } from './BannerStage.jsx'
 import { ReviewStage } from './ReviewStage.jsx'
 import { TemplateLibrary } from './TemplateLibrary.jsx'
+import { BrandDesignSystems } from './BrandDesignSystems.jsx'
 import { Button, ErrorNotice } from './primitives.jsx'
 import {
   actionKey,
@@ -46,11 +45,6 @@ import {
 import './studio.css'
 import './campaign-layout.css'
 
-const DesignSystem = lazy(() =>
-  import('../screens/DesignSystemScreen.jsx').then((module) => ({
-    default: module.DesignSystemScreen,
-  })),
-)
 const readRoute = () => routeFromLocation(location.pathname, location.search)
 
 export function StudioApp() {
@@ -569,16 +563,16 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                     ? 'Design system'
                     : 'Campaigns'}
             </strong>
+            {route.view === 'campaign' && workspace && (
+              <span
+                className="bs-status bs-topbar-status"
+                data-status={workspace.campaign.status}
+                data-attention={['in_review', 'changes_requested', 'ready'].includes(workspace.campaign.status) || undefined}
+              >
+                {statusLabel(workspace.campaign.status)}
+              </span>
+            )}
           </div>
-          {route.view === 'campaign' && workspace && (
-            <span
-              className="bs-status bs-topbar-status"
-              data-status={workspace.campaign.status}
-              data-attention={['in_review', 'changes_requested', 'ready'].includes(workspace.campaign.status) || undefined}
-            >
-              {statusLabel(workspace.campaign.status)}
-            </span>
-          )}
           <div className="bs-topbar-right">
             <a href="/docs/" aria-label="Help and documentation">
               <CircleHelp size={19} />
@@ -589,7 +583,7 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
           id="studio-main"
           tabIndex={-1}
           ref={mainRef}
-          className={route.view === 'system' ? 'bs-design-page' : 'bs-content'}
+          className="bs-content"
         >
           <ErrorNotice
             error={error}
@@ -636,9 +630,7 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
               <span />
             </div>
           ) : route.view === 'system' ? (
-            <Suspense fallback={<p>Loading design system…</p>}>
-              <DesignSystem />
-            </Suspense>
+            <BrandDesignSystems />
           ) : route.view === 'templates' ? (
             <TemplateLibrary
               templates={templates}
@@ -655,7 +647,6 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
               <div className="bs-campaign-heading">
                 <div>
                   <h1>{workspace.campaign.title}</h1>
-                  {demo && <span className="bs-tag bs-demo-tag">Local demo</span>}
                 </div>
               </div>
               <CampaignTimeline workspace={workspace} stage={stage} pending={pending} onChange={goStage} />
