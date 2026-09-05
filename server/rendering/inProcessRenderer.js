@@ -182,6 +182,15 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
 
       const compiledSlots = []
       const composites = []
+      if (createComposites && manifest.presentation) {
+        const shapes = manifest.presentation.shapes.map((shape) => {
+          const { x, y, width, height } = shape.placements[ratio.id]
+          return shape.type === 'ellipse'
+            ? `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" fill="${shape.fill}"/>`
+            : `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${shape.fill}"/>`
+        }).join('')
+        composites.push({ input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${ratio.width}" height="${ratio.height}">${shapes}</svg>`), left: 0, top: 0 })
+      }
       for (const slot of manifest.slots) {
         const value = input.slots[slot.id]
         if (slot.required && (value == null || typeof value === 'string' && value.trim().length === 0)) {
@@ -231,7 +240,7 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
         const lines = await wrapText(value, slot, placement)
         if (createComposites) {
           composites.push({
-            input: textLayer({ lines, placement, fontSize: slot.fontSize, font: fonts[slot.fontWeight] }),
+            input: textLayer({ lines, placement, fontSize: slot.fontSize, font: fonts[slot.fontWeight], fill: manifest.presentation?.slotColors[slot.id] }),
             left: placement.x,
             top: placement.y,
           })
@@ -251,7 +260,7 @@ export function createInProcessRenderer({ resolvedFontFiles = fontFiles } = {}) 
     },
     async renderComposition(input) {
       const { manifest, ratio, compiledSlots, composites } = await compileInput(input, { createComposites: true })
-      const output = await sharp({ create: { width: ratio.width, height: ratio.height, channels: 4, background: '#ffffff' } })
+      const output = await sharp({ create: { width: ratio.width, height: ratio.height, channels: 4, background: manifest.presentation?.backgroundColor ?? '#ffffff' } })
         .composite(composites)
         .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false, progressive: false })
         .toBuffer()

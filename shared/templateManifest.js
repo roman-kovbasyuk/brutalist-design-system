@@ -13,6 +13,16 @@ const placementSchema = z.strictObject({
 })
 
 const placementsSchema = z.record(z.string(), placementSchema)
+const colorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+const presentationSchema = z.strictObject({
+  backgroundColor: colorSchema,
+  slotColors: z.record(z.string(), colorSchema),
+  shapes: z.array(z.strictObject({
+    type: z.enum(['rect', 'ellipse']),
+    fill: colorSchema,
+    placements: placementsSchema,
+  })).max(12),
+})
 
 const ratioSchema = z.strictObject({
   id: nonEmptyString,
@@ -67,6 +77,7 @@ export const templateManifestSchema = z.strictObject({
   name: nonEmptyString,
   ratios: z.array(ratioSchema).min(1),
   slots: z.array(slotSchema).min(1),
+  presentation: presentationSchema.optional(),
 }).superRefine((manifest, context) => {
   const ratios = new Map()
   const slots = new Set()
@@ -120,6 +131,24 @@ export const templateManifestSchema = z.strictObject({
     for (const placementRatioId of Object.keys(slot.placements)) {
       if (!ratios.has(placementRatioId)) {
         context.addIssue({ code: 'custom', path: ['slots', slotIndex, 'placements', placementRatioId], message: `Slot ${slot.id} has a placement for unknown ratio: ${placementRatioId}.` })
+      }
+    }
+  }
+  if (manifest.presentation) {
+    for (const id of Object.keys(manifest.presentation.slotColors)) {
+      if (!manifest.slots.some((slot) => slot.id === id && slot.type !== 'image')) {
+        context.addIssue({ code: 'custom', path: ['presentation', 'slotColors', id], message: 'Color must reference a text slot.' })
+      }
+    }
+    for (const [index, shape] of manifest.presentation.shapes.entries()) {
+      for (const ratio of manifest.ratios) {
+        const placement = shape.placements[ratio.id]
+        if (!placement || placement.x + placement.width > ratio.width || placement.y + placement.height > ratio.height) {
+          context.addIssue({ code: 'custom', path: ['presentation', 'shapes', index], message: `Shape must fit ratio ${ratio.id}.` })
+        }
+      }
+      for (const id of Object.keys(shape.placements)) {
+        if (!ratios.has(id)) context.addIssue({ code: 'custom', path: ['presentation', 'shapes', index], message: 'Unknown shape ratio.' })
       }
     }
   }
