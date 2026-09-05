@@ -524,7 +524,9 @@ export function createDeliveryService({
       }
       const chain = verifyReviewChain({ ...context, expectedStatus: 'approved' })
       const plan = buildPlan({ ...context, approval: chain.approved })
-      const existingBuild = await repository.findBuildForUpdate(versionId)
+      // The campaign row already serializes preparation. Avoid queuing a build-row
+      // lock behind its orphan FK check; finalization still locks the build below.
+      const existingBuild = await repository.findBuild(versionId)
       if (!existingBuild) {
         const build = await repository.createBuild({
           id: plan.buildId, campaignId: context.campaign.id, versionId, actorId: actor.id,

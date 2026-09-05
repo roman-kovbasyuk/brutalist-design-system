@@ -165,6 +165,11 @@ export function createDeliveryRepository(client) {
       return mapBuild(result.rows[0])
     },
 
+    async findBuild(versionId) {
+      const result = await client.query('SELECT * FROM delivery_builds WHERE version_id = $1', [versionId])
+      return mapBuild(result.rows[0])
+    },
+
     async createBuild(build) {
       const result = await client.query(
         `INSERT INTO delivery_builds
@@ -394,10 +399,10 @@ export function createDeliveryRepository(client) {
          SET campaign_id = EXCLUDED.campaign_id, reason = EXCLUDED.reason, status = 'pending',
              last_error = NULL, cleaned_at = NULL, claimed_build_id = NULL,
              claimed_delivery_build_id = NULL
-         WHERE orphaned_uploads.claimed_delivery_build_id = $6
-               AND orphaned_uploads.status <> 'cleaning'
-            OR (orphaned_uploads.claimed_delivery_build_id IS NULL AND orphaned_uploads.claimed_build_id IS NULL
-                AND orphaned_uploads.status <> 'cleaning')`,
+         WHERE (orphaned_uploads.claimed_delivery_build_id = $6
+                OR (orphaned_uploads.claimed_delivery_build_id IS NULL
+                    AND orphaned_uploads.claimed_build_id IS NULL))
+           AND orphaned_uploads.status NOT IN ('cleaning', 'cleaned')`,
         [orphanId, objectKey, campaignId, reason, failedAt, buildId],
       )
       await client.query(

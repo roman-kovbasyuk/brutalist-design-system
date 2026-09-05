@@ -46,11 +46,14 @@ export function createMemoryAssetStore({ maxStreamBytes = 16 * 1024 * 1024 } = {
       assertSafeObjectKey(objectKey)
       return identity(objectKey, objects.get(objectKey)) ?? null
     },
-    async createReadStream({ objectKey, signal } = {}) {
+    async createReadStream({ objectKey, generation, signal } = {}) {
       assertSafeObjectKey(objectKey)
       if (signal?.aborted) throw new AssetStoreError('storage_aborted', 'Private asset storage operation was aborted')
       const stored = objects.get(objectKey)
       if (!stored) return null
+      if (generation != null && generation !== stored.generation) {
+        throw new AssetStoreError('object_generation_mismatch', 'Asset object generation changed')
+      }
       return Readable.from((function* boundedChunks() {
         for (let offset = 0; offset < stored.bytes.length; offset += 64 * 1024) {
           yield Buffer.from(stored.bytes.subarray(offset, offset + 64 * 1024))

@@ -129,10 +129,11 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
         throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
       }
     },
-    async createReadStream({ objectKey, signal } = {}) {
+    async createReadStream({ objectKey, generation, signal } = {}) {
       assertSafeObjectKey(objectKey)
       if (signal?.aborted) throw storageFailure('storage_aborted', 'Private asset storage operation was aborted')
-      const stream = bucket.file(objectKey).createReadStream({ validation: 'crc32c' })
+      const stream = bucket.file(objectKey, generation == null ? undefined : { generation })
+        .createReadStream({ validation: 'crc32c' })
       if (signal) addAbortSignal(signal, stream)
       return stream
     },

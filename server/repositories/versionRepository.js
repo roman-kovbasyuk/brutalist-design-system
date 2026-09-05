@@ -632,7 +632,7 @@ export function createVersionRepository(client) {
                claimed_build_id = NULL
            WHERE (orphaned_uploads.claimed_build_id IS NULL
                   OR orphaned_uploads.claimed_build_id = $6)
-             AND orphaned_uploads.status <> 'cleaning'`,
+             AND orphaned_uploads.status NOT IN ('cleaning', 'cleaned')`,
           [orphanId, objectKey, campaignId, reason, failedAt, buildId],
         )
       }

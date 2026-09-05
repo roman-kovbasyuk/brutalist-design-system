@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { hashCanonical } from '../../shared/canonicalJson.js'
 import { transitionCampaign } from '../../shared/workflowRules.js'
 import { copyVariantSchema, generateImageInputSchema, visualDirectionSchema } from '../../shared/contracts.js'
@@ -143,6 +143,37 @@ async function settleWithin(operation, timeoutMs) {
     return await Promise.race([observed, timeout])
   } finally {
     clearTimeout(timer)
+  }
+}
+
+async function verifyObjectBytes({ createObjectReadStream, objectKey, generation, expectedByteSize, expectedSha256, timeoutMs }) {
+  if (typeof createObjectReadStream !== 'function') return false
+  const controller = new AbortController()
+  const timeoutError = Object.assign(new Error('Object verification exceeded its deadline'), {
+    code: 'cleanup_object_verification_timeout',
+  })
+  let readable
+  const abortTimer = setTimeout(() => controller.abort(timeoutError), timeoutMs)
+  try {
+    const verified = await settleWithin(async () => {
+      readable = await createObjectReadStream({ objectKey, generation, signal: controller.signal })
+      if (!readable || typeof readable[Symbol.asyncIterator] !== 'function' || controller.signal.aborted) return false
+      let byteSize = 0
+      const hash = createHash('sha256')
+      for await (const chunk of readable) {
+        if (controller.signal.aborted) return false
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+        if (bytes.length > expectedByteSize - byteSize) return false
+        byteSize += bytes.length
+        hash.update(bytes)
+      }
+      return byteSize === expectedByteSize && hash.digest('hex') === expectedSha256
+    }, timeoutMs)
+    return verified.kind === 'fulfilled' && verified.value === true
+  } finally {
+    clearTimeout(abortTimer)
+    if (!controller.signal.aborted) controller.abort(timeoutError)
+    if (readable && typeof readable.destroy === 'function' && !readable.destroyed) readable.destroy(timeoutError)
   }
 }
 
@@ -615,7 +646,7 @@ export function createGenerationControlPlane({
       })
     },
 
-    async cleanupOrphanUpload({ orphanId, getObjectMetadata, deleteObject, cleanedAt }) {
+    async cleanupOrphanUpload({ orphanId, getObjectMetadata, createObjectReadStream, deleteObject, cleanedAt }) {
       if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
       const cleanupDeadlineAt = Date.now() + recoveryTimeoutMs
       const maximumAttempts = 3
@@ -897,12 +928,22 @@ export function createGenerationControlPlane({
             }
             if (
               identity.objectKey !== phase.object_key
-              || identity.sha256 !== phase.expected_sha256
+              || (identity.sha256 != null && identity.sha256 !== phase.expected_sha256)
               || identity.byteSize !== phase.expected_byte_size
               || identity.contentType !== phase.expected_mime_type
               || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
               || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))
             ) {
+              return { kind: 'claimed', objectKey: phase.object_key }
+            }
+            if (identity.sha256 == null && !await verifyObjectBytes({
+              createObjectReadStream,
+              objectKey: phase.object_key,
+              generation: identity.generation,
+              expectedByteSize: phase.expected_byte_size,
+              expectedSha256: phase.expected_sha256,
+              timeoutMs: cleanupDeleteTimeoutMs,
+            })) {
               return { kind: 'claimed', objectKey: phase.object_key }
             }
             phase = await recoveryTransaction(pool, async (client, deadline) => {

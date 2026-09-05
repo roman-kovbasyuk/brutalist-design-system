@@ -42,6 +42,12 @@ describe('private immutable asset stores', () => {
 
     const replacement = await store.put({ objectKey, bytes: Buffer.from('second'), contentType: 'image/png' })
     expect(replacement.generation).not.toBe(created.generation)
+    await expect(store.createReadStream({ objectKey, generation: created.generation }))
+      .rejects.toMatchObject({ code: 'object_generation_mismatch' })
+    const pinned = await store.createReadStream({ objectKey, generation: replacement.generation })
+    const pinnedBytes = []
+    for await (const chunk of pinned) pinnedBytes.push(Buffer.from(chunk))
+    expect(Buffer.concat(pinnedBytes)).toEqual(Buffer.from('second'))
     await expect(store.delete({ objectKey, generation: created.generation }))
       .rejects.toMatchObject({ code: 'object_generation_mismatch' })
     expect(await store.get({ objectKey })).toEqual(Buffer.from('second'))
@@ -216,6 +222,19 @@ describe('private immutable asset stores', () => {
     await expect(upload).rejects.toMatchObject({ code: 'storage_aborted' })
     expect(source.destroyed).toBe(true)
     expect(write.destroyed).toBe(true)
+  })
+
+  test('GCS can pin a streaming read to one immutable object generation', async () => {
+    const createReadStream = vi.fn(() => Readable.from([Buffer.from('generation bytes')]))
+    const file = vi.fn(() => ({ createReadStream }))
+    const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
+
+    const source = await store.createReadStream({ objectKey, generation: '1234' })
+    const chunks = []
+    for await (const chunk of source) chunks.push(Buffer.from(chunk))
+    expect(Buffer.concat(chunks)).toEqual(Buffer.from('generation bytes'))
+    expect(file).toHaveBeenCalledWith(objectKey, { generation: '1234' })
+    expect(createReadStream).toHaveBeenCalledWith({ validation: 'crc32c' })
   })
 
   test('GCS streaming upload destroys its source and maps an erroring sink safely', async () => {

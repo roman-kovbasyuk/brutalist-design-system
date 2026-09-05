@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PassThrough } from 'node:stream'
+import { PassThrough, Readable } from 'node:stream'
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Pool } from 'pg'
 import { runMigrations } from '../db/migrate.js'
@@ -4475,14 +4475,18 @@ describe('immutable review version workflow', () => {
        VALUES ('late-create-orphan', $1, $2, 'delivery_failed', $3, $4, 'application/zip')`,
       [objectKey, campaign.id, sha256, bytes.length],
     )
-    const getObjectMetadata = vi.fn((input) => store.getMetadata(input))
+    const getObjectMetadata = vi.fn(async (input) => {
+      const metadata = await store.getMetadata(input)
+      return metadata && { ...metadata, sha256: null }
+    })
+    const createObjectReadStream = vi.fn((input) => store.createReadStream(input))
     const deleteObject = vi.fn((input) => store.delete(input))
     const control = createGenerationControlPlane({
       pool, cleanupLeaseMs: 100, cleanupDeleteTimeoutMs: 20,
     })
 
     await expect(control.cleanupOrphanUpload({
-      orphanId: 'late-create-orphan', getObjectMetadata, deleteObject,
+      orphanId: 'late-create-orphan', getObjectMetadata, createObjectReadStream, deleteObject,
     })).resolves.toEqual({ kind: 'claimed', objectKey })
     const firstFence = (await pool.query(
       `SELECT status, object_generation, cleanup_token FROM orphaned_uploads
@@ -4492,7 +4496,7 @@ describe('immutable review version workflow', () => {
     expect(deleteObject).not.toHaveBeenCalled()
 
     await expect(control.cleanupOrphanUpload({
-      orphanId: 'late-create-orphan', getObjectMetadata, deleteObject,
+      orphanId: 'late-create-orphan', getObjectMetadata, createObjectReadStream, deleteObject,
     })).resolves.toEqual({ kind: 'claimed', objectKey })
     expect(getObjectMetadata).toHaveBeenCalledTimes(1)
     expect(deleteObject).not.toHaveBeenCalled()
@@ -4530,9 +4534,40 @@ describe('immutable review version workflow', () => {
       `UPDATE orphaned_uploads SET cleanup_lease_expires_at = clock_timestamp() - interval '1 second'
        WHERE id = 'late-create-orphan'`,
     )
+    const stalledReadStartedAt = Date.now()
     await expect(control.cleanupOrphanUpload({
-      orphanId: 'late-create-orphan', getObjectMetadata, deleteObject,
+      orphanId: 'late-create-orphan', getObjectMetadata,
+      createObjectReadStream: () => new PassThrough(), deleteObject,
+    })).resolves.toEqual({ kind: 'claimed', objectKey })
+    expect(Date.now() - stalledReadStartedAt).toBeLessThan(150)
+    expect(deleteObject).not.toHaveBeenCalled()
+    expect((await pool.query(
+      `SELECT status, object_generation FROM orphaned_uploads WHERE id = 'late-create-orphan'`,
+    )).rows[0]).toEqual({ status: 'cleaning', object_generation: null })
+
+    await pool.query(
+      `UPDATE orphaned_uploads SET cleanup_lease_expires_at = clock_timestamp() - interval '1 second'
+       WHERE id = 'late-create-orphan'`,
+    )
+    await expect(control.cleanupOrphanUpload({
+      orphanId: 'late-create-orphan', getObjectMetadata,
+      createObjectReadStream: () => Readable.from([Buffer.alloc(bytes.length, 0x78)]), deleteObject,
+    })).resolves.toEqual({ kind: 'claimed', objectKey })
+    expect(deleteObject).not.toHaveBeenCalled()
+    expect((await pool.query(
+      `SELECT status, object_generation FROM orphaned_uploads WHERE id = 'late-create-orphan'`,
+    )).rows[0]).toEqual({ status: 'cleaning', object_generation: null })
+
+    await pool.query(
+      `UPDATE orphaned_uploads SET cleanup_lease_expires_at = clock_timestamp() - interval '1 second'
+       WHERE id = 'late-create-orphan'`,
+    )
+    await expect(control.cleanupOrphanUpload({
+      orphanId: 'late-create-orphan', getObjectMetadata, createObjectReadStream, deleteObject,
     })).resolves.toEqual({ kind: 'cleaned', objectKey })
+    expect(createObjectReadStream).toHaveBeenCalledWith(expect.objectContaining({
+      objectKey, generation: lateIdentity.generation, signal: expect.any(AbortSignal),
+    }))
     expect(deleteObject).toHaveBeenCalledWith(expect.objectContaining({
       objectKey, generation: lateIdentity.generation,
     }))
@@ -4572,6 +4607,41 @@ describe('immutable review version workflow', () => {
           $5, 20, 'application/zip')`,
       [versionKey, deliveryKey, campaign.id, 'c'.repeat(64), 'd'.repeat(64)],
     )
+
+    await withTransaction(pool, async (client) => {
+      expect(await createVersionRepository(client).failBuild({
+        buildId: 'cleaned-version-build', ownerToken: 'current-version-owner', campaignId: campaign.id,
+        objectKeys: [versionKey], orphanIds: ['failed-version-orphan'], reason: 'review_version_failed',
+        failedAt: new Date(),
+      })).toEqual({ owned: true })
+    })
+    await withTransaction(pool, async (client) => {
+      expect(await createDeliveryRepository(client).failBuild({
+        buildId: 'cleaned-delivery-build', ownerToken: 'current-delivery-owner', campaignId: campaign.id,
+        objectKey: deliveryKey, orphanId: 'failed-delivery-orphan', reason: 'delivery_failed',
+        failedAt: new Date(),
+      })).toEqual({ owned: true })
+    })
+    expect((await pool.query(
+      `SELECT object_key, status, object_generation, object_etag, expected_sha256
+       FROM orphaned_uploads ORDER BY object_key`,
+    )).rows).toEqual([
+      {
+        object_key: deliveryKey, status: 'cleaned', object_generation: 'generation-2',
+        object_etag: 'etag-2', expected_sha256: 'd'.repeat(64),
+      },
+      {
+        object_key: versionKey, status: 'cleaned', object_generation: 'generation-2',
+        object_etag: 'etag-2', expected_sha256: 'c'.repeat(64),
+      },
+    ])
+    expect(await createVersionRepository(pool).reactivateBuild({
+      id: 'cleaned-version-build', ownerToken: 'current-version-owner',
+    })).toMatchObject({ id: 'cleaned-version-build', state: 'in_progress' })
+    expect(await createDeliveryRepository(pool).takeOverBuild({
+      id: 'cleaned-delivery-build', actorId, key: 'cleaned-delivery-key',
+      fingerprint: 'b'.repeat(64), ownerToken: 'current-delivery-owner',
+    })).toMatchObject({ id: 'cleaned-delivery-build', state: 'in_progress' })
 
     await Promise.all([
       withTransaction(pool, (client) => createVersionRepository(client).adoptBuildObjects({
@@ -4637,6 +4707,94 @@ describe('immutable review version workflow', () => {
     ])
     await pool.end()
     pools.delete(pool)
+  })
+
+  test('preserves cleaned version objects through failure recovery before fresh re-adoption and finalization', async () => {
+    const harness = await immutableVersionHarness()
+    await harness.service.saveComposition({
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 2, input: harness.compositionInput,
+    })
+    const oldIdentities = new Map()
+    let seeded = false
+    const repositoryFactory = (client) => {
+      const repository = createVersionRepository(client)
+      return {
+        ...repository,
+        async adoptBuildObjects(input) {
+          if (seeded) return repository.adoptBuildObjects(input)
+          seeded = true
+          for (const [index, objectKey] of input.objectKeys.entries()) {
+            const contentType = objectKey.endsWith('.json') ? 'application/json' : 'image/png'
+            const oldBytes = Buffer.from(`obsolete-version-object-${index}`)
+            let identity
+            for (let generation = 0; generation < 2; generation += 1) {
+              identity = await harness.assetStore.put({ objectKey, bytes: oldBytes, contentType })
+              await harness.assetStore.delete({ objectKey, generation: identity.generation })
+            }
+            oldIdentities.set(objectKey, identity)
+            await harness.pool.query(
+              `INSERT INTO orphaned_uploads
+                 (id, object_key, campaign_id, reason, status, cleaned_at,
+                  object_generation, object_etag, expected_sha256, expected_byte_size, expected_mime_type)
+               VALUES ($1, $2, $3, 'obsolete_cleanup', 'cleaned', now(), $4, $5, $6, $7, $8)`,
+              [`cleaned-version-recovery-${index}`, objectKey, harness.campaign.id,
+                identity.generation, identity.etag, identity.sha256, identity.byteSize, identity.contentType],
+            )
+          }
+          throw new Error('forced pre-adoption version failure')
+        },
+      }
+    }
+    const command = {
+      actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 3,
+      idempotencyKey: 'cleaned-version-recovery', input: {},
+    }
+    await expect(createVersionService({
+      pool: harness.pool, assetStore: harness.assetStore, repositoryFactory,
+      renderer: createInProcessRenderer(), timeoutMs: 5_000, recoveryTimeoutMs: 500,
+    }).createVersion(command)).rejects.toThrow('forced pre-adoption version failure')
+    expect((await harness.pool.query(
+      `SELECT status, object_generation, expected_sha256 FROM orphaned_uploads
+       WHERE campaign_id = $1 ORDER BY object_key`,
+      [harness.campaign.id],
+    )).rows).toEqual([...oldIdentities.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, identity]) => ({
+      status: 'cleaned', object_generation: identity.generation, expected_sha256: identity.sha256,
+    })))
+
+    const replacements = new Map()
+    const replacementStore = {
+      ...harness.assetStore,
+      async put(input) {
+        const claim = (await harness.pool.query(
+          `SELECT status, object_generation, object_etag, expected_sha256
+           FROM orphaned_uploads WHERE object_key = $1`,
+          [input.objectKey],
+        )).rows[0]
+        expect(claim).toMatchObject({ status: 'pending', object_generation: null, object_etag: null })
+        expect(claim.expected_sha256).toMatch(/^[a-f0-9]{64}$/)
+        const identity = await harness.assetStore.put(input)
+        replacements.set(input.objectKey, identity)
+        return identity
+      },
+    }
+    const finalized = await createVersionService({
+      pool: harness.pool, assetStore: replacementStore, renderer: createInProcessRenderer(),
+    }).createVersion(command)
+    expect(finalized.status).toBe(201)
+    expect(replacements.size).toBe(oldIdentities.size)
+    for (const [objectKey, replacement] of replacements) {
+      expect(replacement.generation).not.toBe(oldIdentities.get(objectKey).generation)
+    }
+    expect((await harness.pool.query(
+      `SELECT count(*)::int AS count FROM assets WHERE version_id = $1`,
+      [finalized.body.version.id],
+    )).rows[0].count).toBe(2)
+    expect((await harness.pool.query(
+      `SELECT count(*)::int AS count FROM orphaned_uploads WHERE campaign_id = $1`,
+      [harness.campaign.id],
+    )).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
   })
 
   test('concurrent active version and delivery cleanup follows one lock order without deadlock', async () => {
@@ -6688,6 +6846,50 @@ describe('hash-verified approved deliveries', () => {
     pools.delete(harness.pool)
   })
 
+  test('does not deadlock a second delivery key behind active-build orphan adoption', async () => {
+    const harness = await approvedDeliveryHarness()
+    const adoptionLocked = deferred()
+    const releaseAdoption = deferred()
+    let gateAdoption = true
+    const repositoryFactory = (client) => {
+      const repository = createDeliveryRepository(client)
+      return {
+        ...repository,
+        async adoptBuildObject(input) {
+          if (gateAdoption) {
+            gateAdoption = false
+            await client.query('SELECT id FROM delivery_builds WHERE id = $1 FOR UPDATE', [input.buildId])
+            adoptionLocked.resolve()
+            await releaseAdoption.promise
+          }
+          return repository.adoptBuildObject(input)
+        },
+      }
+    }
+    const firstService = createDeliveryService({
+      pool: harness.pool, assetStore: harness.assetStore, repositoryFactory,
+      timeoutMs: 5_000, recoveryTimeoutMs: 500,
+    })
+    const common = { actor: harness.actor, versionId: harness.created.body.version.id, input: {} }
+    const first = firstService.createDelivery({ ...common, idempotencyKey: 'delivery-lock-cycle-a' })
+    await adoptionLocked.promise
+    const second = harness.deliveryService.createDelivery({ ...common, idempotencyKey: 'delivery-lock-cycle-b' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    releaseAdoption.resolve()
+
+    const outcomes = await Promise.allSettled([first, second])
+    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toEqual([])
+    const results = outcomes.map((outcome) => outcome.value)
+    expect(results.map((result) => result.status).sort()).toEqual([200, 201])
+    expect(new Set(results.map((result) => result.body.delivery.id)).size).toBe(1)
+    expect((await harness.pool.query(
+      `SELECT count(*)::int AS count FROM orphaned_uploads WHERE campaign_id = $1`,
+      [harness.campaign.id],
+    )).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
   test.each([
     ['exact duplicate', 'campaign.delivered', false],
     ['legacy alias duplicate', 'campaign.deliver', false],
@@ -6948,6 +7150,83 @@ describe('hash-verified approved deliveries', () => {
       `SELECT count(*)::int AS count FROM deliveries WHERE version_id = $1`,
       [base.created.body.version.id],
     )).rows[0].count).toBe(1)
+    await base.pool.end()
+    pools.delete(base.pool)
+  })
+
+  test('preserves a cleaned delivery object through failure recovery before fresh re-adoption and finalization', async () => {
+    const base = await approvedDeliveryHarness()
+    let oldIdentity
+    let seeded = false
+    const repositoryFactory = (client) => {
+      const repository = createDeliveryRepository(client)
+      return {
+        ...repository,
+        async adoptBuildObject(input) {
+          if (seeded) return repository.adoptBuildObject(input)
+          seeded = true
+          const oldBytes = Buffer.from('obsolete delivery package')
+          for (let generation = 0; generation < 2; generation += 1) {
+            oldIdentity = await base.assetStore.put({
+              objectKey: input.objectKey, bytes: oldBytes, contentType: 'application/zip',
+            })
+            await base.assetStore.delete({ objectKey: input.objectKey, generation: oldIdentity.generation })
+          }
+          await base.pool.query(
+            `INSERT INTO orphaned_uploads
+               (id, object_key, campaign_id, reason, status, cleaned_at,
+                object_generation, object_etag, expected_sha256, expected_byte_size, expected_mime_type)
+             VALUES ('cleaned-delivery-recovery-orphan', $1, $2, 'obsolete_cleanup', 'cleaned', now(),
+                     $3, $4, $5, $6, 'application/zip')`,
+            [input.objectKey, base.campaign.id, oldIdentity.generation, oldIdentity.etag,
+              oldIdentity.sha256, oldIdentity.byteSize],
+          )
+          throw new Error('forced pre-adoption delivery failure')
+        },
+      }
+    }
+    const command = {
+      actor: base.actor, versionId: base.created.body.version.id,
+      idempotencyKey: 'cleaned-delivery-recovery', input: {},
+    }
+    await expect(createDeliveryService({
+      pool: base.pool, assetStore: base.assetStore, repositoryFactory,
+      timeoutMs: 5_000, recoveryTimeoutMs: 500,
+    }).createDelivery(command)).rejects.toThrow('forced pre-adoption delivery failure')
+    expect((await base.pool.query(
+      `SELECT status, object_generation, object_etag, expected_sha256
+       FROM orphaned_uploads WHERE id = 'cleaned-delivery-recovery-orphan'`,
+    )).rows[0]).toEqual({
+      status: 'cleaned', object_generation: oldIdentity.generation,
+      object_etag: oldIdentity.etag, expected_sha256: oldIdentity.sha256,
+    })
+
+    let replacement
+    const replacementStore = {
+      ...base.assetStore,
+      async putStream(input) {
+        const claim = (await base.pool.query(
+          `SELECT status, object_generation, object_etag, expected_sha256
+           FROM orphaned_uploads WHERE object_key = $1`,
+          [input.objectKey],
+        )).rows[0]
+        expect(claim).toMatchObject({ status: 'pending', object_generation: null, object_etag: null })
+        expect(claim.expected_sha256).toMatch(/^[a-f0-9]{64}$/)
+        replacement = await base.assetStore.putStream(input)
+        return replacement
+      },
+    }
+    const delivered = await createDeliveryService({ pool: base.pool, assetStore: replacementStore }).createDelivery(command)
+    expect(delivered.status).toBe(201)
+    expect(replacement.generation).not.toBe(oldIdentity.generation)
+    expect((await base.pool.query(
+      `SELECT count(*)::int AS count FROM deliveries WHERE version_id = $1`,
+      [base.created.body.version.id],
+    )).rows[0].count).toBe(1)
+    expect((await base.pool.query(
+      `SELECT count(*)::int AS count FROM orphaned_uploads WHERE campaign_id = $1`,
+      [base.campaign.id],
+    )).rows[0].count).toBe(0)
     await base.pool.end()
     pools.delete(base.pool)
   })
