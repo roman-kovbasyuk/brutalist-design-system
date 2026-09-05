@@ -9,7 +9,7 @@ describe('brief composer', () => {
     render(<BriefStage onSave={onSave} />)
     expect(screen.getAllByRole('textbox')).toHaveLength(1)
     fireEvent.change(screen.getByLabelText('Campaign description'), { target: { value: 'Autumn headphones launch. For commuters, 20% off until October 1.' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Generate five options' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze brief' }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Autumn headphones launch', brief: { notes: 'Autumn headphones launch. For commuters, 20% off until October 1.' } }))
   })
   test('allows a file-only brief and passes extracted text to campaign creation', async () => {
@@ -18,7 +18,7 @@ describe('brief composer', () => {
     render(<BriefStage onSave={onSave} api={api} />)
     fireEvent.change(screen.getByLabelText('Brief files'), { target: { files: [new File(['Promote the autumn collection.'], 'campaign.txt', { type: 'text/plain' })] } })
     await screen.findByRole('button', { name: 'Remove campaign.txt' })
-    fireEvent.click(screen.getByRole('button', { name: 'Generate five options' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze brief' }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ brief: { notes: expect.stringContaining('Save 20% this weekend.') } })))
     expect(api.extractBriefFile).toHaveBeenCalledWith({ name: 'campaign.txt', mimeType: 'text/plain', data: expect.any(String) })
   })
@@ -35,7 +35,7 @@ describe('brief composer', () => {
     })
     await screen.findByRole('button', { name: `Remove ${name}` })
     expect(api.extractBriefFile).toHaveBeenCalledWith({ name, mimeType: expectedType, data: expect.any(String) })
-    fireEvent.click(screen.getByRole('button', { name: 'Generate five options' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze brief' }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ brief: { notes: expect.stringContaining('Campaign launch notes') } })))
   })
   test('preserves contradictory browser MIME for server-side rejection', async () => {
@@ -57,7 +57,7 @@ describe('brief composer', () => {
     await user.paste(pasted)
     expect(composer).toHaveValue(pasted)
     expect(screen.getByRole('alert')).toHaveTextContent('exceeds 20,000 characters')
-    expect(screen.getByRole('button', { name: 'Generate five options' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Analyze brief' })).toBeDisabled()
     expect(onSave).not.toHaveBeenCalled()
   })
   test('preserves typed input and explains extraction failure', async () => {
@@ -76,6 +76,6 @@ describe('brief composer', () => {
     expect(screen.getByLabelText('Campaign description')).toBeDisabled()
     expect(screen.getByLabelText('Campaign description').value).toContain('Headphones')
     expect(screen.getByLabelText('Campaign description').value).toContain('Keep it simple.')
-    expect(screen.queryByRole('button', { name: 'Generate five options' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Analyze brief' })).not.toBeInTheDocument()
   })
 })

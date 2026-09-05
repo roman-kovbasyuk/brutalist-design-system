@@ -26,6 +26,8 @@ import {
 import { createStudioApi } from './api.js'
 import { useStudioAuth } from './auth.js'
 import { BriefStage } from './BriefStage.jsx'
+import { CampaignOverview } from './CampaignOverview.jsx'
+import { CampaignTimeline } from './CampaignTimeline.jsx'
 import { CopyStage } from './CopyStage.jsx'
 import { VisualStage } from './VisualStage.jsx'
 import { BannerStage } from './BannerStage.jsx'
@@ -42,6 +44,7 @@ import {
   statusLabel,
 } from './workflow.js'
 import './studio.css'
+import './campaign-layout.css'
 
 const DesignSystem = lazy(() =>
   import('../screens/DesignSystemScreen.jsx').then((module) => ({
@@ -640,7 +643,7 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
               }}
             />
           ) : route.view === 'campaign' && workspace ? (
-            <>
+            <div className="bs-campaign-layout">
               <div className="bs-campaign-heading">
                 <div>
                   <h1>{workspace.campaign.title}</h1>
@@ -662,32 +665,12 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                   )}
                 </span>
               </div>
-              <nav className="bs-stepper" aria-label="Campaign workflow">
-                {stages.map((label, index) => (
-                  <button
-                    key={label}
-                    onClick={() => goStage(index)}
-                    aria-current={stage === index ? 'step' : undefined}
-                    disabled={
-                      !canVisitStage(index, workspace) || Boolean(pending)
-                    }
-                    data-complete={index < currentStage(workspace)}
-                  >
-                    <span>
-                      {index < currentStage(workspace) ? (
-                        <Check size={14} aria-hidden="true" />
-                      ) : (
-                        index + 1
-                      )}
-                    </span>
-                    {label}
-                  </button>
-                ))}
-              </nav>
+              <CampaignTimeline workspace={workspace} stage={stage} pending={pending} onChange={goStage} />
               <div
                 className="bs-stage"
                 key={`${workspace.campaign.id}-${stage}`}
               >
+                {stage > 0 && <CampaignOverview workspace={workspace} />}
                 {stage === 0 && (
                   <BriefStage
                     campaign={workspace.campaign}
@@ -847,43 +830,15 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                   />
                 )}
               </div>
-            </>
+            </div>
           ) : editor ? (
-            <>
-              <BriefStage
-                key="new-campaign"
-                api={api}
-                pending={pending}
-                onSave={create}
-                onDirty={markDirty}
-              />
-              {campaigns.length > 0 && (
-                <section className="bs-recent">
-                  <h2>Pick up where you left off</h2>
-                  <div>
-                    {campaigns.slice(0, 5).map((campaign) => (
-                      <button
-                        key={campaign.id}
-                        onClick={() =>
-                          navigate(
-                            `/mvp/campaign/${encodeURIComponent(campaign.id)}`,
-                          )
-                        }
-                      >
-                        <span>
-                          <MessageSquare size={18} />
-                          {campaign.title}
-                        </span>
-                        <span>
-                          {statusLabel(campaign.status)}
-                          <ArrowUpRight size={17} />
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </>
+            <BriefStage
+              key="new-campaign"
+              api={api}
+              pending={pending}
+              onSave={create}
+              onDirty={markDirty}
+            />
           ) : (
             <section className="bs-review-queue">
               <h1>Ready for your review</h1>

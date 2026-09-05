@@ -118,7 +118,7 @@ export function BriefStage({
         disabled={Boolean(pending)}
         busy={extracting || Boolean(pending)}
         canSubmit={Boolean(notes.trim()) && !tooLong}
-        submitLabel="Generate five options"
+        submitLabel="Analyze brief"
         hint={
           readOnly
             ? 'This brief is read-only.'
