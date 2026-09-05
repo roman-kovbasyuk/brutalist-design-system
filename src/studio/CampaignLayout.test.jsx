@@ -23,10 +23,10 @@ describe('campaign layout', () => {
     expect(screen.getByText('20% off')).toBeInTheDocument()
     expect(screen.getAllByText('Not specified')).toHaveLength(2)
     expect(screen.getByText('Launch headphones for daily travel.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Campaign summary' })).not.toBeInTheDocument()
   })
   test('labels original notes as brief when no analysis exists', () => {
     render(<CampaignOverview workspace={{ campaign: { brief: { notes: 'Original campaign text.' } }, jobs: [] }} />)
-    expect(screen.getByRole('heading', { name: 'Campaign brief' })).toBeInTheDocument()
     expect(screen.getByText('Original campaign text.')).toBeInTheDocument()
   })
   test('keeps the image-generation action inside each direction placeholder', () => {
