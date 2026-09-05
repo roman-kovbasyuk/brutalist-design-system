@@ -30,7 +30,10 @@ function parseStaticServing(value, nodeEnv) {
 
 function parseMigrationStartup(value, nodeEnv) {
   if (value === undefined) return nodeEnv !== 'production'
-  if (value === 'true') return true
+  if (value === 'true') {
+    if (nodeEnv === 'production') throw new Error('RUN_MIGRATIONS cannot be enabled in production')
+    return true
+  }
   if (value === 'false') return false
   throw new Error('RUN_MIGRATIONS must be true or false')
 }

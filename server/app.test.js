@@ -201,6 +201,12 @@ describe('Banner Studio API shell', () => {
       NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner', FIREBASE_PROJECT_ID: 'banner-project',
       GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
       ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-assets', GCS_PROJECT_ID: 'banner-project',
+      RUN_MIGRATIONS: 'true',
+    })).toThrow('RUN_MIGRATIONS cannot be enabled in production')
+    expect(() => loadConfig({
+      NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner', FIREBASE_PROJECT_ID: 'banner-project',
+      GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
+      ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-assets', GCS_PROJECT_ID: 'banner-project',
       SERVE_STATIC: 'false',
     })).toThrow('SERVE_STATIC cannot be disabled in production')
   })

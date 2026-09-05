@@ -34,7 +34,7 @@ function errorEnvelope(code, message, requestId, details) {
   }
 }
 
-export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService, versionService, reviewService, deliveryService, staticRoot } = {}) {
+export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService, versionService, reviewService, deliveryService, staticRoot, staticBuild } = {}) {
   const app = Fastify({
     logger: false,
     requestIdHeader: false,
@@ -85,7 +85,9 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
     if (deliveryService) registerDeliveryRoutes(app, { requireRole, deliveryService })
   }
 
-  if (staticRoot !== undefined) registerStaticFiles(app, staticRoot)
+  if (staticRoot !== undefined || staticBuild !== undefined) {
+    registerStaticFiles(app, { staticRoot, staticBuild })
+  }
 
   app.setNotFoundHandler((request, reply) => reply.code(404).send(apiErrorResponseSchema.parse(errorEnvelope(
     'NOT_FOUND',

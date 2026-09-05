@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rename, rm, truncate, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
@@ -16,7 +16,6 @@ async function makeBuild() {
   await writeFile(join(root, 'index.html'), spaHtml)
   await writeFile(join(root, 'assets', 'app-deadbeef.js'), 'globalThis.bannerStudio = true')
   await writeFile(join(root, 'assets', 'unhashed.js'), 'globalThis.unhashed = true')
-  await writeFile(join(root, 'assets', 'hidden-deadbeef.js.map'), '{}')
   await writeFile(join(root, 'docs', 'index.html'), docsHtml)
   await writeFile(join(root, 'docs', 'workflow.html'), workflowHtml)
   await writeFile(join(root, 'docs', '404.html'), docsNotFoundHtml)
@@ -117,6 +116,8 @@ describe('production static serving', () => {
 
     const missingPage = await app.inject({ method: 'GET', url: '/docs/missing-page', headers: { accept: 'text/html' } })
     const missingAsset = await app.inject({ method: 'GET', url: '/docs/assets/missing-deadbeef.js', headers: { accept: '*/*' } })
+    const missingHtml = await app.inject({ method: 'GET', url: '/docs/missing-page.html', headers: { accept: 'text/html' } })
+    const missingCssNavigation = await app.inject({ method: 'GET', url: '/docs/missing-page.css', headers: { accept: 'text/html' } })
 
     expect(missingPage.statusCode).toBe(404)
     expect(missingPage.headers['content-type']).toContain('text/html')
@@ -126,6 +127,11 @@ describe('production static serving', () => {
     expect(missingAsset.statusCode).toBe(404)
     expect(missingAsset.headers['content-type']).toContain('application/json')
     expect(missingAsset.body).not.toContain('Banner Studio app')
+    expect(missingHtml.statusCode).toBe(404)
+    expect(missingHtml.headers['content-type']).toContain('text/html')
+    expect(missingHtml.body).toContain('Documentation page not found')
+    expect(missingCssNavigation.statusCode).toBe(404)
+    expect(missingCssNavigation.headers['content-type']).toContain('application/json')
     await app.close()
   })
 
@@ -178,6 +184,94 @@ describe('production static serving', () => {
     await app.close()
   })
 
+  test.each([
+    ['TEXT/HTML ; Q = 0', 404],
+    ['text/html;q=0.000', 404],
+    ['text/html; q = 0.125', 200],
+    ['application/xhtml+xml ; Q = 1', 200],
+    ['text/html;q=1.001', 404],
+    ['text/html;q=banana', 404],
+    ['text/html;q=2', 404],
+    ['text/html;q=1;q=0', 404],
+  ])('parses HTML Accept media ranges and qvalues: %s', async (accept, statusCode) => {
+    const app = buildApp({ staticRoot: root })
+    const response = await app.inject({ method: 'GET', url: '/campaign/accept-check', headers: { accept } })
+    expect(response.statusCode).toBe(statusCode)
+    await app.close()
+  })
+
+  test.each([
+    '/campaign/%252e%252e/server',
+    '/campaign/%25252e%25252e/server',
+    '/campaign/%255cserver',
+    '/campaign/%252fserver',
+    '/campaign/%25',
+    '/campaign/foo%00bar',
+    '/campaign/foo%2fbar',
+    '/campaign/foo%5cbar',
+    '/campaign/ｅvil',
+    '/campaign/․․',
+    '/campaign/e\u0301',
+  ])('never uses the SPA fallback for non-canonical navigation path %s', async (url) => {
+    const app = buildApp({ staticRoot: root })
+    const response = await app.inject({ method: 'GET', url, headers: { accept: 'text/html' } })
+    expect(response.statusCode).toBe(404)
+    expect(response.body).not.toContain('Banner Studio app')
+    await app.close()
+  })
+
+  test('preserves legitimate ASCII UUID, slug, and query-string browser routes', async () => {
+    const app = buildApp({ staticRoot: root })
+    for (const url of [
+      '/campaign/550e8400-e29b-41d4-a716-446655440000?tab=review&version=2',
+      '/templates?category=social-static',
+      '/system/provider-settings',
+    ]) {
+      const response = await app.inject({ method: 'GET', url, headers: { accept: 'text/html' } })
+      expect(response.statusCode, url).toBe(200)
+      expect(response.body, url).toContain('Banner Studio app')
+    }
+    await app.close()
+  })
+
+  test('serves immutable startup snapshots after source replacement, symlink, truncation, and rename', async () => {
+    const app = buildApp({ staticRoot: root })
+    await app.ready()
+    const assetPath = join(root, 'assets', 'app-deadbeef.js')
+    const movedPath = join(root, 'assets', 'moved-app-deadbeef.js')
+    const expected = 'globalThis.bannerStudio = true'
+
+    await rename(assetPath, movedPath)
+    await writeFile(assetPath, 'globalThis.bannerStudio = "replaced"')
+    expect((await app.inject({ method: 'GET', url: '/assets/app-deadbeef.js' })).body).toBe(expected)
+
+    await unlink(assetPath)
+    await (await import('node:fs/promises')).symlink(movedPath, assetPath)
+    expect((await app.inject({ method: 'GET', url: '/assets/app-deadbeef.js' })).body).toBe(expected)
+
+    await truncate(movedPath, 0)
+    await rename(assetPath, join(root, 'assets', 'renamed-link'))
+    expect((await app.inject({ method: 'GET', url: '/assets/app-deadbeef.js' })).body).toBe(expected)
+    await app.close()
+  })
+
+  test('serves concurrent bounded GET and HEAD reads from independent snapshot offsets', async () => {
+    const app = buildApp({ staticRoot: root })
+    await app.ready()
+    const expected = 'globalThis.bannerStudio = true'
+    const responses = await Promise.all(Array.from({ length: 24 }, (_, index) => app.inject({
+      method: index % 3 === 0 ? 'HEAD' : 'GET',
+      url: '/assets/app-deadbeef.js',
+    })))
+
+    for (const [index, response] of responses.entries()) {
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['content-length']).toBe(String(Buffer.byteLength(expected)))
+      expect(response.body).toBe(index % 3 === 0 ? '' : expected)
+    }
+    await app.close()
+  })
+
   test('gives HEAD the same status and headers as GET without response bytes', async () => {
     const app = buildApp({ staticRoot: root })
 
@@ -212,11 +306,15 @@ describe('production static serving', () => {
   test('fails construction with a clear message when required build artifacts are absent', async () => {
     const missingRoot = await mkdtemp(join(tmpdir(), 'banner-studio-missing-static-'))
     await writeFile(join(missingRoot, 'index.html'), spaHtml)
-    expect(() => buildApp({ staticRoot: missingRoot })).toThrow(/dist\/docs\/index\.html.*npm run build/i)
+    const missingDocsApp = buildApp({ staticRoot: missingRoot })
+    await expect(missingDocsApp.ready()).rejects.toThrow(/dist\/docs\/index\.html.*npm run build/i)
+    await missingDocsApp.close().catch(() => {})
     await rm(missingRoot, { recursive: true, force: true })
 
     await unlink(join(root, 'docs', '404.html'))
-    expect(() => buildApp({ staticRoot: root })).toThrow(/dist\/docs\/404\.html.*npm run build/i)
+    const missingNotFoundApp = buildApp({ staticRoot: root })
+    await expect(missingNotFoundApp.ready()).rejects.toThrow(/dist\/docs\/404\.html.*npm run build/i)
+    await missingNotFoundApp.close().catch(() => {})
   })
 
   test('closes cleanly after serving production files', async () => {

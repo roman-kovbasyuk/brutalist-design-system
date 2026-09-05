@@ -9,7 +9,11 @@ describe('production container configuration', () => {
       runtimeUser: 'node',
       port: 8080,
       staticRoot: '/app/dist',
+      parser: 'dockerfile-ast@0.7.1',
     })
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    expect(dockerfile).not.toMatch(/^COPY --from=builder --chown=/m)
+    expect(dockerfile).toMatch(/^RUN chmod -R a-w \/app\/package\.json \/app\/package-lock\.json \/app\/node_modules \/app\/server \/app\/shared \/app\/dist$/m)
   })
 
   test('rejects a runtime without its non-root user or production-only dependency pruning', async () => {
@@ -40,5 +44,19 @@ describe('production container configuration', () => {
       dockerfile: `${dockerfile}\nENV API_TOKEN=baked-secret\n`,
       dockerignore,
     })).rejects.toThrow(/secret-bearing/i)
+  })
+
+  test('uses the pinned Dockerfile AST parser to reject unknown instructions and malformed JSON forms', async () => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+    const packageJson = JSON.parse(await readFile('package.json', 'utf8'))
+
+    expect(packageJson.devDependencies?.['dockerfile-ast']).toBe('0.7.1')
+    await expect(verifyContainerConfiguration({ dockerfile: `${dockerfile}\nTHIS IS NOT A DOCKER INSTRUCTION\n`, dockerignore }))
+      .rejects.toThrow(/unknown Dockerfile instruction|Dockerfile diagnostic/i)
+    await expect(verifyContainerConfiguration({
+      dockerfile: dockerfile.replace('CMD ["node", "server/start.js"]', 'CMD ["node",]'),
+      dockerignore,
+    })).rejects.toThrow(/Dockerfile diagnostic|JSON form/i)
   })
 })

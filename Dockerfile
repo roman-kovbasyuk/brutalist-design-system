@@ -21,11 +21,12 @@ ENV NODE_ENV=production \
     RUN_MIGRATIONS=false
 
 WORKDIR /app
-COPY --from=builder --chown=node:node /app/package.json /app/package-lock.json ./
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/server ./server
-COPY --from=builder --chown=node:node /app/shared ./shared
-COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/shared ./shared
+COPY --from=builder /app/dist ./dist
+RUN chmod -R a-w /app/package.json /app/package-lock.json /app/node_modules /app/server /app/shared /app/dist
 
 USER node
 EXPOSE 8080

@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest'
 import { createServerRuntime } from './bootstrap.js'
 
 describe('production server composition', () => {
-  test('selects Gemini in production, migrates before wiring dependencies, and closes every owned resource', async () => {
+  test('selects Gemini in production without startup migrations and closes every owned resource', async () => {
     const calls = []
     const pool = { query: vi.fn(), end: vi.fn(async () => { calls.push('pool.end') }) }
     const app = { close: vi.fn(async () => { calls.push('app.close') }) }
@@ -18,10 +18,11 @@ describe('production server composition', () => {
     const versionService = { kind: 'version-service' }
     const deliveryService = { kind: 'delivery-service' }
     const assetStore = { close: vi.fn(async () => { calls.push('assetStore.close') }) }
+    const staticBuild = { root: '/release/dist', close: vi.fn(async () => { calls.push('staticBuild.close') }) }
     const providerRegistry = { gemini: [{ model: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu' }] }
     const resolveActor = vi.fn()
     const dependencies = {
-      inspectStaticBuild: vi.fn(({ root } = {}) => { calls.push('inspect-static'); return { root } }),
+      openStaticBuild: vi.fn(async () => { calls.push('open-static'); return staticBuild }),
       createPool: vi.fn(() => pool),
       runMigrations: vi.fn(async () => { calls.push('migrate') }),
       createWorkflowService: vi.fn(() => workflowService),
@@ -44,7 +45,6 @@ describe('production server composition', () => {
     const runtime = await createServerRuntime({
       environment: {
         NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio', FIREBASE_PROJECT_ID: 'banner-project',
-        RUN_MIGRATIONS: 'true',
         GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project', VERTEX_AI_LOCATION: 'eu',
         GEMINI_TEXT_MODEL: 'gemini-3.5-flash', GEMINI_IMAGE_MODEL: 'gemini-3.1-flash-image',
         ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-private-assets', GCS_PROJECT_ID: 'banner-project',
@@ -52,7 +52,8 @@ describe('production server composition', () => {
       dependencies,
     })
 
-    expect(calls.slice(0, 4)).toEqual(['inspect-static', 'migrate', 'reconcile', 'buildApp'])
+    expect(calls.slice(0, 3)).toEqual(['open-static', 'reconcile', 'buildApp'])
+    expect(dependencies.runMigrations).not.toHaveBeenCalled()
     expect(dependencies.createWorkflowService).toHaveBeenCalledWith({ pool, providerRegistry })
     expect(dependencies.createGenerationProviderRegistry).toHaveBeenCalledWith({
       provider: 'gemini', textModel: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image', region: 'eu',
@@ -75,21 +76,23 @@ describe('production server composition', () => {
     expect(dependencies.createDeliveryService).toHaveBeenCalledWith({ pool, assetStore })
     expect(dependencies.createFirebaseTokenVerifier).toHaveBeenCalledWith({ projectId: 'banner-project' })
     expect(dependencies.createAuthenticator).toHaveBeenCalledWith(expect.objectContaining({ pool, tokenVerifier: verifier }))
-    expect(dependencies.inspectStaticBuild).toHaveBeenCalledWith(expect.any(String))
-    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService, generationService, assetService, versionService, deliveryService, staticRoot: expect.any(String) }))
+    expect(dependencies.openStaticBuild).toHaveBeenCalledOnce()
+    expect(dependencies.openStaticBuild).toHaveBeenCalledWith(expect.any(String))
+    expect(dependencies.buildApp).toHaveBeenCalledWith(expect.objectContaining({ resolveActor, workflowService, generationService, assetService, versionService, deliveryService, staticBuild }))
     await runtime.close()
     await runtime.close()
     expect(app.close).toHaveBeenCalledOnce()
     expect(verifier.close).toHaveBeenCalledOnce()
     expect(generationProvider.close).toHaveBeenCalledOnce()
     expect(assetStore.close).toHaveBeenCalledOnce()
+    expect(staticBuild.close).toHaveBeenCalledOnce()
     expect(pool.end).toHaveBeenCalledOnce()
   })
 
   test('rejects a missing production build before allocating database or provider resources', async () => {
     const createPool = vi.fn()
     const dependencies = {
-      inspectStaticBuild: vi.fn(() => { throw new Error('Production static build is unavailable; run npm run build before startup') }),
+      openStaticBuild: vi.fn(async () => { throw new Error('Production static build is unavailable; run npm run build before startup') }),
       createPool,
     }
 
@@ -105,35 +108,20 @@ describe('production server composition', () => {
     expect(createPool).not.toHaveBeenCalled()
   })
 
-  test('keeps migrations as an explicit release step for a normal production server start', async () => {
-    const pool = { query: vi.fn(), end: vi.fn(async () => {}) }
-    const app = { close: vi.fn(async () => {}) }
-    const verifier = { close: vi.fn(async () => {}) }
-    const provider = { close: vi.fn(async () => {}) }
-    const assetStore = { close: vi.fn(async () => {}) }
-    const runMigrations = vi.fn(async () => {})
-    const dependencies = {
-      inspectStaticBuild: vi.fn(), createPool: vi.fn(() => pool), runMigrations,
-      createGenerationProviderRegistry: vi.fn(() => ({ gemini: [] })), reconcileGenerationSettings: vi.fn(async () => {}),
-      createWorkflowService: vi.fn(() => ({})), createGenerationControlPlane: vi.fn(() => ({})),
-      createGenerationService: vi.fn(() => ({})), createGeminiProvider: vi.fn(() => provider),
-      createGcsAssetStore: vi.fn(() => assetStore), createAssetService: vi.fn(() => ({})),
-      createVersionService: vi.fn(() => ({})), createReviewService: vi.fn(() => ({})), createDeliveryService: vi.fn(() => ({})),
-      createFirebaseTokenVerifier: vi.fn(() => verifier), createAuthenticator: vi.fn(() => vi.fn()),
-      buildApp: vi.fn(() => app),
-    }
-
-    const runtime = await createServerRuntime({
+  test('rejects a production startup-migration override before allocating any resource', async () => {
+    const createPool = vi.fn()
+    const openStaticBuild = vi.fn()
+    await expect(createServerRuntime({
       environment: {
         NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio', FIREBASE_PROJECT_ID: 'banner-project',
         GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
         ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-private-assets', GCS_PROJECT_ID: 'banner-project',
+        RUN_MIGRATIONS: 'true',
       },
-      dependencies,
-    })
-
-    expect(runMigrations).not.toHaveBeenCalled()
-    await runtime.close()
+      dependencies: { createPool, openStaticBuild },
+    })).rejects.toThrow('RUN_MIGRATIONS cannot be enabled in production')
+    expect(openStaticBuild).not.toHaveBeenCalled()
+    expect(createPool).not.toHaveBeenCalled()
   })
 
   test('keeps explicitly selected mock composition available outside production', async () => {
@@ -218,10 +206,9 @@ describe('production server composition', () => {
 
     await expect(createServerRuntime({
       environment: {
-        NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner_studio', FIREBASE_PROJECT_ID: 'banner-project',
+        NODE_ENV: 'test',
         RUN_MIGRATIONS: 'true',
-        GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
-        ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-private-assets', GCS_PROJECT_ID: 'banner-project',
+        GENERATION_PROVIDER: 'mock',
       },
       dependencies,
     })).rejects.toThrow('migration failed')
