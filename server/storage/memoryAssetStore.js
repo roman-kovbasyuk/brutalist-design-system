@@ -12,16 +12,21 @@ export function createMemoryAssetStore({ maxStreamBytes = 16 * 1024 * 1024 } = {
     objectKey,
     byteSize: stored.bytes.length,
     contentType: stored.contentType,
+    sha256: stored.sha256,
     generation: stored.generation,
     etag: stored.etag,
   })
 
-  const createStoredObject = (bytes, contentType) => ({
-    bytes,
-    contentType,
-    generation: String(nextGeneration++),
-    etag: createHash('sha256').update(bytes).digest('hex'),
-  })
+  const createStoredObject = (bytes, contentType) => {
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    return {
+      bytes,
+      contentType,
+      sha256,
+      generation: String(nextGeneration++),
+      etag: sha256,
+    }
+  }
   return Object.freeze({
     async put({ objectKey, bytes, contentType }) {
       assertSafeObjectKey(objectKey)
@@ -52,7 +57,7 @@ export function createMemoryAssetStore({ maxStreamBytes = 16 * 1024 * 1024 } = {
         }
       }()), { signal })
     },
-    async putStream({ objectKey, stream, contentType, maxBytes, signal } = {}) {
+    async putStream({ objectKey, stream, contentType, maxBytes, sha256, signal } = {}) {
       assertSafeObjectKey(objectKey)
       assertContentType(contentType)
       if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') throw new AssetStoreError('invalid_asset_stream', 'Asset stream is required')
@@ -63,16 +68,22 @@ export function createMemoryAssetStore({ maxStreamBytes = 16 * 1024 * 1024 } = {
       if (signal) addAbortSignal(signal, stream)
       const chunks = []
       let byteSize = 0
+      const hash = createHash('sha256')
       try {
         for await (const chunk of stream) {
           if (signal?.aborted) throw new AssetStoreError('storage_aborted', 'Private asset storage operation was aborted')
           const part = Buffer.from(chunk)
           byteSize += part.length
           if (byteSize > ceiling) throw new AssetStoreError('asset_too_large', 'Stored asset exceeds the allowed byte length')
+          hash.update(part)
           chunks.push(part)
         }
         if (signal?.aborted) throw new AssetStoreError('storage_aborted', 'Private asset storage operation was aborted')
         if (byteSize < 1) throw new AssetStoreError('invalid_asset_bytes', 'Asset bytes are required')
+        const digest = hash.digest('hex')
+        if (sha256 != null && digest !== sha256) {
+          throw new AssetStoreError('asset_hash_mismatch', 'Stored asset hash does not match its declared identity')
+        }
         const stored = createStoredObject(Buffer.concat(chunks, byteSize), contentType)
         objects.set(objectKey, stored)
         return identity(objectKey, stored)

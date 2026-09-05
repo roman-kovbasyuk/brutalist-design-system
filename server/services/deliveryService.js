@@ -562,11 +562,22 @@ export function createDeliveryService({
   }
 
   async function storeArchive(build, ownerToken, archive, deadlineAt, signal) {
+    const intended = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIntent({
+      buildId: build.id,
+      ownerToken,
+      objectKey: build.plan.objectKey,
+      sha256: archive.sha256,
+      byteSize: archive.byteSize,
+      mimeType: 'application/zip',
+    }))
+    if (!intended) fail(409, 'delivery_build_owner_lost', 'Delivery build ownership was lost')
+
     let created = true
+    let identity
     try {
-      await assetStore.putStream({
+      identity = await assetStore.putStream({
         objectKey: build.plan.objectKey, stream: createReadStream(archive.path, { signal }),
-        contentType: 'application/zip', maxBytes: archive.byteSize, signal,
+        contentType: 'application/zip', maxBytes: archive.byteSize, sha256: archive.sha256, signal,
       })
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? operationTimeout()
@@ -576,6 +587,28 @@ export function createDeliveryService({
       }
       created = false
     }
+    if (!created) {
+      try {
+        identity = await assetStore.getMetadata({ objectKey: build.plan.objectKey, signal })
+      } catch (error) {
+        if (signal?.aborted) throw signal.reason ?? operationTimeout()
+        fail(503, 'asset_storage_unavailable', 'Delivery storage is unavailable')
+      }
+    }
+    if (!identity || identity.objectKey !== build.plan.objectKey || identity.byteSize !== archive.byteSize
+      || identity.contentType !== 'application/zip' || identity.sha256 !== archive.sha256
+      || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
+      || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
+      if (!created) fail(409, 'immutable_asset_conflict', 'A delivery object already exists with different bytes')
+      fail(502, 'delivery_integrity_failure', 'Stored delivery ZIP identity verification failed')
+    }
+    const bound = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIdentity({
+      buildId: build.id, ownerToken, objectKey: build.plan.objectKey,
+      generation: identity.generation, etag: identity.etag,
+      sha256: archive.sha256, byteSize: archive.byteSize, mimeType: 'application/zip',
+    }))
+    if (!bound) fail(409, 'delivery_build_owner_lost', 'Delivery build ownership was lost')
+
     try {
       const stored = await assetStore.createReadStream({ objectKey: build.plan.objectKey, signal })
       if (!stored) throw new Error('Stored ZIP is missing')
@@ -594,24 +627,6 @@ export function createDeliveryService({
       if (error instanceof DeliveryServiceError) throw error
       fail(503, 'asset_storage_unavailable', 'Delivery storage is unavailable')
     }
-    let identity
-    try {
-      identity = await assetStore.getMetadata({ objectKey: build.plan.objectKey, signal })
-    } catch (error) {
-      if (signal?.aborted) throw signal.reason ?? operationTimeout()
-      fail(503, 'asset_storage_unavailable', 'Delivery storage is unavailable')
-    }
-    if (!identity || identity.objectKey !== build.plan.objectKey || identity.byteSize !== archive.byteSize
-      || identity.contentType !== 'application/zip'
-      || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
-      || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
-      fail(502, 'delivery_integrity_failure', 'Stored delivery ZIP identity verification failed')
-    }
-    const bound = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIdentity({
-      buildId: build.id, ownerToken, objectKey: build.plan.objectKey,
-      generation: identity.generation, etag: identity.etag,
-    }))
-    if (!bound) fail(409, 'delivery_build_owner_lost', 'Delivery build ownership was lost')
   }
 
   async function completeExisting({ actor, versionId, key, fingerprint, ownerToken, existing, deadlineAt, signal }) {

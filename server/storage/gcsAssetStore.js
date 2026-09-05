@@ -1,4 +1,5 @@
 import { Storage } from '@google-cloud/storage'
+import { createHash } from 'node:crypto'
 import { addAbortSignal, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { assertAssetBytes, assertContentType, assertSafeObjectKey, AssetStoreError } from './assetStore.js'
@@ -15,14 +16,17 @@ function storageFailure(code, message) {
 function objectIdentity(objectKey, metadata) {
   const byteSize = Number(metadata?.size)
   const generation = metadata?.generation
+  const sha256 = metadata?.metadata?.sha256 ?? null
   if (!Number.isSafeInteger(byteSize) || byteSize < 0
-    || typeof generation !== 'string' || !/^\d+$/.test(generation)) {
+    || typeof generation !== 'string' || !/^\d+$/.test(generation)
+    || sha256 != null && (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256))) {
     throw storageFailure('storage_unavailable', 'Private asset storage returned invalid object metadata')
   }
   return {
     objectKey,
     byteSize,
     contentType: metadata.contentType ?? null,
+    sha256,
     generation,
     etag: typeof metadata.etag === 'string' && metadata.etag.length > 0 ? metadata.etag : null,
   }
@@ -84,13 +88,18 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
       assertSafeObjectKey(objectKey)
       assertContentType(contentType)
       const source = assertAssetBytes(bytes)
+      const sha256 = createHash('sha256').update(source).digest('hex')
       try {
         const file = bucket.file(objectKey)
         await file.save(Buffer.from(source), {
           resumable: false,
           validation: 'crc32c',
           preconditionOpts: { ifGenerationMatch: 0 },
-          metadata: { contentType, cacheControl: 'private, max-age=31536000, immutable' },
+          metadata: {
+            contentType,
+            cacheControl: 'private, max-age=31536000, immutable',
+            metadata: { sha256 },
+          },
           ...(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : {}),
         })
         return objectIdentity(objectKey, file.metadata)
@@ -127,16 +136,21 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
       if (signal) addAbortSignal(signal, stream)
       return stream
     },
-    async putStream({ objectKey, stream, contentType, maxBytes, signal } = {}) {
+    async putStream({ objectKey, stream, contentType, maxBytes, sha256, signal } = {}) {
       assertSafeObjectKey(objectKey)
       assertContentType(contentType)
       if (!stream || typeof stream.pipe !== 'function') throw storageFailure('invalid_asset_stream', 'Asset stream is required')
       if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw storageFailure('invalid_asset_limit', 'Asset stream byte ceiling is required')
+      if (sha256 != null && (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256))) {
+        throw storageFailure('invalid_asset_hash', 'Asset stream hash is invalid')
+      }
       let byteSize = 0
+      const hash = createHash('sha256')
       const limiter = new Transform({
         transform(chunk, _encoding, done) {
           byteSize += chunk.length
           if (byteSize > maxBytes) return done(storageFailure('asset_too_large', 'Stored asset exceeds the allowed byte length'))
+          hash.update(chunk)
           done(null, chunk)
         },
       })
@@ -145,7 +159,11 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
         resumable: false,
         validation: 'crc32c',
         preconditionOpts: { ifGenerationMatch: 0 },
-        metadata: { contentType, cacheControl: 'private, max-age=31536000, immutable' },
+        metadata: {
+          contentType,
+          cacheControl: 'private, max-age=31536000, immutable',
+          ...(sha256 == null ? {} : { metadata: { sha256 } }),
+        },
       })
       try {
         await pipeline(stream, limiter, target, { signal })
@@ -156,6 +174,9 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
         throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
       }
       if (byteSize < 1) throw storageFailure('invalid_asset_bytes', 'Asset bytes are required')
+      if (sha256 != null && hash.digest('hex') !== sha256) {
+        throw storageFailure('asset_hash_mismatch', 'Stored asset hash does not match its declared identity')
+      }
       return objectIdentity(objectKey, file.metadata)
     },
     async delete({ objectKey, generation } = {}) {

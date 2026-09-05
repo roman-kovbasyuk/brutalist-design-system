@@ -74,6 +74,16 @@ async function hasCleanupIdentityColumns(client) {
   return result.rows[0]?.count === 2
 }
 
+async function hasCleanupIntentColumns(client) {
+  const result = await client.query(
+    `SELECT count(*)::int AS count FROM pg_attribute
+     WHERE attrelid = 'orphaned_uploads'::regclass
+       AND attname IN ('expected_sha256', 'expected_byte_size', 'expected_mime_type')
+       AND attnum > 0 AND NOT attisdropped`,
+  )
+  return result.rows[0]?.count === 3
+}
+
 export function createDeliveryRepository(client) {
   if (!client || typeof client.query !== 'function') throw new TypeError('A PostgreSQL pool or client is required')
   const campaigns = createCampaignRepository(client)
@@ -210,18 +220,58 @@ export function createDeliveryRepository(client) {
       return claimed.rows[0]?.claimed_delivery_build_id === buildId
     },
 
-    async recordBuildObjectIdentity({ buildId, ownerToken, objectKey, generation, etag }) {
-      if (await hasCleanupIdentityColumns(client)) {
-        const result = await client.query(
-          `UPDATE orphaned_uploads orphan
-           SET object_generation = $4, object_etag = $5
-           FROM delivery_builds build
+    async recordBuildObjectIntent({ buildId, ownerToken, objectKey, sha256, byteSize, mimeType }) {
+      if (!await hasCleanupIntentColumns(client)) {
+        const legacy = await client.query(
+          `SELECT orphan.id FROM orphaned_uploads orphan
+           JOIN delivery_builds build ON build.id = orphan.claimed_delivery_build_id
            WHERE orphan.object_key = $3 AND orphan.claimed_delivery_build_id = $1
+             AND orphan.status = 'pending' AND build.owner_token = $2 AND build.state = 'in_progress'`,
+          [buildId, ownerToken, objectKey],
+        )
+        return legacy.rowCount === 1
+      }
+      const ownership = await client.query(
+        'SELECT id FROM delivery_builds WHERE id = $1 AND owner_token = $2 AND state = \'in_progress\' FOR UPDATE',
+        [buildId, ownerToken],
+      )
+      if (ownership.rowCount !== 1) return false
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+      const result = await client.query(
+        `UPDATE orphaned_uploads
+         SET expected_sha256 = $3, expected_byte_size = $4, expected_mime_type = $5
+         WHERE object_key = $2 AND claimed_delivery_build_id = $1 AND status = 'pending'
+           AND (
+             expected_sha256 IS NULL AND expected_byte_size IS NULL AND expected_mime_type IS NULL
+             OR expected_sha256 = $3 AND expected_byte_size = $4 AND expected_mime_type = $5
+           )
+         RETURNING id`,
+        [buildId, objectKey, sha256, byteSize, mimeType],
+      )
+      return result.rowCount === 1
+    },
+
+    async recordBuildObjectIdentity({ buildId, ownerToken, objectKey, generation, etag, sha256, byteSize, mimeType }) {
+      if (await hasCleanupIdentityColumns(client)) {
+        const ownership = await client.query(
+          'SELECT id FROM delivery_builds WHERE id = $1 AND owner_token = $2 AND state = \'in_progress\' FOR UPDATE',
+          [buildId, ownerToken],
+        )
+        if (ownership.rowCount !== 1) return false
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+        const hasIntent = await hasCleanupIntentColumns(client)
+        const result = await client.query(
+           `UPDATE orphaned_uploads orphan
+           SET object_generation = $3, object_etag = $4
+           WHERE orphan.object_key = $2 AND orphan.claimed_delivery_build_id = $1
              AND orphan.status = 'pending'
-             AND build.id = $1 AND build.owner_token = $2 AND build.state = 'in_progress'
-             AND (orphan.object_generation IS NULL OR orphan.object_generation = $4)
+             AND (orphan.object_generation IS NULL OR orphan.object_generation = $3)
+             ${hasIntent ? `AND orphan.expected_sha256 = $5
+               AND orphan.expected_byte_size = $6 AND orphan.expected_mime_type = $7` : ''}
            RETURNING orphan.id`,
-          [buildId, ownerToken, objectKey, generation, etag ?? null],
+          hasIntent
+            ? [buildId, objectKey, generation, etag ?? null, sha256, byteSize, mimeType]
+            : [buildId, objectKey, generation, etag ?? null],
         )
         return result.rowCount === 1
       }
@@ -238,7 +288,16 @@ export function createDeliveryRepository(client) {
     async finalizeBuild({ build, campaign, version, actor, zipAsset, deliveryId, reviewEventId, auditId, createdAt }) {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [zipAsset.objectKey])
       let claim
-      if (await hasCleanupIdentityColumns(client)) {
+      if (await hasCleanupIntentColumns(client)) {
+        claim = await client.query(
+          `SELECT id FROM orphaned_uploads
+           WHERE object_key = $1 AND claimed_delivery_build_id = $2
+             AND status = 'pending' AND object_generation IS NOT NULL
+             AND expected_sha256 = $3 AND expected_byte_size = $4 AND expected_mime_type = $5
+           FOR UPDATE`,
+          [zipAsset.objectKey, build.id, zipAsset.sha256, zipAsset.byteSize, 'application/zip'],
+        )
+      } else if (await hasCleanupIdentityColumns(client)) {
         claim = await client.query(
           `SELECT id FROM orphaned_uploads
            WHERE object_key = $1 AND claimed_delivery_build_id = $2

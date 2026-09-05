@@ -114,6 +114,38 @@ async function lockAssetObjectKey(client, objectKey) {
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
 }
 
+async function hasUploadIntentColumns(client) {
+  const result = await client.query(
+    `SELECT count(*)::int AS count FROM pg_attribute
+     WHERE attrelid = 'orphaned_uploads'::regclass
+       AND attname IN ('expected_sha256', 'expected_byte_size', 'expected_mime_type')
+       AND attnum > 0 AND NOT attisdropped`,
+  )
+  return result.rows[0]?.count === 3
+}
+
+async function settleWithin(operation, timeoutMs) {
+  let pending
+  try {
+    pending = Promise.resolve(operation())
+  } catch (error) {
+    return { kind: 'rejected', error }
+  }
+  const observed = pending.then(
+    (value) => ({ kind: 'fulfilled', value }),
+    (error) => ({ kind: 'rejected', error }),
+  )
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ kind: 'timeout' }), timeoutMs)
+  })
+  try {
+    return await Promise.race([observed, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function remainingDeadlineMilliseconds(timeoutAt, observedAt) {
   const remaining = timeoutAt.getTime() - observedAt.getTime()
   if (!Number.isFinite(remaining)) throw new TypeError('Generation persistence deadline is invalid')
@@ -583,7 +615,7 @@ export function createGenerationControlPlane({
       })
     },
 
-    async cleanupOrphanUpload({ orphanId, deleteObject, cleanedAt }) {
+    async cleanupOrphanUpload({ orphanId, getObjectMetadata, deleteObject, cleanedAt }) {
       if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
       const cleanupDeadlineAt = Date.now() + recoveryTimeoutMs
       const maximumAttempts = 3
@@ -607,12 +639,16 @@ export function createGenerationControlPlane({
         const timeoutMs = Math.max(0, cleanupDeadlineAt - Date.now())
         if (timeoutMs < 1) throw recoveryDeadlineError()
         try {
-          const phase = await recoveryTransaction(pool, async (client, deadline) => {
+          let phase = await recoveryTransaction(pool, async (client, deadline) => {
             const startedAt = await databaseClock(client)
             const attemptDeadline = new Date(startedAt.getTime() + deadline.remainingMs())
             await setTransactionDeadline(client, attemptDeadline, startedAt)
+            const uploadIntentSupported = await hasUploadIntentColumns(client)
             const observed = await client.query(
               `SELECT o.id, o.object_key, o.status, o.object_generation, o.object_etag,
+                      ${uploadIntentSupported
+                        ? 'o.expected_sha256, o.expected_byte_size, o.expected_mime_type,'
+                        : 'NULL::text AS expected_sha256, NULL::bigint AS expected_byte_size, NULL::text AS expected_mime_type,'}
                       o.cleanup_token, o.cleanup_lease_expires_at,
                       o.claimed_build_id, o.claimed_delivery_build_id,
                       vb.actor_id AS version_actor_id, vb.method AS version_method,
@@ -711,6 +747,9 @@ export function createGenerationControlPlane({
             await refreshTransactionDeadline(client, attemptDeadline)
             const selected = await client.query(
               `SELECT id, object_key, status, object_generation, object_etag,
+                      ${uploadIntentSupported
+                        ? 'expected_sha256, expected_byte_size, expected_mime_type,'
+                        : 'NULL::text AS expected_sha256, NULL::bigint AS expected_byte_size, NULL::text AS expected_mime_type,'}
                       cleanup_token, cleanup_lease_expires_at,
                       claimed_build_id, claimed_delivery_build_id,
                       clock_timestamp() AS observed_at
@@ -784,6 +823,20 @@ export function createGenerationControlPlane({
             if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
             await refreshTransactionDeadline(client, attemptDeadline)
             if (orphan.object_generation == null) {
+              const expectedByteSize = Number(orphan.expected_byte_size)
+              if (typeof getObjectMetadata === 'function'
+                && typeof orphan.expected_sha256 === 'string' && /^[a-f0-9]{64}$/.test(orphan.expected_sha256)
+                && Number.isSafeInteger(expectedByteSize) && expectedByteSize > 0
+                && typeof orphan.expected_mime_type === 'string') {
+                return {
+                  kind: 'reconcile',
+                  orphanId: orphan.id,
+                  object_key: orphan.object_key,
+                  expected_sha256: orphan.expected_sha256,
+                  expected_byte_size: expectedByteSize,
+                  expected_mime_type: orphan.expected_mime_type,
+                }
+              }
               return { kind: 'claimed', objectKey: orphan.object_key }
             }
             if (orphan.status === 'cleaning'
@@ -810,16 +863,99 @@ export function createGenerationControlPlane({
             if (cleaning.rowCount !== 1) return { kind: 'claimed', objectKey: orphan.object_key }
             return { kind: 'delete', orphanId: orphan.id, ...cleaning.rows[0] }
           }, { timeoutMs })
+          if (phase.kind === 'reconcile') {
+            const metadata = await settleWithin(
+              () => getObjectMetadata({ objectKey: phase.object_key, timeoutMs: cleanupDeleteTimeoutMs }),
+              cleanupDeleteTimeoutMs,
+            )
+            if (metadata.kind !== 'fulfilled') {
+              return { kind: 'claimed', objectKey: phase.object_key }
+            }
+            const identity = metadata.value
+            if (identity != null && (
+              identity.objectKey !== phase.object_key
+              || identity.sha256 !== phase.expected_sha256
+              || identity.byteSize !== phase.expected_byte_size
+              || identity.contentType !== phase.expected_mime_type
+              || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
+              || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))
+            )) {
+              return { kind: 'claimed', objectKey: phase.object_key }
+            }
+            phase = await recoveryTransaction(pool, async (client, deadline) => {
+              const startedAt = await databaseClock(client)
+              const phaseDeadline = new Date(startedAt.getTime() + deadline.remainingMs())
+              await setTransactionDeadline(client, phaseDeadline, startedAt)
+              await lockAssetObjectKey(client, phase.object_key)
+              await refreshTransactionDeadline(client, phaseDeadline)
+              const orphan = (await client.query(
+                `SELECT id, object_key FROM orphaned_uploads
+                 WHERE id = $1 AND object_key = $2 AND status IN ('pending', 'failed')
+                   AND claimed_build_id IS NULL AND claimed_delivery_build_id IS NULL
+                   AND object_generation IS NULL
+                   AND expected_sha256 = $3 AND expected_byte_size = $4 AND expected_mime_type = $5
+                 FOR UPDATE`,
+                [phase.orphanId, phase.object_key, phase.expected_sha256,
+                  phase.expected_byte_size, phase.expected_mime_type],
+              )).rows[0]
+              if (!orphan) return { kind: 'claimed', objectKey: phase.object_key }
+              const referenced = await client.query(
+                `SELECT 1 FROM assets WHERE object_key = $1
+                 UNION ALL
+                 SELECT 1 FROM deliveries delivery JOIN assets asset ON asset.id = delivery.asset_id
+                   WHERE asset.object_key = $1
+                 UNION ALL
+                 SELECT 1 FROM delivery_builds
+                   WHERE state <> 'failed' AND plan->>'objectKey' = $1
+                 LIMIT 1`,
+                [phase.object_key],
+              )
+              if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: phase.object_key }
+              if (identity == null) {
+                const cleaned = await client.query(
+                  `UPDATE orphaned_uploads
+                   SET status = 'cleaned', attempts = attempts + 1, last_error = NULL,
+                       cleaned_at = $3, cleanup_token = NULL, cleanup_lease_expires_at = NULL
+                   WHERE id = $1 AND object_key = $2 AND status IN ('pending', 'failed')
+                     AND object_generation IS NULL
+                   RETURNING id`,
+                  [phase.orphanId, phase.object_key, cleanedAt ?? clock()],
+                )
+                return cleaned.rowCount === 1
+                  ? { kind: 'cleaned', objectKey: phase.object_key }
+                  : { kind: 'claimed', objectKey: phase.object_key }
+              }
+              const cleanupToken = idGenerator()
+              const cleanupLeaseExpiresAt = new Date(startedAt.getTime() + cleanupLeaseMs)
+              const cleaning = await client.query(
+                `UPDATE orphaned_uploads
+                 SET status = 'cleaning', cleanup_token = $3, cleanup_lease_expires_at = $4,
+                     object_generation = $5, object_etag = $6,
+                     last_error = NULL, cleaned_at = NULL
+                 WHERE id = $1 AND object_key = $2 AND status IN ('pending', 'failed')
+                   AND object_generation IS NULL
+                 RETURNING object_key, object_generation, object_etag, cleanup_token`,
+                [phase.orphanId, phase.object_key, cleanupToken, cleanupLeaseExpiresAt,
+                  identity.generation, identity.etag ?? null],
+              )
+              return cleaning.rowCount === 1
+                ? { kind: 'delete', orphanId: phase.orphanId, ...cleaning.rows[0] }
+                : { kind: 'claimed', objectKey: phase.object_key }
+            }, { timeoutMs: Math.max(1, cleanupDeadlineAt - Date.now()) })
+          }
           if (phase.kind !== 'delete') return phase
 
-          try {
-            await deleteObject({
+          const deletion = await settleWithin(() => deleteObject({
               objectKey: phase.object_key,
               generation: phase.object_generation,
               etag: phase.object_etag,
               timeoutMs: cleanupDeleteTimeoutMs,
-            })
-          } catch (deleteError) {
+            }), cleanupDeleteTimeoutMs)
+          if (deletion.kind === 'timeout') {
+            return { kind: 'claimed', objectKey: phase.object_key }
+          }
+          if (deletion.kind === 'rejected') {
+            const deleteError = deletion.error
             await recoveryTransaction(pool, async (client, deadline) => {
               const startedAt = await databaseClock(client)
               const phaseDeadline = new Date(startedAt.getTime() + deadline.remainingMs())

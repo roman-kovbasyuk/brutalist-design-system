@@ -653,15 +653,47 @@ export function createVersionService({
   const storeBuild = async (build, ownerToken, rendered, possiblyCreated, deadlineAt) => {
     for (const asset of rendered.assets) {
       possiblyCreated.add(asset.objectKey)
+      const intended = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIntent({
+        buildId: build.id,
+        ownerToken,
+        objectKey: asset.objectKey,
+        sha256: asset.sha256,
+        byteSize: asset.byteSize,
+        mimeType: asset.mimeType,
+      }))
+      if (!intended) fail(409, 'version_build_owner_lost', 'Version build ownership was lost')
+
       let created = true
+      let identity
       try {
-        await beforeDeadline(deadlineAt, (timeoutMs) => assetStore.put({
+        identity = await beforeDeadline(deadlineAt, (timeoutMs) => assetStore.put({
           objectKey: asset.objectKey, bytes: asset.bytes, contentType: asset.mimeType, timeoutMs,
         }))
       } catch (error) {
         if (error?.code !== 'object_exists') throw normalizeStoreFailure(error)
         created = false
       }
+      if (!created) {
+        try {
+          identity = await beforeDeadline(deadlineAt, () => assetStore.getMetadata({ objectKey: asset.objectKey }))
+        } catch (error) {
+          throw normalizeStoreFailure(error)
+        }
+      }
+      if (!identity || identity.objectKey !== asset.objectKey || identity.byteSize !== asset.byteSize
+        || identity.contentType !== asset.mimeType || identity.sha256 !== asset.sha256
+        || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
+        || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
+        if (!created) fail(409, 'immutable_asset_conflict', 'A deterministic review object already exists with different bytes')
+        fail(502, 'asset_integrity_failure', 'Stored review asset identity verification failed')
+      }
+      const bound = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIdentity({
+        buildId: build.id, ownerToken, objectKey: asset.objectKey,
+        generation: identity.generation, etag: identity.etag,
+        sha256: asset.sha256, byteSize: asset.byteSize, mimeType: asset.mimeType,
+      }))
+      if (!bound) fail(409, 'version_build_owner_lost', 'Version build ownership was lost')
+
       let stored
       try {
         stored = await beforeDeadline(deadlineAt, (timeoutMs) => assetStore.get({
@@ -676,23 +708,6 @@ export function createVersionService({
         if (!created) fail(409, 'immutable_asset_conflict', 'A deterministic review object already exists with different bytes')
         fail(502, 'asset_integrity_failure', 'Stored review asset integrity verification failed')
       }
-      let identity
-      try {
-        identity = await beforeDeadline(deadlineAt, () => assetStore.getMetadata({ objectKey: asset.objectKey }))
-      } catch (error) {
-        throw normalizeStoreFailure(error)
-      }
-      if (!identity || identity.objectKey !== asset.objectKey || identity.byteSize !== asset.byteSize
-        || identity.contentType !== asset.mimeType
-        || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
-        || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
-        fail(502, 'asset_integrity_failure', 'Stored review asset identity verification failed')
-      }
-      const bound = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIdentity({
-        buildId: build.id, ownerToken, objectKey: asset.objectKey,
-        generation: identity.generation, etag: identity.etag,
-      }))
-      if (!bound) fail(409, 'version_build_owner_lost', 'Version build ownership was lost')
       possiblyCreated.add(asset.objectKey)
     }
   }

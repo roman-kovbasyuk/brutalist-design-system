@@ -29,9 +29,11 @@ describe('private immutable asset stores', () => {
   test('memory storage exposes immutable object identity and generation-fenced deletion', async () => {
     const store = createMemoryAssetStore()
     const created = await store.put({ objectKey, bytes: Buffer.from('first'), contentType: 'image/png' })
-    expect(created).toMatchObject({ objectKey, byteSize: 5, generation: expect.any(String), etag: expect.any(String) })
+    const sha256 = 'a7937b64b8caa58f03721bb6bacf5c78cb235febe0e70b1b84cd99541461a08e'
+    expect(created).toMatchObject({ objectKey, byteSize: 5, sha256, generation: expect.any(String), etag: expect.any(String) })
     await expect(store.getMetadata({ objectKey })).resolves.toEqual({
-      objectKey, byteSize: 5, contentType: 'image/png', generation: created.generation, etag: created.etag,
+      objectKey, byteSize: 5, contentType: 'image/png', sha256,
+      generation: created.generation, etag: created.etag,
     })
     await expect(store.delete({ objectKey, generation: 'replacement-generation' }))
       .rejects.toMatchObject({ code: 'object_generation_mismatch' })
@@ -110,7 +112,9 @@ describe('private immutable asset stores', () => {
     const createReadStream = vi.fn(() => Readable.from([Buffer.from('stored')]))
     const remove = vi.fn(async () => [{}])
     const file = vi.fn(() => ({
-      metadata: { size: '6', contentType: 'image/png', generation: '101', etag: 'etag-101' },
+      metadata: { size: '6', contentType: 'image/png', generation: '101', etag: 'etag-101', metadata: {
+        sha256: '87b04e58961f9a99d853d4046a0b5b793e7c3e4bbd21f5aca8fb17c20cdb1d8b',
+      } },
       save, download, createReadStream, delete: remove,
     }))
     const bucket = vi.fn(() => ({ file }))
@@ -123,7 +127,10 @@ describe('private immutable asset stores', () => {
       resumable: false,
       validation: 'crc32c',
       preconditionOpts: { ifGenerationMatch: 0 },
-      metadata: { contentType: 'image/png', cacheControl: 'private, max-age=31536000, immutable' },
+      metadata: {
+        contentType: 'image/png', cacheControl: 'private, max-age=31536000, immutable',
+        metadata: { sha256: '87b04e58961f9a99d853d4046a0b5b793e7c3e4bbd21f5aca8fb17c20cdb1d8b' },
+      },
     })
     expect(save.mock.calls[0][1]).not.toHaveProperty('predefinedAcl')
     await expect(store.get({ objectKey })).resolves.toEqual(Buffer.from('stored'))
@@ -136,12 +143,14 @@ describe('private immutable asset stores', () => {
     const remove = vi.fn(async () => [{}])
     const getMetadata = vi.fn(async () => [{
       size: '17', contentType: 'application/zip', generation: '1234', etag: 'etag-1234',
+      metadata: { sha256: 'b'.repeat(64) },
     }])
     const file = vi.fn(() => ({ getMetadata, delete: remove }))
     const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
 
     await expect(store.getMetadata({ objectKey })).resolves.toEqual({
-      objectKey, byteSize: 17, contentType: 'application/zip', generation: '1234', etag: 'etag-1234',
+      objectKey, byteSize: 17, contentType: 'application/zip', sha256: 'b'.repeat(64),
+      generation: '1234', etag: 'etag-1234',
     })
     await expect(store.delete({ objectKey, generation: '1234' })).resolves.toEqual({ deleted: true })
     expect(remove).toHaveBeenCalledWith({ ifGenerationMatch: '1234' })
@@ -164,7 +173,10 @@ describe('private immutable asset stores', () => {
       write(chunk, _encoding, done) { received.push(Buffer.from(chunk)); setImmediate(done) },
     }))
     const file = vi.fn(() => ({
-      metadata: { size: '6', contentType: 'application/zip', generation: '102', etag: 'etag-102' },
+      metadata: {
+        size: '6', contentType: 'application/zip', generation: '102', etag: 'etag-102',
+        metadata: { sha256: 'bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721' },
+      },
       createWriteStream,
     }))
     const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
@@ -172,13 +184,20 @@ describe('private immutable asset stores', () => {
     await expect(store.putStream({
       objectKey, stream: Readable.from([Buffer.from('abc'), Buffer.from('def')]),
       contentType: 'application/zip', maxBytes: 6,
-    })).resolves.toMatchObject({ objectKey, byteSize: 6, generation: '102', etag: 'etag-102' })
+      sha256: 'bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721',
+    })).resolves.toMatchObject({
+      objectKey, byteSize: 6, sha256: 'bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721',
+      generation: '102', etag: 'etag-102',
+    })
     expect(Buffer.concat(received)).toEqual(Buffer.from('abcdef'))
     expect(createWriteStream).toHaveBeenCalledWith({
       resumable: false,
       validation: 'crc32c',
       preconditionOpts: { ifGenerationMatch: 0 },
-      metadata: { contentType: 'application/zip', cacheControl: 'private, max-age=31536000, immutable' },
+      metadata: {
+        contentType: 'application/zip', cacheControl: 'private, max-age=31536000, immutable',
+        metadata: { sha256: 'bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721' },
+      },
     })
   })
 

@@ -103,6 +103,16 @@ async function hasCleanupIdentityColumns(client) {
   return result.rows[0]?.count === 2
 }
 
+async function hasCleanupIntentColumns(client) {
+  const result = await client.query(
+    `SELECT count(*)::int AS count FROM pg_attribute
+     WHERE attrelid = 'orphaned_uploads'::regclass
+       AND attname IN ('expected_sha256', 'expected_byte_size', 'expected_mime_type')
+       AND attnum > 0 AND NOT attisdropped`,
+  )
+  return result.rows[0]?.count === 3
+}
+
 export function createVersionRepository(client) {
   if (!client || typeof client.query !== 'function') throw new TypeError('A PostgreSQL pool or client is required')
   const campaigns = createCampaignRepository(client)
@@ -401,18 +411,58 @@ export function createVersionRepository(client) {
       return true
     },
 
-    async recordBuildObjectIdentity({ buildId, ownerToken, objectKey, generation, etag }) {
-      if (await hasCleanupIdentityColumns(client)) {
-        const result = await client.query(
-          `UPDATE orphaned_uploads orphan
-           SET object_generation = $4, object_etag = $5
-           FROM review_version_builds build
+    async recordBuildObjectIntent({ buildId, ownerToken, objectKey, sha256, byteSize, mimeType }) {
+      if (!await hasCleanupIntentColumns(client)) {
+        const legacy = await client.query(
+          `SELECT orphan.id FROM orphaned_uploads orphan
+           JOIN review_version_builds build ON build.id = orphan.claimed_build_id
            WHERE orphan.object_key = $3 AND orphan.claimed_build_id = $1
+             AND orphan.status = 'pending' AND build.owner_token = $2 AND build.state = 'in_progress'`,
+          [buildId, ownerToken, objectKey],
+        )
+        return legacy.rowCount === 1
+      }
+      const ownership = await client.query(
+        'SELECT id FROM review_version_builds WHERE id = $1 AND owner_token = $2 AND state = \'in_progress\' FOR UPDATE',
+        [buildId, ownerToken],
+      )
+      if (ownership.rowCount !== 1) return false
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+      const result = await client.query(
+        `UPDATE orphaned_uploads
+         SET expected_sha256 = $3, expected_byte_size = $4, expected_mime_type = $5
+         WHERE object_key = $2 AND claimed_build_id = $1 AND status = 'pending'
+           AND (
+             expected_sha256 IS NULL AND expected_byte_size IS NULL AND expected_mime_type IS NULL
+             OR expected_sha256 = $3 AND expected_byte_size = $4 AND expected_mime_type = $5
+           )
+         RETURNING id`,
+        [buildId, objectKey, sha256, byteSize, mimeType],
+      )
+      return result.rowCount === 1
+    },
+
+    async recordBuildObjectIdentity({ buildId, ownerToken, objectKey, generation, etag, sha256, byteSize, mimeType }) {
+      if (await hasCleanupIdentityColumns(client)) {
+        const ownership = await client.query(
+          'SELECT id FROM review_version_builds WHERE id = $1 AND owner_token = $2 AND state = \'in_progress\' FOR UPDATE',
+          [buildId, ownerToken],
+        )
+        if (ownership.rowCount !== 1) return false
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+        const hasIntent = await hasCleanupIntentColumns(client)
+        const result = await client.query(
+           `UPDATE orphaned_uploads orphan
+           SET object_generation = $3, object_etag = $4
+           WHERE orphan.object_key = $2 AND orphan.claimed_build_id = $1
              AND orphan.status = 'pending'
-             AND build.id = $1 AND build.owner_token = $2 AND build.state = 'in_progress'
-             AND (orphan.object_generation IS NULL OR orphan.object_generation = $4)
+             AND (orphan.object_generation IS NULL OR orphan.object_generation = $3)
+             ${hasIntent ? `AND orphan.expected_sha256 = $5
+               AND orphan.expected_byte_size = $6 AND orphan.expected_mime_type = $7` : ''}
            RETURNING orphan.id`,
-          [buildId, ownerToken, objectKey, generation, etag ?? null],
+          hasIntent
+            ? [buildId, objectKey, generation, etag ?? null, sha256, byteSize, mimeType]
+            : [buildId, objectKey, generation, etag ?? null],
         )
         return result.rowCount === 1
       }
@@ -432,7 +482,18 @@ export function createVersionRepository(client) {
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
       }
       let claims
-      if (await hasCleanupIdentityColumns(client)) {
+      if (await hasCleanupIntentColumns(client)) {
+        claims = await client.query(
+          `SELECT object_key, expected_sha256, expected_byte_size, expected_mime_type
+           FROM orphaned_uploads
+           WHERE claimed_build_id = $1 AND status = 'pending'
+             AND object_generation IS NOT NULL
+             AND expected_sha256 IS NOT NULL AND expected_byte_size IS NOT NULL
+             AND expected_mime_type IS NOT NULL AND object_key = ANY($2::text[])
+           FOR UPDATE`,
+          [build.id, objectKeys],
+        )
+      } else if (await hasCleanupIdentityColumns(client)) {
         claims = await client.query(
           `SELECT object_key FROM orphaned_uploads
            WHERE claimed_build_id = $1 AND status = 'pending'
@@ -450,6 +511,14 @@ export function createVersionRepository(client) {
       }
       if (claims.rowCount !== objectKeys.length) {
         throw Object.assign(new Error('Version build object ownership was lost'), { code: 'version_build_owner_lost' })
+      }
+      const expectedAssets = new Map(assets.map((asset) => [asset.objectKey, asset]))
+      if (claims.rows.some((claim) => claim.expected_sha256 != null && (
+        claim.expected_sha256 !== expectedAssets.get(claim.object_key)?.sha256
+        || safeNumber(claim.expected_byte_size, 'Expected object byte size') !== expectedAssets.get(claim.object_key)?.byteSize
+        || claim.expected_mime_type !== expectedAssets.get(claim.object_key)?.mimeType
+      ))) {
+        throw Object.assign(new Error('Version build object identity changed'), { code: 'version_build_owner_lost' })
       }
       const versionResult = await client.query(
         `INSERT INTO campaign_versions
