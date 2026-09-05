@@ -217,6 +217,11 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
         `/mvp/campaign/${encodeURIComponent(workspace.campaign.id)}?step=${index}`,
       )
   }
+  function scrollToStage(index) {
+    if (workspace && canVisitStage(index, workspace)) {
+      document.getElementById(`campaign-step-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
   async function run(
     label,
     operation,
@@ -649,24 +654,19 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                   <h1>{workspace.campaign.title}</h1>
                 </div>
               </div>
-              <CampaignTimeline workspace={workspace} stage={stage} pending={pending} onChange={goStage} />
+              <CampaignTimeline workspace={workspace} stage={stage} pending={pending} onChange={scrollToStage} />
               <div
                 className="bs-stage"
-                key={`${workspace.campaign.id}-${stage}`}
               >
-                {stage > 0 && <CampaignOverview workspace={workspace} />}
-                {stage === 0 && (
-                  <BriefStage
+                <section id="campaign-step-0" className="bs-long-section"><BriefStage
                     campaign={workspace.campaign}
                     api={api}
                     pending={pending}
                     readOnly={readOnly}
                     onDirty={markDirty}
                     onGenerate={generateCopy}
-                  />
-                )}
-                {stage === 1 && (
-                <CopyStage
+                  /></section>
+                <section id="campaign-step-1" className="bs-long-section"><CopyStage
                   view={copyView}
                   onViewChange={setCopyView}
                     workspace={workspace}
@@ -687,10 +687,8 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                       )
                     }
                     onNext={() => goStage(2)}
-                  />
-                )}
-                {stage === 2 && (
-                  <VisualStage
+                  /></section>
+                <section id="campaign-step-2" className="bs-long-section"><VisualStage
                     workspace={workspace}
                     api={api}
                     pending={pending}
@@ -727,10 +725,8 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                       )
                     }
                     onNext={() => goStage(3)}
-                  />
-                )}
-                {stage === 3 && (
-                  <BannerStage
+                  /></section>
+                <section id="campaign-step-3" className="bs-long-section"><BannerStage
                     key={`${workspace.campaign.id}-${workspace.campaign.revision}`}
                     workspace={workspace}
                     templates={templates}
@@ -752,10 +748,8 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                       )
                     }
                     onNext={() => goStage(4)}
-                  />
-                )}
-                {stage >= 4 && (
-                  <ReviewStage
+                  /></section>
+                <section id="campaign-step-4" className="bs-long-section"><ReviewStage
                     stage={stage}
                     workspace={workspace}
                     api={api}
@@ -811,8 +805,10 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                         { next: 0, success: 'New round opened' },
                       )
                     }
-                  />
-                )}
+                  /></section>
+                {[5, 6, 7].map((reviewStage) => <section id={`campaign-step-${reviewStage}`} className="bs-long-section bs-locked-section" key={reviewStage} aria-label={stages[reviewStage]}>
+                  <h2>{stages[reviewStage]}</h2><p>Complete the previous step to unlock this section.</p>
+                </section>)}
               </div>
             </div>
           ) : editor ? (
@@ -849,12 +845,6 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
             </section>
           )}
         </main>
-        <footer className="bs-workspace-footer">
-          <span>Banner Studio</span>
-          <span>
-            {demo ? 'Demo provider · Local PostgreSQL' : 'Team workspace'}
-          </span>
-        </footer>
       </div>
     </div>
   )

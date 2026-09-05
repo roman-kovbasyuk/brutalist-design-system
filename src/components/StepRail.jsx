@@ -10,7 +10,7 @@ export const steps = [
   ['Assets ready', 'Assets and manifest'],
 ]
 
-export function StepRail({ currentStep, maxStep, onStepChange, items = steps, hiddenSteps = [5], scrollOnChange = true, disabled = false, className = '', ariaLabel = 'Campaign stages' }) {
+export function StepRail({ currentStep, maxStep, onStepChange, items = steps, hiddenSteps = [5], scrollOnChange = true, disabled = false, className = '', ariaLabel = 'Campaign stages', anchor = false }) {
   function jumpTo(number) {
     onStepChange(number)
     if (scrollOnChange) document.getElementById(`campaign-step-${number}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -27,7 +27,23 @@ export function StepRail({ currentStep, maxStep, onStepChange, items = steps, hi
           const isAvailable = number <= maxStep
           return (
             <li key={`${number}-${label}`}>
-              <button
+              {anchor ? <a
+                href={`#campaign-step-${index}`}
+                className="step-button"
+                data-current={number === currentStep}
+                data-complete={isComplete}
+                aria-current={number === currentStep ? 'step' : undefined}
+                aria-label={`${number}. ${label}`}
+                aria-disabled={disabled || !isAvailable ? 'true' : undefined}
+                onClick={(event) => { if (disabled || !isAvailable) event.preventDefault(); else jumpTo(number) }}
+              >
+                <span className="step-number">
+                  {isComplete ? <Check size={13} aria-hidden="true" /> : String(number)}
+                </span>
+                <span>
+                  <strong>{label}</strong>
+                </span>
+              </a> : <button
                 type="button"
                 className="step-button"
                 data-current={number === currentStep}
@@ -37,13 +53,8 @@ export function StepRail({ currentStep, maxStep, onStepChange, items = steps, hi
                 disabled={disabled || !isAvailable}
                 onClick={() => jumpTo(number)}
               >
-                <span className="step-number">
-                  {isComplete ? <Check size={13} aria-hidden="true" /> : String(number)}
-                </span>
-                <span>
-                  <strong>{label}</strong>
-                </span>
-              </button>
+                <span className="step-number">{isComplete ? <Check size={13} aria-hidden="true" /> : String(number)}</span><span><strong>{label}</strong></span>
+              </button>}
             </li>
           )
         })}
