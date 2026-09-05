@@ -107,6 +107,7 @@ export async function buildDeterministicDeliveryArchiveFile({
   const settlements = []
   let firstFailure
   let tearingDown = false
+  let finalized
   const teardown = (error) => {
     if (tearingDown) return
     tearingDown = true
@@ -114,11 +115,17 @@ export async function buildDeterministicDeliveryArchiveFile({
       try { if (!stream.destroyed) stream.destroy(error) } catch {}
     }
     try { zip.abort() } catch {}
+    if (finalized) {
+      try {
+        const engine = zip?._module?.engine
+        if (engine && !engine.destroyed) engine.destroy(error)
+      } catch {}
+    }
     for (const stream of [zip, meter, sink]) {
       try { if (!stream.destroyed) stream.destroy(error) } catch {}
     }
   }
-  const observe = (promise, { waitForSettlement = true } = {}) => {
+  const observe = (promise) => {
     const settlement = promise.then(
       (value) => ({ ok: true, value }),
       (error) => {
@@ -127,7 +134,7 @@ export async function buildDeterministicDeliveryArchiveFile({
         return { ok: false, error }
       },
     )
-    if (waitForSettlement) settlements.push(settlement)
+    settlements.push(settlement)
     return settlement
   }
   observe(finished(zip, { cleanup: true }))
@@ -158,9 +165,8 @@ export async function buildDeterministicDeliveryArchiveFile({
       }
     }
     observe(pipeline(zip, meter, sink))
-    const finalized = observe(Promise.resolve().then(() => zip.finalize()), { waitForSettlement: false })
+    finalized = observe(zip.finalize())
     await Promise.all(settlements)
-    if (!firstFailure) await finalized
   } catch (error) {
     firstFailure ??= error
     teardown(error)

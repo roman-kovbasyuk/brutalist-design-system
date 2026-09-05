@@ -297,4 +297,45 @@ describe('deterministic delivery archive', () => {
     expect(result.stdout).toContain('caught-8')
     expect(result.stderr).toBe('')
   })
+
+  test('an archive failure does not return before the finalize promise settles', async () => {
+    const result = await runArchiveChild(`
+      import { ZipArchive } from 'archiver'
+      import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+      import { tmpdir } from 'node:os'
+      import { join } from 'node:path'
+      const prototype = ZipArchive.prototype
+      const originalFinalize = prototype.finalize
+      let finalized = false
+      prototype.finalize = function () {
+        return new Promise((_resolve, reject) => setTimeout(() => {
+          finalized = true
+          reject(new Error('late finalize rejection'))
+        }, 60))
+      }
+      const { buildDeterministicDeliveryArchiveFile } = await import(${JSON.stringify(deliveryArchiveModuleUrl)})
+      const directory = await mkdtemp(join(tmpdir(), 'delivery-finalize-settlement-'))
+      try {
+        const input = join(directory, 'source.png')
+        const output = join(directory, 'occupied.zip')
+        await writeFile(input, Buffer.alloc(1024, 1))
+        await writeFile(output, Buffer.from('occupied'))
+        try {
+          await buildDeterministicDeliveryArchiveFile({
+            entries: [{ filename: 'banners/banner-001.png', path: input, byteSize: 1024 }],
+            deliveryManifestBytes: Buffer.from('{}'), timestamp: new Date('2026-09-04T10:00:00Z'),
+            maxBytes: 4096, outputPath: output,
+          })
+        } catch {}
+        console.log(finalized ? 'finalize-settled' : 'finalize-pending')
+        if (!finalized) process.exitCode = 5
+      } finally {
+        prototype.finalize = originalFinalize
+        await rm(directory, { recursive: true, force: true })
+      }
+    `)
+    expect(result, JSON.stringify(result)).toMatchObject({ code: 0, killed: false })
+    expect(result.stdout).toContain('finalize-settled')
+    expect(result.stderr).toBe('')
+  })
 })

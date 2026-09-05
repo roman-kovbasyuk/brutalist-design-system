@@ -13,7 +13,7 @@ describe('private immutable asset stores', () => {
     const source = Buffer.from('private bytes')
 
     await expect(store.put({ objectKey, bytes: source, contentType: 'image/png' }))
-      .resolves.toEqual({ objectKey, byteSize: 13 })
+      .resolves.toMatchObject({ objectKey, byteSize: 13, generation: '1', etag: expect.any(String) })
     source[0] = 0
     const firstRead = await store.get({ objectKey })
     expect(Buffer.from(firstRead)).toEqual(Buffer.from('private bytes'))
@@ -26,6 +26,25 @@ describe('private immutable asset stores', () => {
     await expect(store.get({ objectKey })).resolves.toBeNull()
   })
 
+  test('memory storage exposes immutable object identity and generation-fenced deletion', async () => {
+    const store = createMemoryAssetStore()
+    const created = await store.put({ objectKey, bytes: Buffer.from('first'), contentType: 'image/png' })
+    expect(created).toMatchObject({ objectKey, byteSize: 5, generation: expect.any(String), etag: expect.any(String) })
+    await expect(store.getMetadata({ objectKey })).resolves.toEqual({
+      objectKey, byteSize: 5, contentType: 'image/png', generation: created.generation, etag: created.etag,
+    })
+    await expect(store.delete({ objectKey, generation: 'replacement-generation' }))
+      .rejects.toMatchObject({ code: 'object_generation_mismatch' })
+    expect(await store.get({ objectKey })).toEqual(Buffer.from('first'))
+    await expect(store.delete({ objectKey, generation: created.generation })).resolves.toEqual({ deleted: true })
+
+    const replacement = await store.put({ objectKey, bytes: Buffer.from('second'), contentType: 'image/png' })
+    expect(replacement.generation).not.toBe(created.generation)
+    await expect(store.delete({ objectKey, generation: created.generation }))
+      .rejects.toMatchObject({ code: 'object_generation_mismatch' })
+    expect(await store.get({ objectKey })).toEqual(Buffer.from('second'))
+  })
+
   test('memory storage exposes bounded create-only streams for delivery tests', async () => {
     const store = createMemoryAssetStore({ maxStreamBytes: 32 })
     await expect(store.putStream({
@@ -33,7 +52,7 @@ describe('private immutable asset stores', () => {
       stream: Readable.from([Buffer.from('private '), Buffer.from('bytes')]),
       contentType: 'application/zip',
       maxBytes: 32,
-    })).resolves.toEqual({ objectKey, byteSize: 13 })
+    })).resolves.toMatchObject({ objectKey, byteSize: 13, generation: '1', etag: expect.any(String) })
 
     const parts = []
     const readable = await store.createReadStream({ objectKey })
@@ -60,7 +79,7 @@ describe('private immutable asset stores', () => {
     expect(outcome).toMatchObject({ code: 'storage_aborted' })
     await expect(store.putStream({
       objectKey, stream: Readable.from([Buffer.from('retry')]), contentType: 'application/zip', maxBytes: 32,
-    })).resolves.toEqual({ objectKey, byteSize: 5 })
+    })).resolves.toMatchObject({ objectKey, byteSize: 5, generation: '1', etag: expect.any(String) })
   })
 
   test('memory streaming reads expose bounded views instead of copying one large buffer', async () => {
@@ -90,12 +109,15 @@ describe('private immutable asset stores', () => {
     const download = vi.fn(async () => [Buffer.from('stored')])
     const createReadStream = vi.fn(() => Readable.from([Buffer.from('stored')]))
     const remove = vi.fn(async () => [{}])
-    const file = vi.fn(() => ({ save, download, createReadStream, delete: remove }))
+    const file = vi.fn(() => ({
+      metadata: { size: '6', contentType: 'image/png', generation: '101', etag: 'etag-101' },
+      save, download, createReadStream, delete: remove,
+    }))
     const bucket = vi.fn(() => ({ file }))
     const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket } })
 
     await expect(store.put({ objectKey, bytes: Buffer.from('stored'), contentType: 'image/png' }))
-      .resolves.toEqual({ objectKey, byteSize: 6 })
+      .resolves.toMatchObject({ objectKey, byteSize: 6, generation: '101', etag: 'etag-101' })
     expect(bucket).toHaveBeenCalledWith('private-assets')
     expect(save).toHaveBeenCalledWith(expect.any(Buffer), {
       resumable: false,
@@ -110,19 +132,47 @@ describe('private immutable asset stores', () => {
     await expect(store.delete({ objectKey })).resolves.toEqual({ deleted: true })
   })
 
+  test('GCS reads object identity and deletes only the exact stored generation', async () => {
+    const remove = vi.fn(async () => [{}])
+    const getMetadata = vi.fn(async () => [{
+      size: '17', contentType: 'application/zip', generation: '1234', etag: 'etag-1234',
+    }])
+    const file = vi.fn(() => ({ getMetadata, delete: remove }))
+    const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
+
+    await expect(store.getMetadata({ objectKey })).resolves.toEqual({
+      objectKey, byteSize: 17, contentType: 'application/zip', generation: '1234', etag: 'etag-1234',
+    })
+    await expect(store.delete({ objectKey, generation: '1234' })).resolves.toEqual({ deleted: true })
+    expect(remove).toHaveBeenCalledWith({ ifGenerationMatch: '1234' })
+  })
+
+  test('GCS maps a generation precondition failure without deleting a replacement', async () => {
+    const mismatch = Object.assign(new Error('provider details'), { code: 412 })
+    const remove = vi.fn(async () => { throw mismatch })
+    const store = createGcsAssetStore({
+      bucketName: 'private-assets', storage: { bucket: () => ({ file: () => ({ delete: remove }) }) },
+    })
+    await expect(store.delete({ objectKey, generation: 'old-generation' }))
+      .rejects.toMatchObject({ code: 'object_generation_mismatch', message: expect.not.stringContaining('details') })
+  })
+
   test('GCS streaming writes use create-only CRC32C upload and preserve backpressure', async () => {
     const received = []
     const createWriteStream = vi.fn(() => new Writable({
       highWaterMark: 2,
       write(chunk, _encoding, done) { received.push(Buffer.from(chunk)); setImmediate(done) },
     }))
-    const file = vi.fn(() => ({ createWriteStream }))
+    const file = vi.fn(() => ({
+      metadata: { size: '6', contentType: 'application/zip', generation: '102', etag: 'etag-102' },
+      createWriteStream,
+    }))
     const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
 
     await expect(store.putStream({
       objectKey, stream: Readable.from([Buffer.from('abc'), Buffer.from('def')]),
       contentType: 'application/zip', maxBytes: 6,
-    })).resolves.toEqual({ objectKey, byteSize: 6 })
+    })).resolves.toMatchObject({ objectKey, byteSize: 6, generation: '102', etag: 'etag-102' })
     expect(Buffer.concat(received)).toEqual(Buffer.from('abcdef'))
     expect(createWriteStream).toHaveBeenCalledWith({
       resumable: false,

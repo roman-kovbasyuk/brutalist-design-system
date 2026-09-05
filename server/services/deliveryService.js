@@ -561,7 +561,7 @@ export function createDeliveryService({
     })
   }
 
-  async function storeArchive(build, archive, signal) {
+  async function storeArchive(build, ownerToken, archive, deadlineAt, signal) {
     let created = true
     try {
       await assetStore.putStream({
@@ -594,6 +594,24 @@ export function createDeliveryService({
       if (error instanceof DeliveryServiceError) throw error
       fail(503, 'asset_storage_unavailable', 'Delivery storage is unavailable')
     }
+    let identity
+    try {
+      identity = await assetStore.getMetadata({ objectKey: build.plan.objectKey, signal })
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? operationTimeout()
+      fail(503, 'asset_storage_unavailable', 'Delivery storage is unavailable')
+    }
+    if (!identity || identity.objectKey !== build.plan.objectKey || identity.byteSize !== archive.byteSize
+      || identity.contentType !== 'application/zip'
+      || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
+      || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
+      fail(502, 'delivery_integrity_failure', 'Stored delivery ZIP identity verification failed')
+    }
+    const bound = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIdentity({
+      buildId: build.id, ownerToken, objectKey: build.plan.objectKey,
+      generation: identity.generation, etag: identity.etag,
+    }))
+    if (!bound) fail(409, 'delivery_build_owner_lost', 'Delivery build ownership was lost')
   }
 
   async function completeExisting({ actor, versionId, key, fingerprint, ownerToken, existing, deadlineAt, signal }) {
@@ -742,7 +760,7 @@ export function createDeliveryService({
                   assetStore, plan: build.plan, version, workspace, signal: controller.signal,
                   maxArchiveBytes, maxManifestBytes,
                 })
-                await storeArchive(build, archive, controller.signal)
+                await storeArchive(build, ownerToken, archive, deadlineAt, controller.signal)
                 return finalize({
                   actor, versionId, key: idempotencyKey, fingerprint, ownerToken, build, archive, deadlineAt,
                 })

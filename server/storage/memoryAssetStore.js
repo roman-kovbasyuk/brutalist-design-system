@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { addAbortSignal, Readable } from 'node:stream'
 import { assertAssetBytes, assertContentType, assertSafeObjectKey, AssetStoreError } from './assetStore.js'
 
@@ -5,19 +6,40 @@ export function createMemoryAssetStore({ maxStreamBytes = 16 * 1024 * 1024 } = {
   if (!Number.isSafeInteger(maxStreamBytes) || maxStreamBytes <= 0) throw new TypeError('Memory stream byte ceiling is required')
   const objects = new Map()
   const pending = new Set()
+  let nextGeneration = 1n
+
+  const identity = (objectKey, stored) => stored && ({
+    objectKey,
+    byteSize: stored.bytes.length,
+    contentType: stored.contentType,
+    generation: stored.generation,
+    etag: stored.etag,
+  })
+
+  const createStoredObject = (bytes, contentType) => ({
+    bytes,
+    contentType,
+    generation: String(nextGeneration++),
+    etag: createHash('sha256').update(bytes).digest('hex'),
+  })
   return Object.freeze({
     async put({ objectKey, bytes, contentType }) {
       assertSafeObjectKey(objectKey)
       assertContentType(contentType)
       const source = assertAssetBytes(bytes)
       if (objects.has(objectKey)) throw new AssetStoreError('object_exists', 'Asset object already exists')
-      objects.set(objectKey, { bytes: Buffer.from(source), contentType })
-      return { objectKey, byteSize: source.length }
+      const stored = createStoredObject(Buffer.from(source), contentType)
+      objects.set(objectKey, stored)
+      return identity(objectKey, stored)
     },
     async get({ objectKey }) {
       assertSafeObjectKey(objectKey)
       const stored = objects.get(objectKey)
       return stored ? Buffer.from(stored.bytes) : null
+    },
+    async getMetadata({ objectKey }) {
+      assertSafeObjectKey(objectKey)
+      return identity(objectKey, objects.get(objectKey)) ?? null
     },
     async createReadStream({ objectKey, signal } = {}) {
       assertSafeObjectKey(objectKey)
@@ -51,8 +73,9 @@ export function createMemoryAssetStore({ maxStreamBytes = 16 * 1024 * 1024 } = {
         }
         if (signal?.aborted) throw new AssetStoreError('storage_aborted', 'Private asset storage operation was aborted')
         if (byteSize < 1) throw new AssetStoreError('invalid_asset_bytes', 'Asset bytes are required')
-        objects.set(objectKey, { bytes: Buffer.concat(chunks, byteSize), contentType })
-        return { objectKey, byteSize }
+        const stored = createStoredObject(Buffer.concat(chunks, byteSize), contentType)
+        objects.set(objectKey, stored)
+        return identity(objectKey, stored)
       } catch (error) {
         if (signal?.aborted || error?.name === 'AbortError') {
           throw new AssetStoreError('storage_aborted', 'Private asset storage operation was aborted')
@@ -62,8 +85,12 @@ export function createMemoryAssetStore({ maxStreamBytes = 16 * 1024 * 1024 } = {
         pending.delete(objectKey)
       }
     },
-    async delete({ objectKey }) {
+    async delete({ objectKey, generation } = {}) {
       assertSafeObjectKey(objectKey)
+      const stored = objects.get(objectKey)
+      if (stored && generation != null && generation !== stored.generation) {
+        throw new AssetStoreError('object_generation_mismatch', 'Asset object generation changed')
+      }
       return { deleted: objects.delete(objectKey) }
     },
     async close() {},

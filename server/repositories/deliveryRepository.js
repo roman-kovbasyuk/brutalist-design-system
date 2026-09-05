@@ -65,6 +65,15 @@ function campaignUpdateInput(campaign, status) {
   }
 }
 
+async function hasCleanupIdentityColumns(client) {
+  const result = await client.query(
+    `SELECT count(*)::int AS count FROM pg_attribute
+     WHERE attrelid = 'orphaned_uploads'::regclass AND attname IN ('object_generation', 'cleanup_token')
+       AND attnum > 0 AND NOT attisdropped`,
+  )
+  return result.rows[0]?.count === 2
+}
+
 export function createDeliveryRepository(client) {
   if (!client || typeof client.query !== 'function') throw new TypeError('A PostgreSQL pool or client is required')
   const campaigns = createCampaignRepository(client)
@@ -164,6 +173,10 @@ export function createDeliveryRepository(client) {
          SET actor_id = $2, idempotency_key = $3, request_fingerprint = $4,
              owner_token = $5, state = 'in_progress', updated_at = now(), completed_at = NULL
          WHERE id = $1 AND state IN ('in_progress', 'failed')
+           AND NOT EXISTS (
+             SELECT 1 FROM orphaned_uploads
+             WHERE status = 'cleaning' AND object_key = delivery_builds.plan->>'objectKey'
+           )
          RETURNING *`,
         [id, actorId, key, fingerprint, ownerToken],
       )
@@ -188,15 +201,60 @@ export function createDeliveryRepository(client) {
              claimed_delivery_build_id = EXCLUDED.claimed_delivery_build_id
          WHERE (orphaned_uploads.claimed_build_id IS NULL
                 AND orphaned_uploads.claimed_delivery_build_id IS NULL)
-            OR orphaned_uploads.claimed_delivery_build_id = EXCLUDED.claimed_delivery_build_id
+               AND orphaned_uploads.status <> 'cleaning'
+            OR (orphaned_uploads.claimed_delivery_build_id = EXCLUDED.claimed_delivery_build_id
+                AND orphaned_uploads.status <> 'cleaning')
          RETURNING claimed_delivery_build_id`,
         [orphanId, objectKey, campaignId, buildId, adoptedAt],
       )
       return claimed.rows[0]?.claimed_delivery_build_id === buildId
     },
 
+    async recordBuildObjectIdentity({ buildId, ownerToken, objectKey, generation, etag }) {
+      if (await hasCleanupIdentityColumns(client)) {
+        const result = await client.query(
+          `UPDATE orphaned_uploads orphan
+           SET object_generation = $4, object_etag = $5
+           FROM delivery_builds build
+           WHERE orphan.object_key = $3 AND orphan.claimed_delivery_build_id = $1
+             AND orphan.status = 'pending'
+             AND build.id = $1 AND build.owner_token = $2 AND build.state = 'in_progress'
+             AND (orphan.object_generation IS NULL OR orphan.object_generation = $4)
+           RETURNING orphan.id`,
+          [buildId, ownerToken, objectKey, generation, etag ?? null],
+        )
+        return result.rowCount === 1
+      }
+      const legacy = await client.query(
+        `SELECT orphan.id FROM orphaned_uploads orphan
+         JOIN delivery_builds build ON build.id = orphan.claimed_delivery_build_id
+         WHERE orphan.object_key = $3 AND orphan.claimed_delivery_build_id = $1
+           AND orphan.status = 'pending' AND build.owner_token = $2 AND build.state = 'in_progress'`,
+        [buildId, ownerToken, objectKey],
+      )
+      return legacy.rowCount === 1
+    },
+
     async finalizeBuild({ build, campaign, version, actor, zipAsset, deliveryId, reviewEventId, auditId, createdAt }) {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [zipAsset.objectKey])
+      let claim
+      if (await hasCleanupIdentityColumns(client)) {
+        claim = await client.query(
+          `SELECT id FROM orphaned_uploads
+           WHERE object_key = $1 AND claimed_delivery_build_id = $2
+             AND status = 'pending' AND object_generation IS NOT NULL
+           FOR UPDATE`,
+          [zipAsset.objectKey, build.id],
+        )
+      } else {
+        claim = await client.query(
+          `SELECT id FROM orphaned_uploads
+           WHERE object_key = $1 AND claimed_delivery_build_id = $2 AND status = 'pending'
+           FOR UPDATE`,
+          [zipAsset.objectKey, build.id],
+        )
+      }
+      if (claim.rowCount !== 1) throw Object.assign(new Error('Delivery build object ownership was lost'), { code: 'delivery_build_owner_lost' })
       await client.query(
         `INSERT INTO assets
            (id, campaign_id, kind, object_key, mime_type, byte_size, width, height,
@@ -267,7 +325,9 @@ export function createDeliveryRepository(client) {
              last_error = NULL, cleaned_at = NULL, claimed_build_id = NULL,
              claimed_delivery_build_id = NULL
          WHERE orphaned_uploads.claimed_delivery_build_id = $6
-            OR (orphaned_uploads.claimed_delivery_build_id IS NULL AND orphaned_uploads.claimed_build_id IS NULL)`,
+               AND orphaned_uploads.status <> 'cleaning'
+            OR (orphaned_uploads.claimed_delivery_build_id IS NULL AND orphaned_uploads.claimed_build_id IS NULL
+                AND orphaned_uploads.status <> 'cleaning')`,
         [orphanId, objectKey, campaignId, reason, failedAt, buildId],
       )
       await client.query(

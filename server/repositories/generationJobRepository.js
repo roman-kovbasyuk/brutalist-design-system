@@ -238,12 +238,16 @@ export function createGenerationControlPlane({
   wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
   pollIntervalMs = 10,
   recoveryTimeoutMs = 250,
+  cleanupLeaseMs = 30_000,
+  cleanupDeleteTimeoutMs = 15_000,
   recoveryTransaction = withDeadlineTransaction,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
   assertProviderRegistry(providerRegistry)
   if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) throw new TypeError('Generation polling interval must be positive')
   if (!Number.isSafeInteger(recoveryTimeoutMs) || recoveryTimeoutMs <= 0) throw new TypeError('Generation recovery timeout must be a positive integer')
+  if (!Number.isSafeInteger(cleanupLeaseMs) || cleanupLeaseMs <= 0) throw new TypeError('Orphan cleanup lease must be a positive integer')
+  if (!Number.isSafeInteger(cleanupDeleteTimeoutMs) || cleanupDeleteTimeoutMs <= 0) throw new TypeError('Orphan cleanup delete timeout must be a positive integer')
 
   const recoverGeneration = async ({ jobId, ownerToken, reason, orphan }) => recoveryTransaction(pool, async (client, deadline) => {
     const startedAt = await databaseClock(client)
@@ -603,12 +607,14 @@ export function createGenerationControlPlane({
         const timeoutMs = Math.max(0, cleanupDeadlineAt - Date.now())
         if (timeoutMs < 1) throw recoveryDeadlineError()
         try {
-          return await recoveryTransaction(pool, async (client, deadline) => {
+          const phase = await recoveryTransaction(pool, async (client, deadline) => {
             const startedAt = await databaseClock(client)
             const attemptDeadline = new Date(startedAt.getTime() + deadline.remainingMs())
             await setTransactionDeadline(client, attemptDeadline, startedAt)
             const observed = await client.query(
-              `SELECT o.id, o.object_key, o.claimed_build_id, o.claimed_delivery_build_id,
+              `SELECT o.id, o.object_key, o.status, o.object_generation, o.object_etag,
+                      o.cleanup_token, o.cleanup_lease_expires_at,
+                      o.claimed_build_id, o.claimed_delivery_build_id,
                       vb.actor_id AS version_actor_id, vb.method AS version_method,
                       vb.campaign_id AS version_resource_id, vb.idempotency_key AS version_idempotency_key,
                       vb.request_fingerprint AS version_request_fingerprint,
@@ -704,7 +710,11 @@ export function createGenerationControlPlane({
             await lockAssetObjectKey(client, candidate.object_key)
             await refreshTransactionDeadline(client, attemptDeadline)
             const selected = await client.query(
-              `SELECT id, object_key, claimed_build_id, claimed_delivery_build_id FROM orphaned_uploads
+              `SELECT id, object_key, status, object_generation, object_etag,
+                      cleanup_token, cleanup_lease_expires_at,
+                      claimed_build_id, claimed_delivery_build_id,
+                      clock_timestamp() AS observed_at
+               FROM orphaned_uploads
                WHERE id = $1 AND object_key = $2 AND status <> 'cleaned'
                FOR UPDATE`,
               [orphanId, candidate.object_key],
@@ -773,16 +783,101 @@ export function createGenerationControlPlane({
             )
             if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
             await refreshTransactionDeadline(client, attemptDeadline)
-            await deleteObject({ objectKey: orphan.object_key })
-            await refreshTransactionDeadline(client, attemptDeadline)
-            await client.query(
+            if (orphan.object_generation == null) {
+              return { kind: 'claimed', objectKey: orphan.object_key }
+            }
+            if (orphan.status === 'cleaning'
+              && orphan.cleanup_lease_expires_at > orphan.observed_at) {
+              return { kind: 'claimed', objectKey: orphan.object_key }
+            }
+            const cleanupToken = idGenerator()
+            const cleanupLeaseExpiresAt = new Date(orphan.observed_at.getTime() + cleanupLeaseMs)
+            const cleaning = await client.query(
               `UPDATE orphaned_uploads
-               SET status = 'cleaned', attempts = attempts + 1, last_error = NULL, cleaned_at = $2
-               WHERE id = $1`,
-              [orphanId, cleanedAt ?? clock()],
+               SET status = 'cleaning', cleanup_token = $3, cleanup_lease_expires_at = $4,
+                   claimed_build_id = NULL, claimed_delivery_build_id = NULL,
+                   last_error = NULL, cleaned_at = NULL
+               WHERE id = $1 AND object_key = $2 AND object_generation = $5
+                 AND (
+                   status IN ('pending', 'failed')
+                   OR (status = 'cleaning' AND cleanup_token IS NOT DISTINCT FROM $6
+                       AND cleanup_lease_expires_at <= clock_timestamp())
+                 )
+               RETURNING object_key, object_generation, object_etag, cleanup_token`,
+              [orphan.id, orphan.object_key, cleanupToken, cleanupLeaseExpiresAt,
+                orphan.object_generation, orphan.cleanup_token],
             )
-            return { kind: 'cleaned', objectKey: orphan.object_key }
+            if (cleaning.rowCount !== 1) return { kind: 'claimed', objectKey: orphan.object_key }
+            return { kind: 'delete', orphanId: orphan.id, ...cleaning.rows[0] }
           }, { timeoutMs })
+          if (phase.kind !== 'delete') return phase
+
+          try {
+            await deleteObject({
+              objectKey: phase.object_key,
+              generation: phase.object_generation,
+              etag: phase.object_etag,
+              timeoutMs: cleanupDeleteTimeoutMs,
+            })
+          } catch (deleteError) {
+            await recoveryTransaction(pool, async (client, deadline) => {
+              const startedAt = await databaseClock(client)
+              const phaseDeadline = new Date(startedAt.getTime() + deadline.remainingMs())
+              await setTransactionDeadline(client, phaseDeadline, startedAt)
+              await lockAssetObjectKey(client, phase.object_key)
+              await refreshTransactionDeadline(client, phaseDeadline)
+              await client.query(
+                `UPDATE orphaned_uploads
+                 SET attempts = attempts + 1, last_error = $4
+                 WHERE id = $1 AND object_key = $2 AND status = 'cleaning'
+                   AND cleanup_token = $3 AND object_generation = $5`,
+                [phase.orphanId, phase.object_key, phase.cleanup_token,
+                  typeof deleteError?.code === 'string' ? deleteError.code : 'cleanup_delete_failed',
+                  phase.object_generation],
+              )
+            }, { timeoutMs: recoveryTimeoutMs })
+            throw deleteError
+          }
+
+          return await recoveryTransaction(pool, async (client, deadline) => {
+            const startedAt = await databaseClock(client)
+            const phaseDeadline = new Date(startedAt.getTime() + deadline.remainingMs())
+            await setTransactionDeadline(client, phaseDeadline, startedAt)
+            await lockAssetObjectKey(client, phase.object_key)
+            await refreshTransactionDeadline(client, phaseDeadline)
+            const orphan = (await client.query(
+              `SELECT id FROM orphaned_uploads
+               WHERE id = $1 AND object_key = $2 AND status = 'cleaning'
+                 AND cleanup_token = $3 AND object_generation = $4
+               FOR UPDATE`,
+              [phase.orphanId, phase.object_key, phase.cleanup_token, phase.object_generation],
+            )).rows[0]
+            if (!orphan) return { kind: 'claimed', objectKey: phase.object_key }
+            const referenced = await client.query(
+              `SELECT 1 FROM assets WHERE object_key = $1
+               UNION ALL
+               SELECT 1 FROM deliveries delivery JOIN assets asset ON asset.id = delivery.asset_id
+                 WHERE asset.object_key = $1
+               UNION ALL
+               SELECT 1 FROM delivery_builds
+                 WHERE state <> 'failed' AND plan->>'objectKey' = $1
+               LIMIT 1`,
+              [phase.object_key],
+            )
+            if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: phase.object_key }
+            await refreshTransactionDeadline(client, phaseDeadline)
+            const cleaned = await client.query(
+              `UPDATE orphaned_uploads
+               SET status = 'cleaned', attempts = attempts + 1, last_error = NULL,
+                   cleaned_at = $4, cleanup_token = NULL, cleanup_lease_expires_at = NULL
+               WHERE id = $1 AND object_key = $2 AND status = 'cleaning' AND cleanup_token = $3
+               RETURNING id`,
+              [phase.orphanId, phase.object_key, phase.cleanup_token, cleanedAt ?? clock()],
+            )
+            return cleaned.rowCount === 1
+              ? { kind: 'cleaned', objectKey: phase.object_key }
+              : { kind: 'claimed', objectKey: phase.object_key }
+          }, { timeoutMs: recoveryTimeoutMs })
         } catch (error) {
           if (error instanceof CleanupIdentityDriftError) {
             if (attempt + 1 === maximumAttempts || Date.now() >= cleanupDeadlineAt) {

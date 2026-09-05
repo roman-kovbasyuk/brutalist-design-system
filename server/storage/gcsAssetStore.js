@@ -12,6 +12,22 @@ function storageFailure(code, message) {
   return new AssetStoreError(code, message)
 }
 
+function objectIdentity(objectKey, metadata) {
+  const byteSize = Number(metadata?.size)
+  const generation = metadata?.generation
+  if (!Number.isSafeInteger(byteSize) || byteSize < 0
+    || typeof generation !== 'string' || !/^\d+$/.test(generation)) {
+    throw storageFailure('storage_unavailable', 'Private asset storage returned invalid object metadata')
+  }
+  return {
+    objectKey,
+    byteSize,
+    contentType: metadata.contentType ?? null,
+    generation,
+    etag: typeof metadata.etag === 'string' && metadata.etag.length > 0 ? metadata.etag : null,
+  }
+}
+
 function readObjectStream(file, { timeoutMs, maxBytes }) {
   return new Promise((resolve, reject) => {
     const stream = file.createReadStream({ validation: 'crc32c' })
@@ -69,23 +85,35 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
       assertContentType(contentType)
       const source = assertAssetBytes(bytes)
       try {
-        await bucket.file(objectKey).save(Buffer.from(source), {
+        const file = bucket.file(objectKey)
+        await file.save(Buffer.from(source), {
           resumable: false,
           validation: 'crc32c',
           preconditionOpts: { ifGenerationMatch: 0 },
           metadata: { contentType, cacheControl: 'private, max-age=31536000, immutable' },
           ...(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : {}),
         })
+        return objectIdentity(objectKey, file.metadata)
       } catch (error) {
         if ([409, 412].includes(statusCode(error))) throw storageFailure('object_exists', 'Asset object already exists')
         throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
       }
-      return { objectKey, byteSize: source.length }
     },
     async get({ objectKey, timeoutMs, maxBytes }) {
       assertSafeObjectKey(objectKey)
       try {
         return await readObjectStream(bucket.file(objectKey), { timeoutMs, maxBytes })
+      } catch (error) {
+        if (statusCode(error) === 404) return null
+        if (error instanceof AssetStoreError) throw error
+        throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
+      }
+    },
+    async getMetadata({ objectKey }) {
+      assertSafeObjectKey(objectKey)
+      try {
+        const [metadata] = await bucket.file(objectKey).getMetadata()
+        return objectIdentity(objectKey, metadata)
       } catch (error) {
         if (statusCode(error) === 404) return null
         if (error instanceof AssetStoreError) throw error
@@ -112,7 +140,8 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
           done(null, chunk)
         },
       })
-      const target = bucket.file(objectKey).createWriteStream({
+      const file = bucket.file(objectKey)
+      const target = file.createWriteStream({
         resumable: false,
         validation: 'crc32c',
         preconditionOpts: { ifGenerationMatch: 0 },
@@ -127,15 +156,16 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
         throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
       }
       if (byteSize < 1) throw storageFailure('invalid_asset_bytes', 'Asset bytes are required')
-      return { objectKey, byteSize }
+      return objectIdentity(objectKey, file.metadata)
     },
-    async delete({ objectKey }) {
+    async delete({ objectKey, generation } = {}) {
       assertSafeObjectKey(objectKey)
       try {
-        await bucket.file(objectKey).delete()
+        await bucket.file(objectKey).delete(generation == null ? {} : { ifGenerationMatch: generation })
         return { deleted: true }
       } catch (error) {
         if (statusCode(error) === 404) return { deleted: false }
+        if (statusCode(error) === 412) throw storageFailure('object_generation_mismatch', 'Asset object generation changed')
         throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
       }
     },

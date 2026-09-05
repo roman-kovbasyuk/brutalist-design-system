@@ -94,6 +94,15 @@ function campaignUpdateInput(campaign, changes) {
   }
 }
 
+async function hasCleanupIdentityColumns(client) {
+  const result = await client.query(
+    `SELECT count(*)::int AS count FROM pg_attribute
+     WHERE attrelid = 'orphaned_uploads'::regclass AND attname IN ('object_generation', 'cleanup_token')
+       AND attnum > 0 AND NOT attisdropped`,
+  )
+  return result.rows[0]?.count === 2
+}
+
 export function createVersionRepository(client) {
   if (!client || typeof client.query !== 'function') throw new TypeError('A PostgreSQL pool or client is required')
   const campaigns = createCampaignRepository(client)
@@ -321,6 +330,17 @@ export function createVersionRepository(client) {
         `UPDATE review_version_builds
          SET state = 'in_progress', owner_token = $2, updated_at = now(), completed_at = NULL
          WHERE id = $1 AND state = 'failed'
+           AND NOT EXISTS (
+             SELECT 1 FROM orphaned_uploads orphan
+             WHERE orphan.status = 'cleaning'
+               AND (orphan.object_key = review_version_builds.plan->'manifestAsset'->>'objectKey'
+                 OR EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(
+                     CASE WHEN jsonb_typeof(review_version_builds.plan->'ratioAssets') = 'array'
+                          THEN review_version_builds.plan->'ratioAssets' ELSE '[]'::jsonb END
+                   ) ratio_asset WHERE ratio_asset->>'objectKey' = orphan.object_key
+                 ))
+           )
          RETURNING *`,
         [id, ownerToken],
       )
@@ -332,6 +352,17 @@ export function createVersionRepository(client) {
         `UPDATE review_version_builds
          SET owner_token = $2, updated_at = now()
          WHERE id = $1 AND state = 'in_progress'
+           AND NOT EXISTS (
+             SELECT 1 FROM orphaned_uploads orphan
+             WHERE orphan.status = 'cleaning'
+               AND (orphan.object_key = review_version_builds.plan->'manifestAsset'->>'objectKey'
+                 OR EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(
+                     CASE WHEN jsonb_typeof(review_version_builds.plan->'ratioAssets') = 'array'
+                          THEN review_version_builds.plan->'ratioAssets' ELSE '[]'::jsonb END
+                   ) ratio_asset WHERE ratio_asset->>'objectKey' = orphan.object_key
+                 ))
+           )
          RETURNING *`,
         [id, ownerToken],
       )
@@ -359,8 +390,9 @@ export function createVersionRepository(client) {
                last_error = NULL,
                cleaned_at = NULL,
                claimed_build_id = EXCLUDED.claimed_build_id
-           WHERE orphaned_uploads.claimed_build_id IS NULL
-              OR orphaned_uploads.claimed_build_id = EXCLUDED.claimed_build_id
+           WHERE (orphaned_uploads.claimed_build_id IS NULL
+                  OR orphaned_uploads.claimed_build_id = EXCLUDED.claimed_build_id)
+             AND orphaned_uploads.status <> 'cleaning'
            RETURNING claimed_build_id`,
           [identifiers.get(objectKey), objectKey, campaignId, buildId, adoptedAt],
         )
@@ -369,10 +401,55 @@ export function createVersionRepository(client) {
       return true
     },
 
+    async recordBuildObjectIdentity({ buildId, ownerToken, objectKey, generation, etag }) {
+      if (await hasCleanupIdentityColumns(client)) {
+        const result = await client.query(
+          `UPDATE orphaned_uploads orphan
+           SET object_generation = $4, object_etag = $5
+           FROM review_version_builds build
+           WHERE orphan.object_key = $3 AND orphan.claimed_build_id = $1
+             AND orphan.status = 'pending'
+             AND build.id = $1 AND build.owner_token = $2 AND build.state = 'in_progress'
+             AND (orphan.object_generation IS NULL OR orphan.object_generation = $4)
+           RETURNING orphan.id`,
+          [buildId, ownerToken, objectKey, generation, etag ?? null],
+        )
+        return result.rowCount === 1
+      }
+      const legacy = await client.query(
+        `SELECT orphan.id FROM orphaned_uploads orphan
+         JOIN review_version_builds build ON build.id = orphan.claimed_build_id
+         WHERE orphan.object_key = $3 AND orphan.claimed_build_id = $1
+           AND orphan.status = 'pending' AND build.owner_token = $2 AND build.state = 'in_progress'`,
+        [buildId, ownerToken, objectKey],
+      )
+      return legacy.rowCount === 1
+    },
+
     async finalizeBuild({ build, campaign, actor, snapshot, contentHash, sourceAssets, assets, reviewEventId, auditId, createdAt }) {
       const objectKeys = sortedObjectKeys(assets.map((asset) => asset.objectKey))
       for (const objectKey of objectKeys) {
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
+      }
+      let claims
+      if (await hasCleanupIdentityColumns(client)) {
+        claims = await client.query(
+          `SELECT object_key FROM orphaned_uploads
+           WHERE claimed_build_id = $1 AND status = 'pending'
+             AND object_generation IS NOT NULL AND object_key = ANY($2::text[])
+           FOR UPDATE`,
+          [build.id, objectKeys],
+        )
+      } else {
+        claims = await client.query(
+          `SELECT object_key FROM orphaned_uploads
+           WHERE claimed_build_id = $1 AND status = 'pending' AND object_key = ANY($2::text[])
+           FOR UPDATE`,
+          [build.id, objectKeys],
+        )
+      }
+      if (claims.rowCount !== objectKeys.length) {
+        throw Object.assign(new Error('Version build object ownership was lost'), { code: 'version_build_owner_lost' })
       }
       const versionResult = await client.query(
         `INSERT INTO campaign_versions
@@ -471,8 +548,9 @@ export function createVersionRepository(client) {
                last_error = NULL,
                cleaned_at = NULL,
                claimed_build_id = NULL
-           WHERE orphaned_uploads.claimed_build_id IS NULL
-              OR orphaned_uploads.claimed_build_id = $6`,
+           WHERE (orphaned_uploads.claimed_build_id IS NULL
+                  OR orphaned_uploads.claimed_build_id = $6)
+             AND orphaned_uploads.status <> 'cleaning'`,
           [orphanId, objectKey, campaignId, reason, failedAt, buildId],
         )
       }

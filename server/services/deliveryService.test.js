@@ -4,7 +4,7 @@ import { createDeliveryService } from './deliveryService.js'
 function dependencies() {
   return {
     pool: { query: vi.fn(), connect: vi.fn() },
-    assetStore: { put: vi.fn(), get: vi.fn(), delete: vi.fn(), createReadStream: vi.fn(), putStream: vi.fn() },
+    assetStore: { put: vi.fn(), get: vi.fn(), delete: vi.fn(), getMetadata: vi.fn(), createReadStream: vi.fn(), putStream: vi.fn() },
     transaction: vi.fn(),
     recoveryTransaction: vi.fn(),
   }

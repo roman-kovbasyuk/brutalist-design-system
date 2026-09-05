@@ -24,7 +24,7 @@ import { validateBannerRenderer } from '../rendering/bannerRenderer.js'
 import { compileRenderSlotProvenance, createInProcessRenderer } from '../rendering/inProcessRenderer.js'
 import { createIdempotencyRepository } from '../repositories/idempotencyRepository.js'
 import { createVersionRepository } from '../repositories/versionRepository.js'
-import { validateAssetStore } from '../storage/assetStore.js'
+import { validateVersionedAssetStore } from '../storage/assetStore.js'
 
 const editors = new Set(['marketer', 'admin'])
 const readers = new Set(['marketer', 'designer', 'admin'])
@@ -364,7 +364,7 @@ export function createVersionService({
   recoveryTimeoutMs = 250,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
-  validateAssetStore(assetStore)
+  validateVersionedAssetStore(assetStore)
   validateBannerRenderer(renderer)
   if (typeof transaction !== 'function' || typeof recoveryTransaction !== 'function'
     || typeof repositoryFactory !== 'function' || typeof idempotencyRepositoryFactory !== 'function') {
@@ -469,6 +469,7 @@ export function createVersionService({
         const active = await repository.findActiveBuildForUpdate(campaignId)
         if (active && active.id !== existing.id) fail(409, 'version_build_in_progress', 'Another review version is being created')
         existing = await repository.reactivateBuild({ id: existing.id, ownerToken })
+        if (!existing) fail(409, 'version_build_owner_lost', 'Version build ownership was lost')
       } else if (existing.ownerToken !== ownerToken) {
         existing = await repository.takeOverBuild({ id: existing.id, ownerToken })
         if (!existing) fail(409, 'version_build_in_progress', 'Another review version is being created')
@@ -649,7 +650,7 @@ export function createVersionService({
     }
   })
 
-  const storeBuild = async (rendered, possiblyCreated, deadlineAt) => {
+  const storeBuild = async (build, ownerToken, rendered, possiblyCreated, deadlineAt) => {
     for (const asset of rendered.assets) {
       possiblyCreated.add(asset.objectKey)
       let created = true
@@ -675,6 +676,23 @@ export function createVersionService({
         if (!created) fail(409, 'immutable_asset_conflict', 'A deterministic review object already exists with different bytes')
         fail(502, 'asset_integrity_failure', 'Stored review asset integrity verification failed')
       }
+      let identity
+      try {
+        identity = await beforeDeadline(deadlineAt, () => assetStore.getMetadata({ objectKey: asset.objectKey }))
+      } catch (error) {
+        throw normalizeStoreFailure(error)
+      }
+      if (!identity || identity.objectKey !== asset.objectKey || identity.byteSize !== asset.byteSize
+        || identity.contentType !== asset.mimeType
+        || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
+        || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
+        fail(502, 'asset_integrity_failure', 'Stored review asset identity verification failed')
+      }
+      const bound = await mainTransaction(deadlineAt, (client) => repositoryFactory(client).recordBuildObjectIdentity({
+        buildId: build.id, ownerToken, objectKey: asset.objectKey,
+        generation: identity.generation, etag: identity.etag,
+      }))
+      if (!bound) fail(409, 'version_build_owner_lost', 'Version build ownership was lost')
       possiblyCreated.add(asset.objectKey)
     }
   }
@@ -822,7 +840,7 @@ export function createVersionService({
         ]) possiblyCreated.add(objectKey)
         await adoptBuildObjects(build, ownerToken, deadlineAt)
         const rendered = await renderBuild(build, deadlineAt)
-        await storeBuild(rendered, possiblyCreated, deadlineAt)
+        await storeBuild(build, ownerToken, rendered, possiblyCreated, deadlineAt)
         return await finalizeBuild({
           actor, campaignId, expectedRevision, key: idempotencyKey, fingerprint, ownerToken, build, rendered, deadlineAt,
         })

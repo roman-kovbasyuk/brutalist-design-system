@@ -37,8 +37,14 @@ export function validateAssetStore(store) {
   return store
 }
 
-export function validateStreamingAssetStore(store) {
+export function validateVersionedAssetStore(store) {
   validateAssetStore(store)
+  if (typeof store.getMetadata !== 'function') throw new TypeError('Asset store must implement getMetadata')
+  return store
+}
+
+export function validateStreamingAssetStore(store) {
+  validateVersionedAssetStore(store)
   for (const method of ['createReadStream', 'putStream']) {
     if (typeof store[method] !== 'function') throw new TypeError(`Asset store must implement ${method}`)
   }
