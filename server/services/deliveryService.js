@@ -596,7 +596,8 @@ export function createDeliveryService({
       }
     }
     if (!identity || identity.objectKey !== build.plan.objectKey || identity.byteSize !== archive.byteSize
-      || identity.contentType !== 'application/zip' || identity.sha256 !== archive.sha256
+      || identity.contentType !== 'application/zip'
+      || identity.sha256 != null && identity.sha256 !== archive.sha256
       || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
       || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
       if (!created) fail(409, 'immutable_asset_conflict', 'A delivery object already exists with different bytes')

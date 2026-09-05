@@ -681,7 +681,8 @@ export function createVersionService({
         }
       }
       if (!identity || identity.objectKey !== asset.objectKey || identity.byteSize !== asset.byteSize
-        || identity.contentType !== asset.mimeType || identity.sha256 !== asset.sha256
+        || identity.contentType !== asset.mimeType
+        || identity.sha256 != null && identity.sha256 !== asset.sha256
         || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
         || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))) {
         if (!created) fail(409, 'immutable_asset_conflict', 'A deterministic review object already exists with different bytes')

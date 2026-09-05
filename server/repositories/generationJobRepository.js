@@ -822,25 +822,45 @@ export function createGenerationControlPlane({
             )
             if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
             await refreshTransactionDeadline(client, attemptDeadline)
+            if (orphan.status === 'cleaning'
+              && orphan.cleanup_lease_expires_at > orphan.observed_at) {
+              return { kind: 'claimed', objectKey: orphan.object_key }
+            }
             if (orphan.object_generation == null) {
               const expectedByteSize = Number(orphan.expected_byte_size)
               if (typeof getObjectMetadata === 'function'
                 && typeof orphan.expected_sha256 === 'string' && /^[a-f0-9]{64}$/.test(orphan.expected_sha256)
                 && Number.isSafeInteger(expectedByteSize) && expectedByteSize > 0
                 && typeof orphan.expected_mime_type === 'string') {
-                return {
-                  kind: 'reconcile',
-                  orphanId: orphan.id,
-                  object_key: orphan.object_key,
-                  expected_sha256: orphan.expected_sha256,
-                  expected_byte_size: expectedByteSize,
-                  expected_mime_type: orphan.expected_mime_type,
+                const cleanupToken = idGenerator()
+                const cleanupLeaseExpiresAt = new Date(orphan.observed_at.getTime() + cleanupLeaseMs)
+                const cleaning = await client.query(
+                  `UPDATE orphaned_uploads
+                   SET status = 'cleaning', cleanup_token = $3, cleanup_lease_expires_at = $4,
+                       claimed_build_id = NULL, claimed_delivery_build_id = NULL,
+                       object_etag = NULL, last_error = NULL, cleaned_at = NULL
+                   WHERE id = $1 AND object_key = $2 AND object_generation IS NULL
+                     AND expected_sha256 = $5 AND expected_byte_size = $6 AND expected_mime_type = $7
+                     AND (
+                       status IN ('pending', 'failed')
+                       OR (status = 'cleaning' AND cleanup_token IS NOT DISTINCT FROM $8
+                           AND cleanup_lease_expires_at <= clock_timestamp())
+                     )
+                   RETURNING object_key, cleanup_token`,
+                  [orphan.id, orphan.object_key, cleanupToken, cleanupLeaseExpiresAt,
+                    orphan.expected_sha256, expectedByteSize, orphan.expected_mime_type, orphan.cleanup_token],
+                )
+                if (cleaning.rowCount === 1) {
+                  return {
+                    kind: 'reconcile',
+                    orphanId: orphan.id,
+                    ...cleaning.rows[0],
+                    expected_sha256: orphan.expected_sha256,
+                    expected_byte_size: expectedByteSize,
+                    expected_mime_type: orphan.expected_mime_type,
+                  }
                 }
               }
-              return { kind: 'claimed', objectKey: orphan.object_key }
-            }
-            if (orphan.status === 'cleaning'
-              && orphan.cleanup_lease_expires_at > orphan.observed_at) {
               return { kind: 'claimed', objectKey: orphan.object_key }
             }
             const cleanupToken = idGenerator()
@@ -872,14 +892,17 @@ export function createGenerationControlPlane({
               return { kind: 'claimed', objectKey: phase.object_key }
             }
             const identity = metadata.value
-            if (identity != null && (
+            if (identity == null) {
+              return { kind: 'claimed', objectKey: phase.object_key }
+            }
+            if (
               identity.objectKey !== phase.object_key
               || identity.sha256 !== phase.expected_sha256
               || identity.byteSize !== phase.expected_byte_size
               || identity.contentType !== phase.expected_mime_type
               || typeof identity.generation !== 'string' || !/^[!-~]{1,255}$/.test(identity.generation)
               || identity.etag != null && (typeof identity.etag !== 'string' || !/^[!-~]{1,1024}$/.test(identity.etag))
-            )) {
+            ) {
               return { kind: 'claimed', objectKey: phase.object_key }
             }
             phase = await recoveryTransaction(pool, async (client, deadline) => {
@@ -890,13 +913,14 @@ export function createGenerationControlPlane({
               await refreshTransactionDeadline(client, phaseDeadline)
               const orphan = (await client.query(
                 `SELECT id, object_key FROM orphaned_uploads
-                 WHERE id = $1 AND object_key = $2 AND status IN ('pending', 'failed')
+                 WHERE id = $1 AND object_key = $2 AND status = 'cleaning'
+                   AND cleanup_token = $6
                    AND claimed_build_id IS NULL AND claimed_delivery_build_id IS NULL
                    AND object_generation IS NULL
                    AND expected_sha256 = $3 AND expected_byte_size = $4 AND expected_mime_type = $5
                  FOR UPDATE`,
                 [phase.orphanId, phase.object_key, phase.expected_sha256,
-                  phase.expected_byte_size, phase.expected_mime_type],
+                  phase.expected_byte_size, phase.expected_mime_type, phase.cleanup_token],
               )).rows[0]
               if (!orphan) return { kind: 'claimed', objectKey: phase.object_key }
               const referenced = await client.query(
@@ -911,31 +935,14 @@ export function createGenerationControlPlane({
                 [phase.object_key],
               )
               if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: phase.object_key }
-              if (identity == null) {
-                const cleaned = await client.query(
-                  `UPDATE orphaned_uploads
-                   SET status = 'cleaned', attempts = attempts + 1, last_error = NULL,
-                       cleaned_at = $3, cleanup_token = NULL, cleanup_lease_expires_at = NULL
-                   WHERE id = $1 AND object_key = $2 AND status IN ('pending', 'failed')
-                     AND object_generation IS NULL
-                   RETURNING id`,
-                  [phase.orphanId, phase.object_key, cleanedAt ?? clock()],
-                )
-                return cleaned.rowCount === 1
-                  ? { kind: 'cleaned', objectKey: phase.object_key }
-                  : { kind: 'claimed', objectKey: phase.object_key }
-              }
-              const cleanupToken = idGenerator()
-              const cleanupLeaseExpiresAt = new Date(startedAt.getTime() + cleanupLeaseMs)
               const cleaning = await client.query(
                 `UPDATE orphaned_uploads
-                 SET status = 'cleaning', cleanup_token = $3, cleanup_lease_expires_at = $4,
-                     object_generation = $5, object_etag = $6,
+                 SET object_generation = $4, object_etag = $5,
                      last_error = NULL, cleaned_at = NULL
-                 WHERE id = $1 AND object_key = $2 AND status IN ('pending', 'failed')
-                   AND object_generation IS NULL
+                 WHERE id = $1 AND object_key = $2 AND status = 'cleaning'
+                   AND cleanup_token = $3 AND object_generation IS NULL
                  RETURNING object_key, object_generation, object_etag, cleanup_token`,
-                [phase.orphanId, phase.object_key, cleanupToken, cleanupLeaseExpiresAt,
+                [phase.orphanId, phase.object_key, phase.cleanup_token,
                   identity.generation, identity.etag ?? null],
               )
               return cleaning.rowCount === 1

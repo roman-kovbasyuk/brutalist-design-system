@@ -199,6 +199,8 @@ export function createDeliveryRepository(client) {
       )
       const build = ownership.rows[0]
       if (!build || build.owner_token !== ownerToken || build.state !== 'in_progress' || build.campaign_id !== campaignId) return false
+      const cleanupIdentitySupported = await hasCleanupIdentityColumns(client)
+      const cleanupIntentSupported = await hasCleanupIntentColumns(client)
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [objectKey])
       const claimed = await client.query(
         `INSERT INTO orphaned_uploads
@@ -207,8 +209,17 @@ export function createDeliveryRepository(client) {
          VALUES ($1, $2, $3, 'delivery_in_progress', 'pending', NULL, NULL, NULL, $4, $5)
          ON CONFLICT (object_key) DO UPDATE
          SET campaign_id = EXCLUDED.campaign_id, reason = EXCLUDED.reason, status = 'pending',
+             attempts = CASE WHEN orphaned_uploads.status = 'cleaned' THEN 0 ELSE orphaned_uploads.attempts END,
              last_error = NULL, cleaned_at = NULL, claimed_build_id = NULL,
              claimed_delivery_build_id = EXCLUDED.claimed_delivery_build_id
+             ${cleanupIdentitySupported ? `,
+             object_generation = CASE WHEN orphaned_uploads.status = 'cleaned' THEN NULL ELSE orphaned_uploads.object_generation END,
+             object_etag = CASE WHEN orphaned_uploads.status = 'cleaned' THEN NULL ELSE orphaned_uploads.object_etag END,
+             cleanup_token = NULL, cleanup_lease_expires_at = NULL` : ''}
+             ${cleanupIntentSupported ? `,
+             expected_sha256 = CASE WHEN orphaned_uploads.status = 'cleaned' THEN NULL ELSE orphaned_uploads.expected_sha256 END,
+             expected_byte_size = CASE WHEN orphaned_uploads.status = 'cleaned' THEN NULL ELSE orphaned_uploads.expected_byte_size END,
+             expected_mime_type = CASE WHEN orphaned_uploads.status = 'cleaned' THEN NULL ELSE orphaned_uploads.expected_mime_type END` : ''}
          WHERE (orphaned_uploads.claimed_build_id IS NULL
                 AND orphaned_uploads.claimed_delivery_build_id IS NULL)
                AND orphaned_uploads.status <> 'cleaning'
