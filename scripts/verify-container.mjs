@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DockerfileParser, Keyword } from 'dockerfile-ast'
@@ -27,8 +28,31 @@ function parseJsonForm(value, instruction) {
   }
 }
 
+function hasDanglingEscape(source, escapeCharacter) {
+  const lines = source.replace(/\r\n/g, '\n').split('\n')
+  while (lines.length > 0 && lines.at(-1).trim() === '') lines.pop()
+  const lastLine = lines.at(-1)?.replace(/[ \t]+$/, '') ?? ''
+  let count = 0
+  for (let index = lastLine.length - 1; index >= 0 && lastLine[index] === escapeCharacter; index -= 1) count += 1
+  return count % 2 === 1
+}
+
+function validateShellRun(argumentsContent) {
+  const result = spawnSync('/bin/sh', ['-n'], {
+    input: `${argumentsContent}\n`,
+    encoding: 'utf8',
+    windowsHide: true,
+  })
+  if (result.error || result.status !== 0) {
+    throw new Error('Dockerfile diagnostic: RUN contains invalid shell syntax', { cause: result.error })
+  }
+}
+
 function validateAst(source) {
   const dockerfile = DockerfileParser.parse(source)
+  if (hasDanglingEscape(source, dockerfile.getEscapeCharacter())) {
+    throw new Error('Dockerfile diagnostic: dangling escape continuation at end of file')
+  }
   const instructions = dockerfile.getInstructions()
   for (const instruction of instructions) {
     const keyword = instruction.getKeyword()?.toUpperCase()
@@ -42,6 +66,7 @@ function validateAst(source) {
     if (jsonInstructions.has(keyword) && argumentsContent.startsWith('[')) {
       parseJsonForm(argumentsContent, keyword)
     }
+    if (keyword === Keyword.RUN && !argumentsContent.startsWith('[')) validateShellRun(argumentsContent)
     if (keyword === Keyword.HEALTHCHECK) {
       const healthCommand = argumentsContent.match(/^CMD\s+(\[[\s\S]*\])$/i)?.[1]
       if (healthCommand) parseJsonForm(healthCommand, keyword)

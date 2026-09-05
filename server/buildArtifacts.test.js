@@ -72,6 +72,25 @@ describe('production build verification', () => {
     await expect(verifyBuildArtifacts(root)).rejects.toThrow(/source map/i)
   })
 
+  test('rejects non-canonical raw and encoded Unicode build paths and references', async () => {
+    const rawPath = await writeValidBuild()
+    roots.push(rawPath)
+    await writeFile(join(rawPath, 'assets', 'café-a1b2c3d4.png'), 'image')
+    await writeFile(join(rawPath, 'index.html'), '<script src="/assets/app-a1b2c3d4.js"></script><img src="/assets/café-a1b2c3d4.png">')
+    await expect(verifyBuildArtifacts(rawPath)).rejects.toThrow(/canonical|non-ASCII/i)
+
+    const encodedPath = await writeValidBuild()
+    roots.push(encodedPath)
+    await writeFile(join(encodedPath, 'assets', 'cafe%CC%81-a1b2c3d4.png'), 'image')
+    await expect(verifyBuildArtifacts(encodedPath)).rejects.toThrow(/canonical|encoding/i)
+
+    const encodedReference = await writeValidBuild()
+    roots.push(encodedReference)
+    await writeFile(join(encodedReference, 'assets', 'café-a1b2c3d4.png'), 'image')
+    await writeFile(join(encodedReference, 'index.html'), '<script src="/assets/app-a1b2c3d4.js"></script><img src="/assets/caf%C3%A9-a1b2c3d4.png">')
+    await expect(verifyBuildArtifacts(encodedReference)).rejects.toThrow(/canonical|non-ASCII|encoding/i)
+  })
+
   test('parses every HTML and CSS asset reference and rejects one invalid reference among valid ones', async () => {
     const cases = [
       {
@@ -109,6 +128,19 @@ describe('production build verification', () => {
         file: 'index.html',
         content: '<script src="/assets/app-a1b2c3d4.js"></script><script src="/assets/app-a1b2c3d4.js.map.br"></script>',
         error: /source map/i,
+      },
+      {
+        name: 'SPA HTML asset that runtime will not serve directly',
+        file: 'index.html',
+        content: '<script src="/assets/app-a1b2c3d4.js"></script><iframe src="/assets/embed.html"></iframe>',
+        error: /not served directly/i,
+        extraFile: ['assets/embed.html', '<h1>Embedded</h1>'],
+      },
+      {
+        name: 'docs HTML asset that runtime canonicalizes instead of serving directly',
+        file: 'docs/index.html',
+        content: '<script src="/docs/assets/docs-a1b2c3d4.js"></script><iframe src="/docs/workflow.html"></iframe>',
+        error: /not served directly/i,
       },
       {
         name: 'malformed HTML URL',
@@ -169,6 +201,7 @@ describe('production build verification', () => {
     for (const testCase of cases) {
       const root = await writeValidBuild()
       roots.push(root)
+      if (testCase.extraFile) await writeFile(join(root, testCase.extraFile[0]), testCase.extraFile[1])
       await writeFile(join(root, testCase.file), testCase.content)
       await expect(verifyBuildArtifacts(root), testCase.name).rejects.toThrow(testCase.error)
     }

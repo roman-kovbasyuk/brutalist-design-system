@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { link, lstat, mkdtemp, mkdir, open, rename, rm, symlink, truncate, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -35,6 +35,99 @@ describe('immutable static build inventory', () => {
     const fifo = join(root, 'assets', 'stream-deadbeef.bin')
     execFileSync('mkfifo', [fifo])
     await expect(openStaticBuild(root)).rejects.toThrow(/regular file/i)
+  })
+
+  test('rejects a final file swapped after lstat and closes partial inventory descriptors', async () => {
+    const root = await makeBuild()
+    roots.push(root)
+    const target = join(root, 'assets', 'app-deadbeef.js')
+    const original = `${target}.original`
+    const handles = []
+    let swapped = false
+    let snapshotDirectory
+    const operations = {
+      lstat: async (path) => {
+        const metadata = await lstat(path)
+        if (path === target && !swapped) {
+          swapped = true
+          await rename(target, original)
+          await writeFile(target, 'export const value = "replacement"')
+        }
+        return metadata
+      },
+      open: async (...arguments_) => {
+        const handle = await open(...arguments_)
+        handles.push(handle)
+        return handle
+      },
+      mkdtemp: async (prefix) => {
+        snapshotDirectory = await mkdtemp(prefix)
+        return snapshotDirectory
+      },
+    }
+
+    await expect(openStaticBuild(root, { operations })).rejects.toThrow(/changed during startup|identity/i)
+    expect(swapped).toBe(true)
+    expect(handles.length).toBeGreaterThan(2)
+    for (const handle of handles) await expect(handle.stat()).rejects.toMatchObject({ code: 'EBADF' })
+    await expect(lstat(snapshotDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  test('rejects an intermediate directory swapped after lstat', async () => {
+    const root = await makeBuild()
+    roots.push(root)
+    const target = join(root, 'assets')
+    const original = `${target}-original`
+    let swapped = false
+    const operations = {
+      lstat: async (path) => {
+        const metadata = await lstat(path)
+        if (path === target && !swapped) {
+          swapped = true
+          await rename(target, original)
+          await mkdir(target)
+          await writeFile(join(target, 'app-deadbeef.js'), 'export const value = "replacement"')
+        }
+        return metadata
+      },
+    }
+
+    await expect(openStaticBuild(root, { operations })).rejects.toThrow(/changed during startup|identity/i)
+    expect(swapped).toBe(true)
+  })
+
+  test('rejects truncation between lstat and the verified descriptor copy', async () => {
+    const root = await makeBuild()
+    roots.push(root)
+    const target = join(root, 'assets', 'app-deadbeef.js')
+    let truncated = false
+    const operations = {
+      open: async (...arguments_) => {
+        const handle = await open(...arguments_)
+        if (arguments_[0] === target && !truncated) {
+          truncated = true
+          await truncate(target, 0)
+        }
+        return handle
+      },
+    }
+
+    await expect(openStaticBuild(root, { operations })).rejects.toThrow(/changed during startup|identity/i)
+    expect(truncated).toBe(true)
+  })
+
+  test('rejects hard-linked and non-canonical build entries', async () => {
+    const hardLinkRoot = await makeBuild()
+    roots.push(hardLinkRoot)
+    await link(join(hardLinkRoot, 'assets', 'app-deadbeef.js'), join(hardLinkRoot, 'assets', 'hardlink-deadbeef.js'))
+    await expect(openStaticBuild(hardLinkRoot)).rejects.toThrow(/hard link/i)
+
+    for (const name of ['café-deadbeef.png', 'cafe%CC%81-deadbeef.png', 'cafe\u0301-deadbeef.png']) {
+      const root = await makeBuild()
+      roots.push(root)
+      await writeFile(join(root, 'assets', name), 'image')
+      await expect(openStaticBuild(root)).rejects.toThrow(/canonical|non-ASCII|encoding/i)
+    }
   })
 
   test.each([

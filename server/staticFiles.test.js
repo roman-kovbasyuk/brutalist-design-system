@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { buildApp } from './app.js'
+import { openStaticBuild } from './staticFiles.js'
 
 const spaHtml = '<!doctype html><title>Banner Studio app</title><script type="module" src="/assets/app-deadbeef.js"></script>'
 const docsHtml = '<!doctype html><title>Banner Studio docs</title><link rel="stylesheet" href="/docs/assets/style-deadbeef.css">'
@@ -268,6 +269,26 @@ describe('production static serving', () => {
       expect(response.statusCode).toBe(200)
       expect(response.headers['content-length']).toBe(String(Buffer.byteLength(expected)))
       expect(response.body).toBe(index % 3 === 0 ? '' : expected)
+    }
+    await app.close()
+  })
+
+  test('returns a standard no-store JSON 500 for a closed retained descriptor', async () => {
+    const staticBuild = await openStaticBuild(root)
+    const entry = staticBuild.getFile('assets/app-deadbeef.js')
+    const app = buildApp({ staticBuild })
+    await app.ready()
+    await entry.handle.close()
+
+    for (const method of ['GET', 'HEAD']) {
+      const response = await app.inject({ method, url: '/assets/app-deadbeef.js' })
+      expect(response.statusCode).toBe(500)
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.headers['cache-control']).toBe('no-store')
+      expect(response.headers.etag).toBeUndefined()
+      expect(response.headers['x-frame-options']).toBeUndefined()
+      if (method === 'GET') expect(response.json()).toMatchObject({ code: 'INTERNAL_ERROR' })
+      else expect(response.body).toBe('')
     }
     await app.close()
   })

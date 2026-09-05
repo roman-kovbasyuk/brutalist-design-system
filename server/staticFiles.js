@@ -14,9 +14,9 @@ import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import mime from 'mime'
+import { assertStaticPathname, inspectStaticPathname } from '../shared/staticPathPolicy.js'
 
 const immutableName = /[.-][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/
-const sourceMapArtifact = /\.map(?:\.[A-Za-z0-9_-]+)*$/i
 const staticSecurityHeaders = Object.freeze({
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
@@ -24,6 +24,7 @@ const staticSecurityHeaders = Object.freeze({
 })
 const requiredBuildFiles = Object.freeze(['index.html', 'docs/index.html', 'docs/404.html'])
 const copyBufferSize = 64 * 1024
+const defaultOperations = Object.freeze({ chmod, lstat, mkdtemp, open, readdir, realpath, rm, unlink })
 
 function buildError(message, cause) {
   return new Error(`${message}; run npm run build before startup`, cause ? { cause } : undefined)
@@ -51,7 +52,38 @@ async function copyOpenedFile(source, target, size, hash) {
   }
 }
 
-async function snapshotFile({ absolutePath, file, temporaryRoot, index }) {
+async function hashOpenedFile(handle, size) {
+  const hash = createHash('sha256')
+  const buffer = Buffer.allocUnsafe(Math.min(copyBufferSize, Math.max(size, 1)))
+  let offset = 0
+  while (offset < size) {
+    const length = Math.min(buffer.length, size - offset)
+    const { bytesRead } = await handle.read(buffer, 0, length, offset)
+    if (bytesRead === 0) throw new Error('Static snapshot ended before its recorded length')
+    hash.update(buffer.subarray(0, bytesRead))
+    offset += bytesRead
+  }
+  return hash.digest('hex')
+}
+
+function sameOpenedFile(expected, actual) {
+  return expected.isFile()
+    && actual.isFile()
+    && expected.dev === actual.dev
+    && expected.ino === actual.ino
+    && expected.mode === actual.mode
+    && expected.size === actual.size
+}
+
+function sameOpenedDirectory(expected, actual) {
+  return expected.isDirectory()
+    && actual.isDirectory()
+    && expected.dev === actual.dev
+    && expected.ino === actual.ino
+    && expected.mode === actual.mode
+}
+
+async function snapshotFile({ absolutePath, file, metadata, temporaryRoot, index, operations }) {
   const noFollow = constants.O_NOFOLLOW ?? 0
   let source
   let target
@@ -59,11 +91,12 @@ async function snapshotFile({ absolutePath, file, temporaryRoot, index }) {
   const temporaryPath = join(temporaryRoot, `file-${index}`)
 
   try {
-    source = await open(absolutePath, constants.O_RDONLY | noFollow)
+    source = await operations.open(absolutePath, constants.O_RDONLY | noFollow)
     const before = await source.stat()
-    if (!before.isFile()) throw new Error(`Static build entry is not a regular file: ${file}`)
+    if (!sameOpenedFile(metadata, before)) throw new Error(`Static build entry identity changed during startup: ${file}`)
+    if (before.nlink !== 1) throw new Error(`Static build must not contain a hard link: ${file}`)
 
-    target = await open(
+    target = await operations.open(
       temporaryPath,
       constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | noFollow,
       0o600,
@@ -71,21 +104,30 @@ async function snapshotFile({ absolutePath, file, temporaryRoot, index }) {
     const hash = createHash('sha256')
     await copyOpenedFile(source, target, before.size, hash)
     await target.sync()
+    const expectedHash = hash.digest('hex')
 
     const after = await source.stat()
     if (
-      before.dev !== after.dev
-      || before.ino !== after.ino
-      || before.size !== after.size
+      !sameOpenedFile(before, after)
       || before.mtimeMs !== after.mtimeMs
     ) throw new Error(`Static build entry changed during startup: ${file}`)
 
+    const targetStat = await target.stat()
+    if (!targetStat.isFile() || targetStat.size !== before.size) {
+      throw new Error(`Static snapshot size verification failed: ${file}`)
+    }
+
     await target.close()
     target = undefined
-    await chmod(temporaryPath, 0o400)
-    snapshot = await open(temporaryPath, constants.O_RDONLY | noFollow)
+    await operations.chmod(temporaryPath, 0o400)
+    snapshot = await operations.open(temporaryPath, constants.O_RDONLY | noFollow)
     const snapshotStat = await snapshot.stat()
-    await unlink(temporaryPath)
+    if (!snapshotStat.isFile() || snapshotStat.size !== before.size) {
+      throw new Error(`Static snapshot size verification failed: ${file}`)
+    }
+    const snapshotHash = await hashOpenedFile(snapshot, snapshotStat.size)
+    if (snapshotHash !== expectedHash) throw new Error(`Static snapshot hash verification failed: ${file}`)
+    await operations.unlink(temporaryPath)
 
     return Object.freeze({
       file,
@@ -93,55 +135,100 @@ async function snapshotFile({ absolutePath, file, temporaryRoot, index }) {
       size: snapshotStat.size,
       dev: snapshotStat.dev,
       ino: snapshotStat.ino,
-      mtimeMs: before.mtimeMs,
-      etag: `"${hash.digest('hex')}"`,
+      mode: snapshotStat.mode,
+      mtimeMs: snapshotStat.mtimeMs,
+      sourceDev: before.dev,
+      sourceIno: before.ino,
+      sourceMtimeMs: before.mtimeMs,
+      etag: `"${expectedHash}"`,
       mimeType: file.endsWith('.js') ? 'application/javascript' : (mime.getType(file) ?? 'application/octet-stream'),
     })
   } catch (error) {
     await snapshot?.close().catch(() => {})
     await target?.close().catch(() => {})
-    await unlink(temporaryPath).catch(() => {})
+    await operations.unlink(temporaryPath).catch(() => {})
     throw error
   } finally {
     await source?.close().catch(() => {})
   }
 }
 
-async function inventoryDirectory({ directory, root, rootRealPath, temporaryRoot, entries }) {
-  for (const directoryEntry of await readdir(directory, { withFileTypes: true })) {
-    const absolutePath = join(directory, directoryEntry.name)
-    const file = relative(root, absolutePath).split(sep).join('/')
-    const details = await lstat(absolutePath)
-
-    if (details.isSymbolicLink()) throw new Error(`Static build must not contain a symbolic link: ${file}`)
-    if (directoryEntry.name.startsWith('.')) throw new Error(`Static build must not contain a dotfile: ${file}`)
-    if (sourceMapArtifact.test(directoryEntry.name)) throw new Error(`Static build must not contain a source map artifact: ${file}`)
-
-    const resolvedPath = await realpath(absolutePath)
-    if (!insideRoot(rootRealPath, resolvedPath)) throw new Error(`Static build entry resolves outside its root: ${file}`)
-
-    if (details.isDirectory()) {
-      await inventoryDirectory({ directory: absolutePath, root, rootRealPath, temporaryRoot, entries })
-      continue
+async function inventoryDirectory({ directory, metadata, root, rootRealPath, temporaryRoot, entries, operations }) {
+  const noFollow = constants.O_NOFOLLOW ?? 0
+  const directoryOnly = constants.O_DIRECTORY ?? 0
+  let directoryHandle
+  try {
+    directoryHandle = await operations.open(directory, constants.O_RDONLY | noFollow | directoryOnly)
+    const openedMetadata = await directoryHandle.stat()
+    if (!sameOpenedDirectory(metadata, openedMetadata)) {
+      throw new Error(`Static build directory identity changed during startup: ${relative(root, directory) || '.'}`)
     }
-    if (!details.isFile()) throw new Error(`Static build entry is not a regular file: ${file}`)
 
-    const snapshot = await snapshotFile({
-      absolutePath,
-      file,
-      temporaryRoot,
-      index: entries.size,
-    })
-    entries.set(file, snapshot)
+    const resolvedDirectory = await operations.realpath(directory)
+    if (!insideRoot(rootRealPath, resolvedDirectory)) {
+      throw new Error(`Static build directory resolves outside its root: ${relative(root, directory) || '.'}`)
+    }
+
+    const directoryEntries = await operations.readdir(directory, { withFileTypes: true })
+    directoryEntries.sort((left, right) => left.name.localeCompare(right.name, 'en'))
+    for (const directoryEntry of directoryEntries) {
+      const absolutePath = join(directory, directoryEntry.name)
+      const file = relative(root, absolutePath).split(sep).join('/')
+      const details = await operations.lstat(absolutePath)
+
+      if (details.isSymbolicLink()) throw new Error(`Static build must not contain a symbolic link: ${file}`)
+      try {
+        assertStaticPathname(file, { leadingSlash: false })
+      } catch (error) {
+        if (error.reason === 'source map') throw new Error(`Static build must not contain a source map artifact: ${file}`, { cause: error })
+        throw new Error(`Static build contains a non-canonical path: ${file}`, { cause: error })
+      }
+
+      const resolvedPath = await operations.realpath(absolutePath)
+      if (!insideRoot(rootRealPath, resolvedPath)) throw new Error(`Static build entry resolves outside its root: ${file}`)
+
+      if (details.isDirectory()) {
+        await inventoryDirectory({
+          directory: absolutePath,
+          metadata: details,
+          root,
+          rootRealPath,
+          temporaryRoot,
+          entries,
+          operations,
+        })
+        continue
+      }
+      if (!details.isFile()) throw new Error(`Static build entry is not a regular file: ${file}`)
+      if (details.nlink !== 1) throw new Error(`Static build must not contain a hard link: ${file}`)
+
+      const snapshot = await snapshotFile({
+        absolutePath,
+        file,
+        metadata: details,
+        temporaryRoot,
+        index: entries.size,
+        operations,
+      })
+      entries.set(file, snapshot)
+    }
+
+    const finalMetadata = await operations.lstat(directory)
+    if (!sameOpenedDirectory(openedMetadata, finalMetadata)) {
+      throw new Error(`Static build directory changed during startup: ${relative(root, directory) || '.'}`)
+    }
+  } finally {
+    await directoryHandle?.close().catch(() => {})
   }
 }
 
-export async function openStaticBuild(staticRoot) {
+export async function openStaticBuild(staticRoot, { operations: operationOverrides = {} } = {}) {
   if (typeof staticRoot !== 'string' || staticRoot.trim() === '') {
     throw new TypeError('staticRoot must be a non-empty directory path')
   }
 
   const root = resolve(staticRoot)
+  const operations = { ...defaultOperations, ...operationOverrides }
   const entries = new Map()
   let temporaryRoot
   let closePromise
@@ -158,13 +245,21 @@ export async function openStaticBuild(staticRoot) {
   }
 
   try {
-    const rootDetails = await lstat(root)
+    const rootDetails = await operations.lstat(root)
     if (rootDetails.isSymbolicLink() || !rootDetails.isDirectory()) {
       throw new Error(`Production static build root is not a regular directory: ${root}`)
     }
-    const rootRealPath = await realpath(root)
-    temporaryRoot = await mkdtemp(join(tmpdir(), 'banner-studio-static-snapshot-'))
-    await inventoryDirectory({ directory: root, root, rootRealPath, temporaryRoot, entries })
+    const rootRealPath = await operations.realpath(root)
+    temporaryRoot = await operations.mkdtemp(join(tmpdir(), 'banner-studio-static-snapshot-'))
+    await inventoryDirectory({
+      directory: root,
+      metadata: rootDetails,
+      root,
+      rootRealPath,
+      temporaryRoot,
+      entries,
+      operations,
+    })
 
     const missing = requiredBuildFiles.filter((file) => !entries.has(file))
     if (missing.length > 0) {
@@ -177,7 +272,7 @@ export async function openStaticBuild(staticRoot) {
     }
     throw buildError(`Production static build is unavailable at ${root}`, error)
   } finally {
-    if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true }).catch(() => {})
+    if (temporaryRoot) await operations.rm(temporaryRoot, { recursive: true, force: true }).catch(() => {})
   }
 
   return Object.freeze({
@@ -191,18 +286,8 @@ export async function openStaticBuild(staticRoot) {
 
 function requestPath(request) {
   const rawPath = request.raw.url?.split('?', 1)[0] ?? request.url.split('?', 1)[0]
-  if (rawPath.includes('%')) return null
-  if (/[^\x20-\x7e]/.test(rawPath) || /[\\\0-\x1f\x7f]/.test(rawPath)) return null
-  if (rawPath.normalize('NFKC') !== rawPath) return null
-
-  const segments = rawPath.split('/')
-  if (segments.some((segment, index) => (
-    segment === '.'
-    || segment === '..'
-    || segment.startsWith('.')
-    || (segment === '' && index !== 0 && index !== segments.length - 1)
-  ))) return null
-  return rawPath
+  const result = inspectStaticPathname(rawPath, { leadingSlash: true, allowTrailingSlash: true })
+  return result.ok ? result.pathname : null
 }
 
 function acceptsHtml(request) {
@@ -243,21 +328,65 @@ function setStaticHeaders(reply, entry) {
   reply.type(entry.mimeType)
 }
 
-function sendKnownFile(request, reply, build, file, statusCode = 200) {
+function clearStaticHeaders(reply) {
+  for (const name of Object.keys(staticSecurityHeaders)) reply.removeHeader(name)
+  for (const name of ['Content-Length', 'Content-Type', 'ETag']) reply.removeHeader(name)
+  reply.header('Cache-Control', 'no-store')
+}
+
+function snapshotIdentityMatches(entry, metadata) {
+  return metadata.isFile()
+    && entry.dev === metadata.dev
+    && entry.ino === metadata.ino
+    && entry.mode === metadata.mode
+    && entry.size === metadata.size
+}
+
+async function readInitialChunk(entry) {
+  if (entry.size === 0) return Buffer.alloc(0)
+  const length = Math.min(copyBufferSize, entry.size)
+  const buffer = Buffer.allocUnsafe(length)
+  let offset = 0
+  while (offset < length) {
+    const { bytesRead } = await entry.handle.read(buffer, offset, length - offset, offset)
+    if (bytesRead === 0) throw new Error('Static snapshot ended before its recorded length')
+    offset += bytesRead
+  }
+  return buffer
+}
+
+async function sendKnownFile(request, reply, build, file, statusCode = 200) {
   const entry = build.getFile(file)
   if (!entry) return null
+  let initialChunk
+  try {
+    const metadata = await entry.handle.stat()
+    if (!snapshotIdentityMatches(entry, metadata)) throw new Error('Static snapshot descriptor identity changed')
+    initialChunk = request.method === 'HEAD' ? Buffer.alloc(0) : await readInitialChunk(entry)
+  } catch (cause) {
+    clearStaticHeaders(reply)
+    throw new Error('Static snapshot is unavailable', { cause })
+  }
   setStaticHeaders(reply, entry)
   reply.code(statusCode)
-  const stream = createEntryStream(entry)
+  const stream = createEntryStream(entry, initialChunk)
   return reply.send(stream)
 }
 
-function createEntryStream(entry) {
-  let position = 0
+function createEntryStream(entry, firstChunk) {
+  let position = firstChunk.length
+  let initialChunk = firstChunk
   let reading = false
-  return new Readable({
+  const stream = new Readable({
     read(requestedSize) {
       if (reading) return
+      if (initialChunk !== undefined) {
+        const chunk = initialChunk
+        initialChunk = undefined
+        if (chunk.length > 0) this.push(chunk)
+        if (position >= entry.size) this.push(null)
+        return
+      }
       if (position >= entry.size) {
         this.push(null)
         return
@@ -280,6 +409,8 @@ function createEntryStream(entry) {
       })
     },
   })
+  stream.on('error', () => {})
+  return stream
 }
 
 function sendNotFound(reply) {

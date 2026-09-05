@@ -59,4 +59,14 @@ describe('production container configuration', () => {
       dockerignore,
     })).rejects.toThrow(/Dockerfile diagnostic|JSON form/i)
   })
+
+  test('rejects dangling continuations and unmatched shell-form RUN quotes without executing them', async () => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+
+    await expect(verifyContainerConfiguration({ dockerfile: `${dockerfile}RUN echo unfinished \\`, dockerignore }))
+      .rejects.toThrow(/dangling.*continuation|Dockerfile diagnostic/i)
+    await expect(verifyContainerConfiguration({ dockerfile: `${dockerfile}RUN echo "unterminated\n`, dockerignore }))
+      .rejects.toThrow(/shell syntax|Dockerfile diagnostic/i)
+  })
 })

@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { parse } from 'parse5'
 import postcss from 'postcss'
 import valueParser from 'postcss-value-parser'
+import { assertStaticPathname } from '../shared/staticPathPolicy.js'
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'dist')
-const sourceMapArtifact = /\.map(?:\.[A-Za-z0-9_-]+)*$/i
 const assetElements = new Map([
   ['audio', ['src']],
   ['embed', ['src']],
@@ -38,11 +38,15 @@ async function collectFiles(directory, root, files) {
     const filePath = relative(root, absolutePath).split(sep).join('/')
     const details = await lstat(absolutePath)
     if (details.isSymbolicLink()) throw new Error(`Build output must not contain symbolic links: ${filePath}`)
-    if (entry.name.startsWith('.')) throw new Error(`Build output must not contain dotfiles: ${filePath}`)
+    try {
+      assertStaticPathname(filePath, { leadingSlash: false })
+    } catch (error) {
+      if (error.reason === 'source map') throw new Error(`Build output must not contain source maps: ${filePath}`, { cause: error })
+      throw new Error(`Build output path is not canonical: ${filePath}`, { cause: error })
+    }
     if (details.isDirectory()) {
       await collectFiles(absolutePath, root, files)
     } else if (details.isFile()) {
-      if (sourceMapArtifact.test(filePath)) throw new Error(`Build output must not contain source maps: ${filePath}`)
       files.add(filePath)
     } else {
       throw new Error(`Build output must contain regular files only: ${filePath}`)
@@ -69,26 +73,19 @@ function validateReference({ reference, document, files }) {
     const expectedRoot = document.startsWith('docs/') ? '/docs/' : '/assets/'
     throw new Error(`${document} contains a relative asset reference; expected a root-relative ${expectedRoot} asset: ${reference}`)
   }
-  if (/[\\\0-\x1f\x7f]/.test(value)) throw new Error(`${document} contains a malformed asset reference: ${reference}`)
-
-  const encodedPathname = value.split(/[?#]/, 1)[0]
-  let pathname = encodedPathname
+  const pathname = value.split(/[?#]/, 1)[0]
   try {
-    for (let depth = 0; depth < 8; depth += 1) {
-      const decoded = decodeURIComponent(pathname)
-      if (decoded === pathname) break
-      pathname = decoded
-      if (depth === 7) throw new Error('Asset reference exceeds the decoding limit')
-    }
+    assertStaticPathname(pathname, { leadingSlash: true })
   } catch (error) {
-    throw new Error(`${document} contains a malformed asset reference: ${reference}`, { cause: error })
+    if (error.reason === 'dot segment or separator') {
+      throw new Error(`${document} contains asset traversal: ${reference}`, { cause: error })
+    }
+    if (error.reason === 'source map') throw new Error(`${document} references a source map: ${reference}`, { cause: error })
+    throw new Error(`${document} contains a malformed asset reference (non-canonical): ${reference}`, { cause: error })
   }
-  if (/[\\\0-\x1f\x7f]/.test(pathname)) throw new Error(`${document} contains a malformed asset reference: ${reference}`)
-  if (pathname.split('/').some((segment) => segment === '.' || segment === '..')) {
-    throw new Error(`${document} contains asset traversal: ${reference}`)
+  if (pathname.endsWith('.html')) {
+    throw new Error(`${document} references an HTML path that is not served directly: ${reference}`)
   }
-  if (encodedPathname.includes('%')) throw new Error(`${document} contains a malformed asset reference: ${reference}`)
-  if (sourceMapArtifact.test(pathname)) throw new Error(`${document} references a source map: ${reference}`)
 
   const expectedRoot = document.startsWith('docs/') ? '/docs/' : '/assets/'
   if (!pathname.startsWith(expectedRoot)) {
