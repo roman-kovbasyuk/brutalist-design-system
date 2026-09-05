@@ -121,6 +121,9 @@ describe('production container configuration', () => {
     ['duplicate COPY flags', (source) => insertBeforeRuntimeCommand(source, 'COPY --from=builder --from=builder /tmp/source /tmp/destination'), /duplicate.*flag/i],
     ['an unknown COPY flag', (source) => insertBeforeRuntimeCommand(source, 'COPY --bogus=value /tmp/source /tmp/destination'), /COPY.*flag.*not permitted|unknown.*flag/i],
     ['an empty COPY stage flag', (source) => insertBeforeRuntimeCommand(source, 'COPY --from= /tmp/source /tmp/destination'), /COPY.*from.*value|unknown.*stage/i],
+    ['ADD from a named stage', (source) => insertBeforeRuntimeCommand(source, 'ADD --from=builder /tmp/source /tmp/destination'), /ADD.*flags?.*not permitted/i],
+    ['ADD from a numeric stage', (source) => insertBeforeRuntimeCommand(source, 'ADD --from=0 /tmp/source /tmp/destination'), /ADD.*flags?.*not permitted/i],
+    ['ADD with another flag', (source) => insertBeforeRuntimeCommand(source, 'ADD --chown=node /tmp/source /tmp/destination'), /ADD.*flags?.*not permitted|unknown.*flag/i],
   ])('rejects unsafe Docker startup and stage constructs: %s', async (_name, mutate, error) => {
     const dockerfile = await readFile('Dockerfile', 'utf8')
     const dockerignore = await readFile('.dockerignore', 'utf8')

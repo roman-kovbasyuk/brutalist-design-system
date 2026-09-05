@@ -165,20 +165,20 @@ function validateHealthcheck(instruction, argumentsContent) {
   }
 }
 
-function validateCopyOrAddStage(instruction, keyword, currentStage, stageAliases) {
-  const flags = validateFlags(instruction, keyword, new Set(['from']))
+function validateCopyStage(instruction, currentStage, stageAliases) {
+  const flags = validateFlags(instruction, Keyword.COPY, new Set(['from']))
   if (!flags.has('from')) return
   const reference = flags.get('from') ?? ''
-  if (!reference) throw new Error(`Dockerfile diagnostic: ${keyword} --from requires a stage value`)
+  if (!reference) throw new Error('Dockerfile diagnostic: COPY --from requires a stage value')
 
   let referencedStage
   if (/^(?:0|[1-9]\d*)$/.test(reference)) referencedStage = Number(reference)
   else referencedStage = stageAliases.get(reference.toLowerCase())
   if (referencedStage === undefined) {
-    throw new Error(`Dockerfile diagnostic: ${keyword} --from must reference a declared local stage`)
+    throw new Error('Dockerfile diagnostic: COPY --from must reference a declared local stage')
   }
   if (referencedStage >= currentStage) {
-    throw new Error(`Dockerfile diagnostic: ${keyword} --from must reference an earlier stage`)
+    throw new Error('Dockerfile diagnostic: COPY --from must reference an earlier stage')
   }
 }
 
@@ -189,9 +189,16 @@ function validateInstructionSemantics(instruction, keyword, argumentsContent, { 
   if (keyword === Keyword.ONBUILD) {
     throw new Error('Dockerfile diagnostic: ONBUILD is not permitted in the production image')
   }
-  if (keyword === Keyword.COPY || keyword === Keyword.ADD) {
+  if (keyword === Keyword.ADD) {
     validateCopyOrAdd(keyword, argumentsContent)
-    validateCopyOrAddStage(instruction, keyword, currentStage, stageAliases)
+    if ((instruction.getFlags?.() ?? []).length > 0) {
+      throw new Error('Dockerfile diagnostic: ADD flags are not permitted in this production image')
+    }
+    return
+  }
+  if (keyword === Keyword.COPY) {
+    validateCopyOrAdd(keyword, argumentsContent)
+    validateCopyStage(instruction, currentStage, stageAliases)
     return
   }
   if (keyword === Keyword.ENV) {
