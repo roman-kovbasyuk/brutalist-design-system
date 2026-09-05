@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env*
+.claude
+.impeccable
+.openai
+.superpowers
+coverage
+dist
+docs
+node_modules
+*.log
+**/*.test.js

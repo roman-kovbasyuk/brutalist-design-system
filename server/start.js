@@ -12,21 +12,26 @@ export async function startServer({ environment = process.env, runtimeFactory = 
   }
 }
 
+export function installShutdownHandlers(runtime, { processLike = process, logger = console } = {}) {
+  let shutdownPromise
+  const shutdown = () => {
+    if (!shutdownPromise) {
+      shutdownPromise = runtime.close().catch((error) => {
+        logger.error('Banner Studio shutdown failed', error)
+        processLike.exitCode = 1
+      })
+    }
+    return shutdownPromise
+  }
+
+  processLike.once('SIGTERM', () => { void shutdown() })
+  processLike.once('SIGINT', () => { void shutdown() })
+  return shutdown
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   startServer().then((runtime) => {
-    let shuttingDown = false
-    const shutdown = async () => {
-      if (shuttingDown) return
-      shuttingDown = true
-      try {
-        await runtime.close()
-      } catch (error) {
-        console.error('Banner Studio shutdown failed', error)
-        process.exitCode = 1
-      }
-    }
-    process.once('SIGTERM', () => { void shutdown() })
-    process.once('SIGINT', () => { void shutdown() })
+    installShutdownHandlers(runtime)
   }).catch((error) => {
     console.error('Banner Studio failed to start', error)
     process.exitCode = 1

@@ -16,6 +16,7 @@ import { createAssetService } from './services/assetService.js'
 import { createVersionService } from './services/versionService.js'
 import { createReviewService } from './services/reviewService.js'
 import { createDeliveryService } from './services/deliveryService.js'
+import { inspectStaticBuild } from './staticFiles.js'
 
 const productionDependencies = {
   buildApp,
@@ -35,12 +36,15 @@ const productionDependencies = {
   createVersionService,
   createReviewService,
   createDeliveryService,
+  inspectStaticBuild,
   runMigrations,
 }
 
 export async function createServerRuntime({ environment = process.env, dependencies = {} } = {}) {
   const resolved = { ...productionDependencies, ...dependencies }
   const config = loadConfig(environment)
+  const staticRoot = config.staticServing.enabled ? config.staticServing.root : undefined
+  if (staticRoot !== undefined) resolved.inspectStaticBuild(staticRoot)
   const pool = resolved.createPool({ connectionString: config.databaseUrl })
   let app
   let tokenVerifier
@@ -72,7 +76,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
   }
 
   try {
-    await resolved.runMigrations({ pool })
+    if (config.runMigrationsOnStartup) await resolved.runMigrations({ pool })
     const providerSelection = config.generation.provider === 'gemini'
       ? {
           provider: 'gemini',
@@ -127,6 +131,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       versionService,
       reviewService,
       deliveryService,
+      staticRoot,
     })
     return { app, close, config }
   } catch (error) {

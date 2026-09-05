@@ -12,6 +12,7 @@ import { registerReviewRoutes } from './routes/review.js'
 import { registerDeliveryRoutes } from './routes/delivery.js'
 import { apiErrorResponseSchema } from '../shared/contracts.js'
 import { createAuthorizer } from './auth/authorize.js'
+import { registerStaticFiles } from './staticFiles.js'
 
 const safeRequestId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
@@ -33,7 +34,7 @@ function errorEnvelope(code, message, requestId, details) {
   }
 }
 
-export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService, versionService, reviewService, deliveryService } = {}) {
+export function buildApp({ readiness = async () => true, resolveActor, workflowService, generationService, assetService, versionService, reviewService, deliveryService, staticRoot } = {}) {
   const app = Fastify({
     logger: false,
     requestIdHeader: false,
@@ -83,6 +84,8 @@ export function buildApp({ readiness = async () => true, resolveActor, workflowS
     if (reviewService) registerReviewRoutes(app, { requireRole, reviewService })
     if (deliveryService) registerDeliveryRoutes(app, { requireRole, deliveryService })
   }
+
+  if (staticRoot !== undefined) registerStaticFiles(app, staticRoot)
 
   app.setNotFoundHandler((request, reply) => reply.code(404).send(apiErrorResponseSchema.parse(errorEnvelope(
     'NOT_FOUND',

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "start": "node server/start.js",
+    "migrate": "node server/db/migrate.js",
     "build": "node scripts/build.mjs",
+    "verify:production": "node scripts/verify-build.mjs && node scripts/verify-container.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs",
     "preview": "vite preview",
     "smoke:gemini": "node scripts/smoke-gemini.mjs",
     "test": "vitest",

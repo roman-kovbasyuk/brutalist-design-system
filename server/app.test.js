@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { resolve } from 'node:path'
 import { buildApp } from './app.js'
 import { loadConfig } from './config.js'
 
@@ -168,11 +169,39 @@ describe('Banner Studio API shell', () => {
         bucket: undefined,
         projectId: undefined,
       },
+      staticServing: {
+        enabled: false,
+        root: resolve('dist'),
+      },
+      runMigrationsOnStartup: true,
     })
     expect(Object.isFrozen(config)).toBe(true)
   })
 
   test('rejects a missing environment object', () => {
     expect(() => loadConfig()).toThrow('Environment configuration must be an object')
+  })
+
+  test('enables the production static build and allows an explicit local production-parity composition', () => {
+    const production = loadConfig({
+      NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner', FIREBASE_PROJECT_ID: 'banner-project',
+      GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
+      ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-assets', GCS_PROJECT_ID: 'banner-project',
+      STATIC_ROOT: './release-output',
+    })
+    const parity = loadConfig({ NODE_ENV: 'test', GENERATION_PROVIDER: 'mock', SERVE_STATIC: 'true', STATIC_ROOT: './test-output' })
+
+    expect(production.staticServing).toEqual({ enabled: true, root: resolve('release-output') })
+    expect(production.runMigrationsOnStartup).toBe(false)
+    expect(parity.staticServing).toEqual({ enabled: true, root: resolve('test-output') })
+    expect(parity.runMigrationsOnStartup).toBe(true)
+    expect(() => loadConfig({ NODE_ENV: 'test', SERVE_STATIC: 'yes' })).toThrow('SERVE_STATIC must be true or false')
+    expect(() => loadConfig({ NODE_ENV: 'test', RUN_MIGRATIONS: 'yes' })).toThrow('RUN_MIGRATIONS must be true or false')
+    expect(() => loadConfig({
+      NODE_ENV: 'production', DATABASE_URL: 'postgresql:///banner', FIREBASE_PROJECT_ID: 'banner-project',
+      GENERATION_PROVIDER: 'gemini', VERTEX_AI_PROJECT_ID: 'banner-project',
+      ASSET_STORE: 'gcs', GCS_ASSET_BUCKET: 'banner-assets', GCS_PROJECT_ID: 'banner-project',
+      SERVE_STATIC: 'false',
+    })).toThrow('SERVE_STATIC cannot be disabled in production')
   })
 })

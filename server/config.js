@@ -1,8 +1,11 @@
 import { GEMINI_IMAGE_MODELS, GEMINI_LOCATIONS, GEMINI_TEXT_MODELS } from './providers/registry.js'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const validNodeEnvironments = new Set(['development', 'production', 'test'])
 const validGenerationProviders = new Set(['mock', 'gemini'])
 const validAssetStores = new Set(['memory', 'gcs'])
+const defaultStaticRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 
 function parsePort(value) {
   if (value === undefined) return 3000
@@ -16,6 +19,20 @@ function parsePort(value) {
   }
 
   return port
+}
+
+function parseStaticServing(value, nodeEnv) {
+  if (value === undefined) return nodeEnv === 'production'
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error('SERVE_STATIC must be true or false')
+}
+
+function parseMigrationStartup(value, nodeEnv) {
+  if (value === undefined) return nodeEnv !== 'production'
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error('RUN_MIGRATIONS must be true or false')
 }
 
 export function loadConfig(environment) {
@@ -60,6 +77,12 @@ export function loadConfig(environment) {
   const assetProjectId = environment.GCS_PROJECT_ID?.trim()
   if (assetStore === 'gcs' && !assetBucket) throw new Error('GCS_ASSET_BUCKET is required for GCS asset storage')
   if (assetStore === 'gcs' && !assetProjectId) throw new Error('GCS_PROJECT_ID is required for GCS asset storage')
+  const serveStatic = parseStaticServing(environment.SERVE_STATIC, nodeEnv)
+  if (nodeEnv === 'production' && !serveStatic) throw new Error('SERVE_STATIC cannot be disabled in production')
+  const suppliedStaticRoot = environment.STATIC_ROOT?.trim()
+  if (environment.STATIC_ROOT !== undefined && !suppliedStaticRoot) throw new Error('STATIC_ROOT must be a non-empty path')
+  const staticRoot = resolve(suppliedStaticRoot || defaultStaticRoot)
+  const runMigrationsOnStartup = parseMigrationStartup(environment.RUN_MIGRATIONS, nodeEnv)
 
   return Object.freeze({
     nodeEnv,
@@ -79,5 +102,10 @@ export function loadConfig(environment) {
       bucket: assetBucket,
       projectId: assetProjectId,
     }),
+    staticServing: Object.freeze({
+      enabled: serveStatic,
+      root: staticRoot,
+    }),
+    runMigrationsOnStartup,
   })
 }
