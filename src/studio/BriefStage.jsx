@@ -95,12 +95,17 @@ export function BriefStage({
   }
   return (
     <section className="bs-brief">
-      <SectionHeading
-        title={campaign ? 'The campaign brief' : 'What are we creating?'}
-      >
-        Paste your idea or attach a brief. AI will use the context to write five
-        banner options.
-      </SectionHeading>
+      {campaign ? (
+        <p className="bs-brief-intro">
+          Paste your idea or attach a brief. AI will use the context to write five
+          banner options.
+        </p>
+      ) : (
+        <SectionHeading title="What are we creating?">
+          Paste your idea or attach a brief. AI will use the context to write five
+          banner options.
+        </SectionHeading>
+      )}
       <PromptComposer
         value={message}
         onChange={(value) => {
