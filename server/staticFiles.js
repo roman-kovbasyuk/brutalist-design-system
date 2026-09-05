@@ -16,7 +16,8 @@ import { Readable } from 'node:stream'
 import mime from 'mime'
 import { assertStaticPathname, inspectStaticPathname } from '../shared/staticPathPolicy.js'
 
-const immutableName = /[.-][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/
+const viteAssetPath = /^assets\/(?:[^/]+\/)*[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/
+const vitePressAssetPath = /^docs\/assets\/(?:[^/]+\/)*[^/]+\.[A-Za-z0-9_-]{8}(?:\.lean)?\.[A-Za-z0-9]+$/
 const staticSecurityHeaders = Object.freeze({
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
@@ -278,6 +279,7 @@ export async function openStaticBuild(staticRoot, { operations: operationOverrid
   return Object.freeze({
     root,
     fileCount: entries.size,
+    files: Object.freeze([...entries.keys()].sort()),
     hasFile: (file) => entries.has(file),
     getFile: (file) => entries.get(file),
     close,
@@ -319,7 +321,9 @@ function acceptsHtml(request) {
 
 function setStaticHeaders(reply, entry) {
   for (const [name, value] of Object.entries(staticSecurityHeaders)) reply.header(name, value)
-  const cacheControl = immutableName.test(entry.file)
+  const isHtml = entry.mimeType.toLowerCase().split(';', 1)[0] === 'text/html'
+  const contentAddressedAsset = viteAssetPath.test(entry.file) || vitePressAssetPath.test(entry.file)
+  const cacheControl = !isHtml && contentAddressedAsset
     ? 'public, max-age=31536000, immutable'
     : 'no-cache'
   reply.header('Cache-Control', cacheControl)

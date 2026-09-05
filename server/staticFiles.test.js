@@ -6,7 +6,7 @@ import { buildApp } from './app.js'
 import { openStaticBuild } from './staticFiles.js'
 
 const spaHtml = '<!doctype html><title>Banner Studio app</title><script type="module" src="/assets/app-deadbeef.js"></script>'
-const docsHtml = '<!doctype html><title>Banner Studio docs</title><link rel="stylesheet" href="/docs/assets/style-deadbeef.css">'
+const docsHtml = '<!doctype html><title>Banner Studio docs</title><link rel="stylesheet" href="/docs/assets/style.deadbeef.css">'
 const workflowHtml = '<!doctype html><title>Workflow documentation</title>'
 const docsNotFoundHtml = '<!doctype html><title>Documentation page not found</title>'
 
@@ -16,11 +16,17 @@ async function makeBuild() {
   await mkdir(join(root, 'docs', 'assets'), { recursive: true })
   await writeFile(join(root, 'index.html'), spaHtml)
   await writeFile(join(root, 'assets', 'app-deadbeef.js'), 'globalThis.bannerStudio = true')
+  await writeFile(join(root, 'assets', 'index-xryxnqUg.js'), 'globalThis.viteEntry = true')
   await writeFile(join(root, 'assets', 'unhashed.js'), 'globalThis.unhashed = true')
+  await writeFile(join(root, 'worker-deadbeef.js'), 'globalThis.worker = true')
   await writeFile(join(root, 'docs', 'index.html'), docsHtml)
   await writeFile(join(root, 'docs', 'workflow.html'), workflowHtml)
+  await writeFile(join(root, 'docs', 'release-notes-deadbeef.html'), '<!doctype html><title>Release notes</title>')
+  await writeFile(join(root, 'docs', 'release.notes-deadbeef.html'), '<!doctype html><title>Dotted release notes</title>')
   await writeFile(join(root, 'docs', '404.html'), docsNotFoundHtml)
-  await writeFile(join(root, 'docs', 'assets', 'style-deadbeef.css'), 'body{color:#123}')
+  await writeFile(join(root, 'docs', 'assets', 'style.deadbeef.css'), 'body{color:#123}')
+  await writeFile(join(root, 'docs', 'assets', 'index.md.Oo9y6jBz.lean.js'), 'export const page = true')
+  await writeFile(join(root, 'docs', 'assets', 'unhashed.js'), 'export const unhashed = true')
   return root
 }
 
@@ -89,7 +95,7 @@ describe('production static serving', () => {
     const nested = await app.inject({ method: 'GET', url: '/docs/workflow', headers: { accept: 'text/html' } })
     const dirtyNested = await app.inject({ method: 'GET', url: '/docs/workflow.html', headers: { accept: 'text/html' } })
     const nestedSlash = await app.inject({ method: 'GET', url: '/docs/workflow/', headers: { accept: 'text/html' } })
-    const asset = await app.inject({ method: 'GET', url: '/docs/assets/style-deadbeef.css' })
+    const asset = await app.inject({ method: 'GET', url: '/docs/assets/style.deadbeef.css' })
 
     expect(withoutSlash.statusCode).toBe(308)
     expect(withoutSlash.headers.location).toBe('/docs/')
@@ -110,6 +116,29 @@ describe('production static serving', () => {
     expectStaticSecurityHeaders(docsRoot)
     expectStaticSecurityHeaders(asset)
     await app.close()
+  })
+
+  test.each(['GET', 'HEAD'])('derives %s cache policy from trusted MIME and generated asset paths', async (method) => {
+    const app = buildApp({ staticRoot: root })
+    try {
+      const cases = [
+        ['/docs/release-notes-deadbeef', 'no-cache'],
+        ['/docs/release.notes-deadbeef', 'no-cache'],
+        ['/assets/index-xryxnqUg.js', 'public, max-age=31536000, immutable'],
+        ['/docs/assets/index.md.Oo9y6jBz.lean.js', 'public, max-age=31536000, immutable'],
+        ['/assets/unhashed.js', 'no-cache'],
+        ['/docs/assets/unhashed.js', 'no-cache'],
+        ['/worker-deadbeef.js', 'no-cache'],
+      ]
+
+      for (const [url, cacheControl] of cases) {
+        const response = await app.inject({ method, url, headers: { accept: 'text/html' } })
+        expect(response.statusCode, url).toBe(200)
+        expect(response.headers['cache-control'], url).toBe(cacheControl)
+      }
+    } finally {
+      await app.close()
+    }
   })
 
   test('returns the built docs 404 with status 404 and never falls through to the SPA', async () => {
@@ -296,7 +325,7 @@ describe('production static serving', () => {
   test('gives HEAD the same status and headers as GET without response bytes', async () => {
     const app = buildApp({ staticRoot: root })
 
-    for (const url of ['/', '/campaign/campaign-1', '/assets/app-deadbeef.js', '/docs/', '/docs/workflow', '/docs/assets/style-deadbeef.css']) {
+    for (const url of ['/', '/campaign/campaign-1', '/assets/app-deadbeef.js', '/docs/', '/docs/workflow', '/docs/assets/style.deadbeef.css']) {
       const headers = url.includes('/assets/') ? {} : { accept: 'text/html' }
       const get = await app.inject({ method: 'GET', url, headers })
       const head = await app.inject({ method: 'HEAD', url, headers })

@@ -2,6 +2,10 @@ import { readFile } from 'node:fs/promises'
 import { describe, expect, test } from 'vitest'
 import { verifyContainerConfiguration } from '../scripts/verify-container.mjs'
 
+function replaceHealthcheck(source, replacement) {
+  return source.replace(/^HEALTHCHECK[\s\S]*?(?=\n\nCMD )/m, replacement)
+}
+
 describe('production container configuration', () => {
   test('uses one pinned Node 22 runtime serving API, app, and docs as a non-root process', async () => {
     await expect(verifyContainerConfiguration()).resolves.toMatchObject({
@@ -68,5 +72,32 @@ describe('production container configuration', () => {
       .rejects.toThrow(/dangling.*continuation|Dockerfile diagnostic/i)
     await expect(verifyContainerConfiguration({ dockerfile: `${dockerfile}RUN echo "unterminated\n`, dockerignore }))
       .rejects.toThrow(/shell syntax|Dockerfile diagnostic/i)
+  })
+
+  test.each([
+    ['shell COPY without a destination', (source) => source.replace('COPY package.json package-lock.json ./', 'COPY package.json'), /COPY.*source.*destination|COPY.*arguments/i],
+    ['JSON COPY without a destination', (source) => `${source}\nCOPY ["only-source"]\n`, /COPY.*source.*destination|COPY.*arguments/i],
+    ['shell ADD without a destination', (source) => `${source}\nADD archive.tar\n`, /ADD.*source.*destination|ADD.*arguments/i],
+    ['JSON ADD without a destination', (source) => `${source}\nADD ["archive.tar"]\n`, /ADD.*source.*destination|ADD.*arguments/i],
+    ['ENV without a value', (source) => `${source}\nENV ONLY_KEY\n`, /ENV.*value|ENV.*assignment/i],
+    ['HEALTHCHECK with the wrong command keyword', (source) => replaceHealthcheck(source, 'HEALTHCHECK --interval=30s RUN echo /healthz'), /HEALTHCHECK.*CMD|HEALTHCHECK.*NONE/i],
+    ['HEALTHCHECK NONE with trailing arguments', (source) => replaceHealthcheck(source, 'HEALTHCHECK NONE extra'), /HEALTHCHECK.*NONE|HEALTHCHECK.*CMD/i],
+    ['HEALTHCHECK CMD without a command', (source) => replaceHealthcheck(source, 'HEALTHCHECK CMD'), /HEALTHCHECK.*command/i],
+  ])('rejects semantically incomplete Docker instructions: %s', async (_name, mutate, error) => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+    await expect(verifyContainerConfiguration({ dockerfile: mutate(dockerfile), dockerignore })).rejects.toThrow(error)
+  })
+
+  test.each([
+    ['instruction before the first FROM', (source) => `RUN echo preface\n${source}`, /before.*FROM|FROM.*first/i],
+    ['extra USER argument', (source) => `${source}\nUSER node extra\n`, /USER.*one argument/i],
+    ['extra WORKDIR argument', (source) => `${source}\nWORKDIR "/app" extra\n`, /WORKDIR.*one argument/i],
+    ['invalid EXPOSE port', (source) => `${source}\nEXPOSE not-a-port\n`, /EXPOSE.*port/i],
+    ['shell-form SHELL instruction', (source) => `${source}\nSHELL bin sh\n`, /SHELL.*JSON/i],
+  ])('audits common Docker instruction forms and stage ordering: %s', async (_name, mutate, error) => {
+    const dockerfile = await readFile('Dockerfile', 'utf8')
+    const dockerignore = await readFile('.dockerignore', 'utf8')
+    await expect(verifyContainerConfiguration({ dockerfile: mutate(dockerfile), dockerignore })).rejects.toThrow(error)
   })
 })

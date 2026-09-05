@@ -1,10 +1,10 @@
-import { lstat, readdir, readFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'parse5'
 import postcss from 'postcss'
 import valueParser from 'postcss-value-parser'
 import { assertStaticPathname } from '../shared/staticPathPolicy.js'
+import { openStaticBuild } from '../server/staticFiles.js'
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const assetElements = new Map([
@@ -25,38 +25,17 @@ const assetLinkRelations = new Set([
   'apple-touch-icon', 'icon', 'manifest', 'modulepreload', 'preload', 'stylesheet',
 ])
 
-async function collectFiles(directory, root, files) {
-  let entries
-  try {
-    entries = await readdir(directory, { withFileTypes: true })
-  } catch (error) {
-    throw new Error(`Build output directory is unavailable: ${root}`, { cause: error })
-  }
-
-  for (const entry of entries) {
-    const absolutePath = join(directory, entry.name)
-    const filePath = relative(root, absolutePath).split(sep).join('/')
-    const details = await lstat(absolutePath)
-    if (details.isSymbolicLink()) throw new Error(`Build output must not contain symbolic links: ${filePath}`)
-    try {
-      assertStaticPathname(filePath, { leadingSlash: false })
-    } catch (error) {
-      if (error.reason === 'source map') throw new Error(`Build output must not contain source maps: ${filePath}`, { cause: error })
-      throw new Error(`Build output path is not canonical: ${filePath}`, { cause: error })
-    }
-    if (details.isDirectory()) {
-      await collectFiles(absolutePath, root, files)
-    } else if (details.isFile()) {
-      files.add(filePath)
-    } else {
-      throw new Error(`Build output must contain regular files only: ${filePath}`)
-    }
-  }
-}
-
-async function requireFile(root, files, file) {
+async function requireFile(build, files, file) {
   if (!files.has(file)) throw new Error(`Build output is missing ${file}`)
-  return readFile(join(root, file), 'utf8')
+  const entry = build.getFile(file)
+  const content = Buffer.allocUnsafe(entry.size)
+  let offset = 0
+  while (offset < entry.size) {
+    const { bytesRead } = await entry.handle.read(content, offset, entry.size - offset, offset)
+    if (bytesRead === 0) throw new Error(`Build snapshot ended before its recorded length: ${file}`)
+    offset += bytesRead
+  }
+  return content.toString('utf8')
 }
 
 function isExternalReference(reference) {
@@ -175,47 +154,51 @@ function verifyReferences({ references, document, files }) {
   for (const reference of references) validateReference({ reference, document, files })
 }
 
-export async function verifyBuildArtifacts(staticRoot = defaultRoot) {
+export async function verifyBuildArtifacts(staticRoot = defaultRoot, { openBuild = openStaticBuild } = {}) {
   const root = resolve(staticRoot)
-  const files = new Set()
-  await collectFiles(root, root, files)
+  const build = await openBuild(root)
+  try {
+    const files = new Set(build.files)
 
-  await requireFile(root, files, 'index.html')
-  await requireFile(root, files, 'docs/index.html')
-  await requireFile(root, files, 'docs/404.html')
+    await requireFile(build, files, 'index.html')
+    await requireFile(build, files, 'docs/index.html')
+    await requireFile(build, files, 'docs/404.html')
 
-  const nestedDocsPage = [...files]
-    .filter((file) => file.startsWith('docs/') && file.endsWith('.html') && !['docs/index.html', 'docs/404.html'].includes(file))
-    .sort()[0]
-  if (!nestedDocsPage) throw new Error('Build output is missing a representative nested docs HTML page')
+    const nestedDocsPage = [...files]
+      .filter((file) => file.startsWith('docs/') && file.endsWith('.html') && !['docs/index.html', 'docs/404.html'].includes(file))
+      .sort()[0]
+    if (!nestedDocsPage) throw new Error('Build output is missing a representative nested docs HTML page')
 
-  for (const document of [...files].sort()) {
-    if (document.endsWith('.html')) {
-      const source = await readFile(join(root, document), 'utf8')
-      const references = htmlReferences(source, document)
-      verifyReferences({ references, document, files })
-      const requiredRoot = document === 'index.html' ? '/assets/' : (document === 'docs/index.html' ? '/docs/' : undefined)
-      if (requiredRoot && !references.some((reference) => reference.trim().startsWith(requiredRoot))) {
-        throw new Error(`${document} must reference at least one root-relative ${requiredRoot} asset`)
+    for (const document of [...files].sort()) {
+      if (document.endsWith('.html')) {
+        const source = await requireFile(build, files, document)
+        const references = htmlReferences(source, document)
+        verifyReferences({ references, document, files })
+        const requiredRoot = document === 'index.html' ? '/assets/' : (document === 'docs/index.html' ? '/docs/' : undefined)
+        if (requiredRoot && !references.some((reference) => reference.trim().startsWith(requiredRoot))) {
+          throw new Error(`${document} must reference at least one root-relative ${requiredRoot} asset`)
+        }
+      } else if (document.endsWith('.css')) {
+        const source = await requireFile(build, files, document)
+        verifyReferences({ references: cssReferences(source, document), document, files })
       }
-    } else if (document.endsWith('.css')) {
-      const source = await readFile(join(root, document), 'utf8')
-      verifyReferences({ references: cssReferences(source, document), document, files })
     }
+
+    const spaAssetCount = [...files].filter((file) => file.startsWith('assets/')).length
+    const docsAssetCount = [...files].filter((file) => file.startsWith('docs/assets/')).length
+    if (spaAssetCount === 0 || docsAssetCount === 0) throw new Error('Build output must include SPA and docs assets')
+
+    return Object.freeze({
+      root,
+      spaIndex: 'index.html',
+      docsIndex: 'docs/index.html',
+      nestedDocsPage,
+      spaAssetCount,
+      docsAssetCount,
+    })
+  } finally {
+    await build.close()
   }
-
-  const spaAssetCount = [...files].filter((file) => file.startsWith('assets/')).length
-  const docsAssetCount = [...files].filter((file) => file.startsWith('docs/assets/')).length
-  if (spaAssetCount === 0 || docsAssetCount === 0) throw new Error('Build output must include SPA and docs assets')
-
-  return Object.freeze({
-    root,
-    spaIndex: 'index.html',
-    docsIndex: 'docs/index.html',
-    nestedDocsPage,
-    spaAssetCount,
-    docsAssetCount,
-  })
 }
 
 async function main() {

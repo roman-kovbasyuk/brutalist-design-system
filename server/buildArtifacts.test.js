@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { link, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -59,6 +59,43 @@ describe('production build verification', () => {
     roots.push(symlinkRoot)
     await symlink('/etc/passwd', join(symlinkRoot, 'assets', 'outside-a1b2c3d4.txt'))
     await expect(verifyBuildArtifacts(symlinkRoot)).rejects.toThrow(/symbolic link/i)
+  })
+
+  test('rejects a symlink build root and hard-linked build entries exactly as production startup does', async () => {
+    const target = await writeValidBuild()
+    roots.push(target)
+    const linkedRoot = `${target}-link`
+    roots.push(linkedRoot)
+    await symlink(target, linkedRoot)
+    await expect(verifyBuildArtifacts(linkedRoot)).rejects.toThrow(/static build root|regular directory/i)
+
+    const hardLinked = await writeValidBuild()
+    roots.push(hardLinked)
+    const outside = `${hardLinked}-outside.js`
+    roots.push(outside)
+    await writeFile(outside, 'export {}')
+    await link(outside, join(hardLinked, 'assets', 'hard-link-a1b2c3d4.js'))
+    await expect(verifyBuildArtifacts(hardLinked)).rejects.toThrow(/hard link/i)
+  })
+
+  test('closes the shared production inventory on successful and failed reference verification', async () => {
+    for (const invalid of [false, true]) {
+      const root = await writeValidBuild()
+      roots.push(root)
+      if (invalid) {
+        await writeFile(join(root, 'index.html'), '<script src="/assets/app-a1b2c3d4.js"></script><img src="./relative.png">')
+      }
+      let capturedBuild
+      const openBuild = async (staticRoot) => {
+        const { openStaticBuild } = await import('./staticFiles.js')
+        capturedBuild = await openStaticBuild(staticRoot)
+        return capturedBuild
+      }
+
+      if (invalid) await expect(verifyBuildArtifacts(root, { openBuild })).rejects.toThrow(/relative asset reference/i)
+      else await expect(verifyBuildArtifacts(root, { openBuild })).resolves.toBeDefined()
+      await expect(capturedBuild.getFile('index.html').handle.stat()).rejects.toMatchObject({ code: 'EBADF' })
+    }
   })
 
   test.each([
