@@ -75,7 +75,7 @@ export function PromptComposer({
           value={value}
           rows={7}
           disabled={locked}
-          aria-describedby={`${id}-hint`}
+          aria-describedby={hint ? `${id}-hint` : undefined}
           placeholder="Describe what you’re promoting, or drop your campaign brief here…"
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
@@ -125,9 +125,7 @@ export function PromptComposer({
           </div>
         )}
       </div>
-      <p id={`${id}-hint`} className="v2-block-hint">
-        {hint}
-      </p>
+      {hint && <p id={`${id}-hint`} className="v2-block-hint">{hint}</p>}
     </form>
   )
 }

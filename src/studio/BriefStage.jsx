@@ -124,11 +124,7 @@ export function BriefStage({
         busy={extracting || Boolean(pending)}
         canSubmit={Boolean(notes.trim()) && !tooLong}
         submitLabel="Analyze brief"
-        hint={
-          readOnly
-            ? 'This brief is read-only.'
-            : 'Up to 5 MB per file · 20,000 characters total · Ctrl / ⌘ + Enter to send'
-        }
+        hint={campaign ? '' : readOnly ? 'This brief is read-only.' : 'Up to 5 MB per file · 20,000 characters total · Ctrl / ⌘ + Enter to send'}
       />
       {extracting && (
         <p className="bs-note" role="status">
@@ -139,13 +135,6 @@ export function BriefStage({
         <p className="bs-brief-error" role="alert">
           {error ||
             'The combined brief exceeds 20,000 characters. Shorten it before continuing.'}
-        </p>
-      )}
-      {campaign && !readOnly && (
-        <p className="bs-note" role="status">
-          {dirty
-            ? 'Your changes will be saved before generating.'
-            : 'Saved brief. You can refine it and generate a new set.'}
         </p>
       )}
     </section>
