@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
-import { PassThrough, Readable } from 'node:stream'
+import { PassThrough, Readable, Writable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { AssetStoreError, assertSafeObjectKey } from './assetStore.js'
 import { createMemoryAssetStore } from './memoryAssetStore.js'
 import { createGcsAssetStore } from './gcsAssetStore.js'
@@ -23,6 +24,57 @@ describe('private immutable asset stores', () => {
     await expect(store.delete({ objectKey })).resolves.toEqual({ deleted: true })
     await expect(store.delete({ objectKey })).resolves.toEqual({ deleted: false })
     await expect(store.get({ objectKey })).resolves.toBeNull()
+  })
+
+  test('memory storage exposes bounded create-only streams for delivery tests', async () => {
+    const store = createMemoryAssetStore({ maxStreamBytes: 32 })
+    await expect(store.putStream({
+      objectKey,
+      stream: Readable.from([Buffer.from('private '), Buffer.from('bytes')]),
+      contentType: 'application/zip',
+      maxBytes: 32,
+    })).resolves.toEqual({ objectKey, byteSize: 13 })
+
+    const parts = []
+    const readable = await store.createReadStream({ objectKey })
+    await pipeline(readable, new Writable({ write(chunk, _encoding, done) { parts.push(Buffer.from(chunk)); done() } }))
+    expect(Buffer.concat(parts)).toEqual(Buffer.from('private bytes'))
+    await expect(store.putStream({
+      objectKey: `${objectKey}.other`, stream: Readable.from([Buffer.alloc(33)]),
+      contentType: 'application/zip', maxBytes: 32,
+    })).rejects.toMatchObject({ code: 'asset_too_large' })
+  })
+
+  test('memory streaming upload aborts a stalled source without retaining a reservation', async () => {
+    const store = createMemoryAssetStore({ maxStreamBytes: 32 })
+    const source = new PassThrough()
+    const controller = new AbortController()
+    const upload = store.putStream({
+      objectKey, stream: source, contentType: 'application/zip', maxBytes: 32, signal: controller.signal,
+    })
+    controller.abort()
+    const outcome = await Promise.race([
+      upload.catch((error) => error),
+      new Promise((resolve) => setTimeout(() => resolve({ code: 'abort_ignored' }), 50)),
+    ])
+    expect(outcome).toMatchObject({ code: 'storage_aborted' })
+    await expect(store.putStream({
+      objectKey, stream: Readable.from([Buffer.from('retry')]), contentType: 'application/zip', maxBytes: 32,
+    })).resolves.toEqual({ objectKey, byteSize: 5 })
+  })
+
+  test('memory streaming reads expose bounded views instead of copying one large buffer', async () => {
+    const store = createMemoryAssetStore()
+    await store.put({ objectKey, bytes: Buffer.alloc(256 * 1024, 0x61), contentType: 'application/zip' })
+    const stream = await store.createReadStream({ objectKey })
+    let largest = 0
+    let total = 0
+    for await (const chunk of stream) {
+      largest = Math.max(largest, chunk.length)
+      total += chunk.length
+    }
+    expect(total).toBe(256 * 1024)
+    expect(largest).toBeLessThanOrEqual(64 * 1024)
   })
 
   test.each(['', '/absolute.png', '../escape.png', 'safe/../escape.png', 'safe\\escape.png', 'safe//empty.png', 'https://public.example/a.png'])
@@ -56,6 +108,60 @@ describe('private immutable asset stores', () => {
     expect(createReadStream).toHaveBeenCalledWith({ validation: 'crc32c' })
     expect(download).not.toHaveBeenCalled()
     await expect(store.delete({ objectKey })).resolves.toEqual({ deleted: true })
+  })
+
+  test('GCS streaming writes use create-only CRC32C upload and preserve backpressure', async () => {
+    const received = []
+    const createWriteStream = vi.fn(() => new Writable({
+      highWaterMark: 2,
+      write(chunk, _encoding, done) { received.push(Buffer.from(chunk)); setImmediate(done) },
+    }))
+    const file = vi.fn(() => ({ createWriteStream }))
+    const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
+
+    await expect(store.putStream({
+      objectKey, stream: Readable.from([Buffer.from('abc'), Buffer.from('def')]),
+      contentType: 'application/zip', maxBytes: 6,
+    })).resolves.toEqual({ objectKey, byteSize: 6 })
+    expect(Buffer.concat(received)).toEqual(Buffer.from('abcdef'))
+    expect(createWriteStream).toHaveBeenCalledWith({
+      resumable: false,
+      validation: 'crc32c',
+      preconditionOpts: { ifGenerationMatch: 0 },
+      metadata: { contentType: 'application/zip', cacheControl: 'private, max-age=31536000, immutable' },
+    })
+  })
+
+  test('GCS streaming reads and writes honor one AbortSignal', async () => {
+    const read = new PassThrough()
+    const write = new PassThrough()
+    const file = vi.fn(() => ({ createReadStream: () => read, createWriteStream: () => write }))
+    const store = createGcsAssetStore({ bucketName: 'private-assets', storage: { bucket: () => ({ file }) } })
+    const controller = new AbortController()
+    const source = await store.createReadStream({ objectKey, signal: controller.signal })
+    const upload = store.putStream({
+      objectKey: `${objectKey}.zip`, stream: new PassThrough(), contentType: 'application/zip',
+      maxBytes: 10, signal: controller.signal,
+    })
+    controller.abort()
+    await expect(upload).rejects.toMatchObject({ code: 'storage_aborted' })
+    expect(source.destroyed).toBe(true)
+    expect(write.destroyed).toBe(true)
+  })
+
+  test('GCS streaming upload destroys its source and maps an erroring sink safely', async () => {
+    const providerError = Object.assign(new Error('provider secret'), { code: 500 })
+    const source = Readable.from([Buffer.alloc(128 * 1024, 0x61)])
+    const target = new Writable({ write(_chunk, _encoding, done) { done(providerError) } })
+    const store = createGcsAssetStore({
+      bucketName: 'private-assets',
+      storage: { bucket: () => ({ file: () => ({ createWriteStream: () => target }) }) },
+    })
+    await expect(store.putStream({
+      objectKey, stream: source, contentType: 'application/zip', maxBytes: 128 * 1024,
+    })).rejects.toMatchObject({ code: 'storage_unavailable', message: expect.not.stringContaining('secret') })
+    expect(source.destroyed).toBe(true)
+    expect(target.destroyed).toBe(true)
   })
 
   test('destroys a stalled GCS read stream at its request deadline and cleans listeners', async () => {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { Writable } from 'node:stream'
-import { finished } from 'node:stream/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { ZipArchive } from 'archiver'
 
 const safeArchivePath = /^(?:banners\/banner-[0-9]{3}\.png|delivery-manifest\.json|render-manifest\.json)$/
@@ -26,6 +27,16 @@ function bytes(value) {
   return result
 }
 
+function source(entry) {
+  if (typeof entry?.path !== 'string' || entry.path.length < 1) {
+    throw new DeliveryArchiveError('invalid_archive_source', 'Archive entry source is required')
+  }
+  if (!Number.isSafeInteger(entry.byteSize) || entry.byteSize < 1) {
+    throw new DeliveryArchiveError('invalid_archive_bytes', 'Archive entry byte size is invalid')
+  }
+  return { filename: filename(entry.filename), path: entry.path, byteSize: entry.byteSize }
+}
+
 function filename(value) {
   if (typeof value !== 'string' || !safeArchivePath.test(value) || !/^[\x20-\x7e]+$/.test(value)) {
     throw new DeliveryArchiveError('unsafe_archive_path', 'Archive filename is unsafe or ambiguous')
@@ -42,18 +53,21 @@ function archiveTimestamp(value) {
   return parsed
 }
 
-export async function buildDeterministicDeliveryArchive({ entries, deliveryManifestBytes, timestamp, maxBytes }) {
+export async function buildDeterministicDeliveryArchiveFile({
+  entries, deliveryManifestBytes, timestamp, maxBytes, outputPath, signal,
+}) {
   if (!Array.isArray(entries) || entries.length < 1) throw new TypeError('Delivery archive entries are required')
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new TypeError('A positive archive byte ceiling is required')
+  if (typeof outputPath !== 'string' || outputPath.length < 1) throw new TypeError('A server-owned archive output path is required')
 
   const prepared = [
-    ...entries.map((entry) => ({ filename: filename(entry?.filename), bytes: bytes(entry?.bytes) })),
-    { filename: 'delivery-manifest.json', bytes: bytes(deliveryManifestBytes) },
+    ...entries.map(source),
+    { filename: 'delivery-manifest.json', bytes: bytes(deliveryManifestBytes), byteSize: deliveryManifestBytes.byteLength },
   ].sort((left, right) => compareText(left.filename, right.filename))
   if (new Set(prepared.map((entry) => entry.filename)).size !== prepared.length) {
     throw new DeliveryArchiveError('duplicate_archive_path', 'Archive filenames must be unique')
   }
-  if (prepared.reduce((total, entry) => total + entry.bytes.length, 0) > maxBytes) {
+  if (prepared.reduce((total, entry) => total + entry.byteSize, 0) > maxBytes) {
     throw new DeliveryArchiveError('archive_too_large', 'Delivery archive exceeds its byte ceiling')
   }
 
@@ -63,45 +77,42 @@ export async function buildDeterministicDeliveryArchive({ entries, deliveryManif
     forceZip64: false,
     statConcurrency: 1,
   })
-  const chunks = []
   const hash = createHash('sha256')
   let byteSize = 0
   let overflow
-  const sink = new Writable({
+  const meter = new Transform({
     highWaterMark: 64 * 1024,
-    write(chunk, _encoding, callback) {
-      const part = Buffer.from(chunk)
-      byteSize += part.length
+    transform(chunk, _encoding, callback) {
+      byteSize += chunk.length
       if (byteSize > maxBytes) {
         overflow = new DeliveryArchiveError('archive_too_large', 'Delivery archive exceeds its byte ceiling')
         callback(overflow)
         return
       }
-      hash.update(part)
-      chunks.push(part)
-      callback()
+      hash.update(chunk)
+      callback(null, chunk)
     },
   })
-  zip.on('warning', (error) => sink.destroy(error))
-  zip.on('error', (error) => sink.destroy(error))
-  zip.pipe(sink)
+  const sink = createWriteStream(outputPath, { flags: 'wx', mode: 0o600, highWaterMark: 64 * 1024 })
   const date = archiveTimestamp(timestamp)
   for (const entry of prepared) {
-    zip.append(entry.bytes, {
+    const options = {
       name: entry.filename,
       date,
       mode: 0o100644,
       store: true,
-    })
+    }
+    if (entry.bytes) zip.append(entry.bytes, options)
+    else zip.append(createReadStream(entry.path, { highWaterMark: 64 * 1024, signal }), options)
   }
-  const completed = finished(sink)
-  await zip.finalize()
+  const completed = pipeline(zip, meter, sink, { signal })
   try {
+    await zip.finalize()
     await completed
   } catch (error) {
     zip.abort()
+    await completed.catch(() => {})
     throw overflow ?? error
   }
-  const output = Buffer.concat(chunks, byteSize)
-  return { bytes: output, byteSize, sha256: hash.digest('hex') }
+  return { path: outputPath, byteSize, sha256: hash.digest('hex') }
 }

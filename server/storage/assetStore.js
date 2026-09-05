@@ -36,3 +36,11 @@ export function validateAssetStore(store) {
   }
   return store
 }
+
+export function validateStreamingAssetStore(store) {
+  validateAssetStore(store)
+  for (const method of ['createReadStream', 'putStream']) {
+    if (typeof store[method] !== 'function') throw new TypeError(`Asset store must implement ${method}`)
+  }
+  return store
+}

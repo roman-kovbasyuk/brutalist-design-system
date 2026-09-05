@@ -130,6 +130,17 @@ export function createDeliveryRepository(client) {
       return mapDelivery(result.rows[0])
     },
 
+    async isDeliveryStateValid(versionId) {
+      const result = await client.query(
+        `SELECT delivery_state_is_valid($1, false)
+                AND (SELECT count(*) = 1 FROM audit_events
+                     WHERE version_id = $1
+                       AND action IN ('campaign.delivered', 'campaign.deliver')) AS valid`,
+        [versionId],
+      )
+      return result.rows[0]?.valid === true
+    },
+
     async findBuildForUpdate(versionId) {
       const result = await client.query('SELECT * FROM delivery_builds WHERE version_id = $1 FOR UPDATE', [versionId])
       return mapBuild(result.rows[0])

@@ -1,4 +1,6 @@
 import { Storage } from '@google-cloud/storage'
+import { addAbortSignal, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { assertAssetBytes, assertContentType, assertSafeObjectKey, AssetStoreError } from './assetStore.js'
 
 function statusCode(error) {
@@ -89,6 +91,43 @@ export function createGcsAssetStore({ bucketName, projectId, storage } = {}) {
         if (error instanceof AssetStoreError) throw error
         throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
       }
+    },
+    async createReadStream({ objectKey, signal } = {}) {
+      assertSafeObjectKey(objectKey)
+      if (signal?.aborted) throw storageFailure('storage_aborted', 'Private asset storage operation was aborted')
+      const stream = bucket.file(objectKey).createReadStream({ validation: 'crc32c' })
+      if (signal) addAbortSignal(signal, stream)
+      return stream
+    },
+    async putStream({ objectKey, stream, contentType, maxBytes, signal } = {}) {
+      assertSafeObjectKey(objectKey)
+      assertContentType(contentType)
+      if (!stream || typeof stream.pipe !== 'function') throw storageFailure('invalid_asset_stream', 'Asset stream is required')
+      if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw storageFailure('invalid_asset_limit', 'Asset stream byte ceiling is required')
+      let byteSize = 0
+      const limiter = new Transform({
+        transform(chunk, _encoding, done) {
+          byteSize += chunk.length
+          if (byteSize > maxBytes) return done(storageFailure('asset_too_large', 'Stored asset exceeds the allowed byte length'))
+          done(null, chunk)
+        },
+      })
+      const target = bucket.file(objectKey).createWriteStream({
+        resumable: false,
+        validation: 'crc32c',
+        preconditionOpts: { ifGenerationMatch: 0 },
+        metadata: { contentType, cacheControl: 'private, max-age=31536000, immutable' },
+      })
+      try {
+        await pipeline(stream, limiter, target, { signal })
+      } catch (error) {
+        if (error instanceof AssetStoreError) throw error
+        if (signal?.aborted || error?.name === 'AbortError') throw storageFailure('storage_aborted', 'Private asset storage operation was aborted')
+        if ([409, 412].includes(statusCode(error))) throw storageFailure('object_exists', 'Asset object already exists')
+        throw storageFailure('storage_unavailable', 'Private asset storage is unavailable')
+      }
+      if (byteSize < 1) throw storageFailure('invalid_asset_bytes', 'Asset bytes are required')
+      return { objectKey, byteSize }
     },
     async delete({ objectKey }) {
       assertSafeObjectKey(objectKey)

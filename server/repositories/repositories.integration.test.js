@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Pool } from 'pg'
 import { runMigrations } from '../db/migrate.js'
@@ -69,21 +70,28 @@ function deferred() {
 
 function storedZipEntries(bytes) {
   const entries = []
-  let offset = 0
-  while (offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50) {
-    const flags = bytes.readUInt16LE(offset + 6)
-    const method = bytes.readUInt16LE(offset + 8)
-    const compressedSize = bytes.readUInt32LE(offset + 18)
-    const filenameLength = bytes.readUInt16LE(offset + 26)
-    const extraLength = bytes.readUInt16LE(offset + 28)
-    if ((flags & 0x08) !== 0 || method !== 0) throw new Error('Expected deterministic stored ZIP entries')
-    const filenameStart = offset + 30
-    const dataStart = filenameStart + filenameLength + extraLength
+  const eocd = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
+  if (eocd < 0) throw new Error('Expected deterministic stored ZIP directory')
+  const count = bytes.readUInt16LE(eocd + 10)
+  let offset = bytes.readUInt32LE(eocd + 16)
+  for (let index = 0; index < count; index += 1) {
+    if (bytes.readUInt32LE(offset) !== 0x02014b50) throw new Error('Expected deterministic stored ZIP entries')
+    const method = bytes.readUInt16LE(offset + 10)
+    const compressedSize = bytes.readUInt32LE(offset + 20)
+    const filenameLength = bytes.readUInt16LE(offset + 28)
+    const extraLength = bytes.readUInt16LE(offset + 30)
+    const commentLength = bytes.readUInt16LE(offset + 32)
+    const localOffset = bytes.readUInt32LE(offset + 42)
+    const localFilenameLength = bytes.readUInt16LE(localOffset + 26)
+    const localExtraLength = bytes.readUInt16LE(localOffset + 28)
+    if (method !== 0) throw new Error('Expected deterministic stored ZIP entries')
+    const filenameStart = offset + 46
+    const dataStart = localOffset + 30 + localFilenameLength + localExtraLength
     entries.push({
       filename: bytes.subarray(filenameStart, filenameStart + filenameLength).toString('utf8'),
       bytes: bytes.subarray(dataStart, dataStart + compressedSize),
     })
-    offset = dataStart + compressedSize
+    offset = filenameStart + filenameLength + extraLength + commentLength
   }
   return entries
 }
@@ -190,8 +198,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(18)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'])
+    expect(tracked.rows).toHaveLength(19)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -306,11 +314,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'])
     expect((await pool.query("SELECT budget_day::text AS day FROM generation_jobs WHERE id = 'legacy-generation-job'")).rows[0].day).toBe('2025-12-31')
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
@@ -775,6 +783,46 @@ describe('append-only history', () => {
       .rejects.toMatchObject({ code: '55000' })
     await pool.end()
     pools.delete(pool)
+  })
+
+  test('delivery reads fail closed when the complete database fact chain is poisoned', async () => {
+    const harness = await approvedDeliveryHarness()
+    await harness.deliveryService.createDelivery({
+      actor: harness.actor, versionId: harness.created.body.version.id,
+      idempotencyKey: 'delivery-read-integrity', input: {},
+    })
+    const repositoryFactory = (client) => ({
+      ...createDeliveryRepository(client),
+      isDeliveryStateValid: vi.fn(async () => false),
+    })
+    const service = createDeliveryService({ pool: harness.pool, assetStore: harness.assetStore, repositoryFactory })
+    await expect(service.getDelivery({ actor: harness.actor, versionId: harness.created.body.version.id }))
+      .rejects.toMatchObject({ code: 'delivery_integrity_failure' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('orphan cleanup never deletes a finalized delivery object', async () => {
+    const harness = await approvedDeliveryHarness()
+    const created = await harness.deliveryService.createDelivery({
+      actor: harness.actor, versionId: harness.created.body.version.id,
+      idempotencyKey: 'finalized-delivery-cleanup', input: {},
+    })
+    const objectKey = (await harness.pool.query(
+      'SELECT object_key FROM assets WHERE id = $1', [created.body.delivery.asset.id],
+    )).rows[0].object_key
+    await harness.pool.query(
+      `INSERT INTO orphaned_uploads (id, object_key, campaign_id, reason)
+       VALUES ('finalized-delivery-orphan', $1, $2, 'ambiguous_cleanup_retry')`,
+      [objectKey, harness.campaign.id],
+    )
+    const deleteObject = vi.fn()
+    await expect(createGenerationControlPlane({ pool: harness.pool }).cleanupOrphanUpload({
+      orphanId: 'finalized-delivery-orphan', deleteObject, cleanedAt: new Date(),
+    })).resolves.toEqual({ kind: 'referenced', objectKey })
+    expect(deleteObject).not.toHaveBeenCalled()
+    await harness.pool.end()
+    pools.delete(harness.pool)
   })
 })
 
@@ -2459,7 +2507,7 @@ describe('immutable review version workflow', () => {
     const imageJobId = `${harness.campaign.id}:image-job`
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [imageJobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'] })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
     expect((await harness.pool.query('SELECT input_snapshot FROM generation_jobs WHERE id = $1', [imageJobId])).rows[0].input_snapshot)
       .toMatchObject({ width: 1000, height: 1000 })
@@ -2499,7 +2547,7 @@ describe('immutable review version workflow', () => {
       [imageJobId],
     )
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'] })
     expect((await harness.pool.query(
       'SELECT status, error_code, response_status, response_body FROM generation_jobs WHERE id = $1',
       [imageJobId],
@@ -2571,7 +2619,7 @@ describe('immutable review version workflow', () => {
     await harness.controlPlane.markDispatched({ jobId, ownerToken, dispatchedAt: now })
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [jobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'] })
     expect((await harness.pool.query(
       'SELECT status, unknown_reason, response_status, response_body FROM generation_jobs WHERE id = $1', [jobId],
     )).rows[0]).toMatchObject({
@@ -2649,7 +2697,7 @@ describe('immutable review version workflow', () => {
 
     expect((await harness.pool.query("SELECT count(*)::int AS count FROM audit_events WHERE action LIKE 'migration.%'")).rows[0].count).toBe(0)
     expect(await runMigrations({ pool: harness.pool })).toEqual({
-      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'],
+      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'],
     })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
 
@@ -2783,7 +2831,7 @@ describe('immutable review version workflow', () => {
     })
 
     expect(await runMigrations({ pool: harness.pool })).toEqual({
-      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'],
+      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'],
     })
     expect((await harness.pool.query(
       'SELECT status, revision, selected_direction_id, composition_id FROM campaigns WHERE id = $1', [harness.campaign.id],
@@ -3695,6 +3743,129 @@ describe('immutable review version workflow', () => {
     expect((await harness.pool.query(
       "SELECT status, claimed_build_id FROM orphaned_uploads WHERE id = 'completed-intent'",
     )).rows[0]).toEqual({ status: 'pending', claimed_build_id: 'completed-build' })
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('refuses cleanup while a delivery build owns an unexpired lease', async () => {
+    const harness = await approvedDeliveryHarness()
+    const versionId = harness.created.body.version.id
+    const objectKey = 'campaigns/delivery-claim/versions/package.zip'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: versionId,
+      key: 'active-delivery-claim', fingerprint: 'd'.repeat(64), ownerToken: 'active-delivery-owner',
+      now: new Date(), leaseExpiresAt: new Date('2099-09-04T10:00:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO delivery_builds
+         (id, campaign_id, version_id, actor_id, idempotency_key, request_fingerprint, owner_token, plan)
+       VALUES ('active-delivery-build', $1, $2, $3, 'active-delivery-claim', $4, 'active-delivery-owner', '{}')`,
+      [harness.campaign.id, versionId, harness.actor.id, 'd'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createDeliveryRepository(client).adoptBuildObject({
+      buildId: 'active-delivery-build', ownerToken: 'active-delivery-owner', campaignId: harness.campaign.id,
+      objectKey, orphanId: 'active-delivery-orphan', adoptedAt: new Date(),
+    }))
+    const deleteObject = vi.fn()
+
+    await expect(createGenerationControlPlane({ pool: harness.pool }).cleanupOrphanUpload({
+      orphanId: 'active-delivery-orphan', deleteObject, cleanedAt: new Date(),
+    })).resolves.toEqual({ kind: 'claimed', objectKey })
+    expect(deleteObject).not.toHaveBeenCalled()
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('fences an expired delivery owner before cleanup so its late finalize cannot commit', async () => {
+    const harness = await approvedDeliveryHarness()
+    const versionId = harness.created.body.version.id
+    const objectKey = 'campaigns/expired-delivery-claim/versions/package.zip'
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: versionId,
+      key: 'expired-delivery-claim', fingerprint: 'e'.repeat(64), ownerToken: 'expired-delivery-owner',
+      now: new Date('2020-09-04T10:00:00Z'), leaseExpiresAt: new Date('2020-09-04T10:01:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO delivery_builds
+         (id, campaign_id, version_id, actor_id, idempotency_key, request_fingerprint, owner_token, plan)
+       VALUES ('expired-delivery-build', $1, $2, $3, 'expired-delivery-claim', $4, 'expired-delivery-owner', '{}')`,
+      [harness.campaign.id, versionId, harness.actor.id, 'e'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createDeliveryRepository(client).adoptBuildObject({
+      buildId: 'expired-delivery-build', ownerToken: 'expired-delivery-owner', campaignId: harness.campaign.id,
+      objectKey, orphanId: 'expired-delivery-orphan', adoptedAt: new Date('2020-09-04T10:00:00Z'),
+    }))
+    const deleteObject = vi.fn(async () => ({ deleted: true }))
+
+    await expect(createGenerationControlPlane({ pool: harness.pool }).cleanupOrphanUpload({
+      orphanId: 'expired-delivery-orphan', deleteObject, cleanedAt: new Date(),
+    })).resolves.toEqual({ kind: 'cleaned', objectKey })
+    expect(deleteObject).toHaveBeenCalledOnce()
+    expect((await harness.pool.query(
+      "SELECT state FROM idempotency_records WHERE resource_id = $1 AND key = 'expired-delivery-claim'", [versionId],
+    )).rows[0]).toEqual({ state: 'failed' })
+    expect((await harness.pool.query(
+      "SELECT state FROM delivery_builds WHERE id = 'expired-delivery-build'",
+    )).rows[0]).toEqual({ state: 'failed' })
+    expect((await harness.pool.query(
+      `UPDATE delivery_builds SET state = 'completed', completed_at = now()
+       WHERE id = 'expired-delivery-build' AND state = 'in_progress' AND owner_token = 'expired-delivery-owner'
+       RETURNING id`,
+    )).rowCount).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
+  test('concurrent active version and delivery cleanup follows one lock order without deadlock', async () => {
+    const harness = await approvedDeliveryHarness()
+    const versionId = harness.created.body.version.id
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: harness.campaign.id,
+      key: 'concurrent-version-cleanup', fingerprint: '1'.repeat(64), ownerToken: 'version-owner',
+      now: new Date(), leaseExpiresAt: new Date('2099-09-04T10:00:00Z'),
+    })
+    await createIdempotencyRepository(harness.pool).claim({
+      actorId: harness.actor.id, method: 'POST', resourceId: versionId,
+      key: 'concurrent-delivery-cleanup', fingerprint: '2'.repeat(64), ownerToken: 'delivery-owner',
+      now: new Date(), leaseExpiresAt: new Date('2099-09-04T10:00:00Z'),
+    })
+    await harness.pool.query(
+      `INSERT INTO review_version_builds
+         (id, campaign_id, actor_id, idempotency_key, request_fingerprint, owner_token,
+          version_id, version_number, expected_revision, plan)
+       VALUES ('concurrent-version-build', $1, $2, 'concurrent-version-cleanup', $3,
+               'version-owner', 'future-version', 2, 6, '{}')`,
+      [harness.campaign.id, harness.actor.id, '1'.repeat(64)],
+    )
+    await harness.pool.query(
+      `INSERT INTO delivery_builds
+         (id, campaign_id, version_id, actor_id, idempotency_key, request_fingerprint, owner_token, plan)
+       VALUES ('concurrent-delivery-build', $1, $2, $3, 'concurrent-delivery-cleanup', $4,
+               'delivery-owner', '{}')`,
+      [harness.campaign.id, versionId, harness.actor.id, '2'.repeat(64)],
+    )
+    await withTransaction(harness.pool, (client) => createVersionRepository(client).adoptBuildObjects({
+      buildId: 'concurrent-version-build', ownerToken: 'version-owner', campaignId: harness.campaign.id,
+      objectKeys: ['campaigns/concurrent/version.png'], orphanIds: ['concurrent-version-orphan'], adoptedAt: new Date(),
+    }))
+    await withTransaction(harness.pool, (client) => createDeliveryRepository(client).adoptBuildObject({
+      buildId: 'concurrent-delivery-build', ownerToken: 'delivery-owner', campaignId: harness.campaign.id,
+      objectKey: 'campaigns/concurrent/delivery.zip', orphanId: 'concurrent-delivery-orphan', adoptedAt: new Date(),
+    }))
+    const control = createGenerationControlPlane({ pool: harness.pool })
+    const deleteObject = vi.fn()
+    const observed = await Promise.race([
+      Promise.all([
+        control.cleanupOrphanUpload({ orphanId: 'concurrent-version-orphan', deleteObject, cleanedAt: new Date() }),
+        control.cleanupOrphanUpload({ orphanId: 'concurrent-delivery-orphan', deleteObject, cleanedAt: new Date() }),
+      ]),
+      new Promise((resolve) => setTimeout(() => resolve('deadlocked'), 1_000)),
+    ])
+    expect(observed).toEqual([
+      { kind: 'claimed', objectKey: 'campaigns/concurrent/version.png' },
+      { kind: 'claimed', objectKey: 'campaigns/concurrent/delivery.zip' },
+    ])
+    expect(deleteObject).not.toHaveBeenCalled()
     await harness.pool.end()
     pools.delete(harness.pool)
   })
@@ -4658,7 +4829,7 @@ describe('append-only human review gates', () => {
       "SELECT bool_and(payload ? 'assetHashes') AS has_hashes FROM review_events WHERE event_type IN ('ready', 'approved')",
     )).rows[0].has_hashes).toBe(true)
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'] })
     const facts = (await harness.pool.query(
       `SELECT event_type, payload, immutable_asset_hashes
        FROM review_events WHERE event_type IN ('ready', 'approved') ORDER BY event_type`,
@@ -4745,7 +4916,7 @@ describe('append-only human review gates', () => {
       )
     })
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'] })
     const review = await createReviewService({ pool: harness.pool }).getReview({
       actor: harness.actor, versionId: created.body.version.id,
     })
@@ -5459,6 +5630,42 @@ describe('append-only human review gates', () => {
 })
 
 describe('hash-verified approved deliveries', () => {
+  test('migration 019 fails closed on a preexisting duplicate legacy delivery audit', async () => {
+    await resetDatabase()
+    const stagedPool = makePool()
+    await runMigrations({ pool: stagedPool, directory: await migrationDirectoryThrough(18) })
+    await stagedPool.end()
+    pools.delete(stagedPool)
+
+    const harness = await approvedDeliveryHarness()
+    await harness.deliveryService.createDelivery({
+      actor: harness.actor, versionId: harness.created.body.version.id,
+      idempotencyKey: 'pre-019-delivery', input: {},
+    })
+    const audit = (await harness.pool.query(
+      "SELECT * FROM audit_events WHERE version_id = $1 AND action = 'campaign.delivered'",
+      [harness.created.body.version.id],
+    )).rows[0]
+    await harness.pool.query(
+      `INSERT INTO audit_events
+         (id, actor_id, actor_role, action, entity_type, entity_id, before_status,
+          after_status, version_id, payload, created_at)
+       VALUES ($1, $2, $3, 'campaign.deliver', 'campaign', $4, 'approved', 'delivered', $5, $6, $7)`,
+      [randomUUID(), audit.actor_id, audit.actor_role, audit.entity_id,
+        audit.version_id, audit.payload, audit.created_at],
+    )
+
+    await expect(createDeliveryService({ pool: harness.pool, assetStore: harness.assetStore }).getDelivery({
+      actor: harness.actor, versionId: harness.created.body.version.id,
+    })).rejects.toMatchObject({ code: 'delivery_integrity_failure' })
+    await expect(runMigrations({ pool: harness.pool })).rejects.toMatchObject({ code: '23514' })
+    expect((await harness.pool.query(
+      "SELECT count(*)::int AS count FROM schema_migrations WHERE name = '019_delivery_recovery_and_audit_integrity.sql'",
+    )).rows[0].count).toBe(0)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
   test('migration 018 upgrades an exact legacy delivery and preserves rolling reads', async () => {
     await resetDatabase()
     const stagedPool = makePool()
@@ -5511,7 +5718,7 @@ describe('hash-verified approved deliveries', () => {
       await client.query('SET CONSTRAINTS ALL IMMEDIATE')
     })
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['018_hash_verified_deliveries.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql'] })
     expect((await harness.pool.query(
       `SELECT delivery.content_hash, delivery.zip_sha256, delivery.byte_size::int AS byte_size,
               asset.version_id, event.payload, event.immutable_asset_hashes, audit.action, audit.payload AS audit_payload,
@@ -5632,6 +5839,40 @@ describe('hash-verified approved deliveries', () => {
     pools.delete(harness.pool)
   })
 
+  test.each([
+    ['exact duplicate', 'campaign.delivered', false],
+    ['legacy alias duplicate', 'campaign.deliver', false],
+    ['foreign delivery audit', 'campaign.delivered', true],
+  ])('database rejects a second %s audit for one delivered version', async (_label, action, foreign) => {
+    const harness = await approvedDeliveryHarness()
+    const created = await harness.deliveryService.createDelivery({
+      actor: harness.actor, versionId: harness.created.body.version.id,
+      idempotencyKey: `audit-guard-${action}-${foreign}`, input: {},
+    })
+    const canonical = (await harness.pool.query(
+      "SELECT * FROM audit_events WHERE version_id = $1 AND action = 'campaign.delivered'",
+      [harness.created.body.version.id],
+    )).rows[0]
+    const error = await directSqlConstraintError(harness.pool, async (client) => {
+      await client.query(
+        `INSERT INTO audit_events
+           (id, actor_id, actor_role, action, entity_type, entity_id, before_status,
+            after_status, version_id, payload, created_at)
+         VALUES ($1, $2, $3, $4, 'campaign', $5, 'approved', 'delivered', $6, $7, $8)`,
+        [randomUUID(), canonical.actor_id, canonical.actor_role, action,
+          foreign ? 'foreign-campaign' : canonical.entity_id,
+          canonical.version_id, canonical.payload, canonical.created_at],
+      )
+    })
+    expect(error).toMatchObject({ code: expect.stringMatching(/^23/) })
+    expect((await harness.pool.query(
+      "SELECT count(*)::int AS count FROM audit_events WHERE version_id = $1 AND action IN ('campaign.delivered', 'campaign.deliver')",
+      [created.body.delivery.versionId],
+    )).rows[0].count).toBe(1)
+    await harness.pool.end()
+    pools.delete(harness.pool)
+  })
+
   test('rejects reuse of an approval idempotency key for the delivery command', async () => {
     const harness = await approvedDeliveryHarness()
     await expect(harness.deliveryService.createDelivery({
@@ -5725,8 +5966,8 @@ describe('hash-verified approved deliveries', () => {
     ['hash metadata', (asset) => asset.kind === 'review_png' ? { ...asset, sha256: 'f'.repeat(64) } : asset],
   ])('rejects %s mismatch before reading or exporting approved assets', async (_label, mutate) => {
     const harness = await approvedDeliveryHarness()
-    const get = vi.fn((input) => harness.assetStore.get(input))
-    const observedStore = { ...harness.assetStore, get }
+    const createReadStream = vi.fn((input) => harness.assetStore.createReadStream(input))
+    const observedStore = { ...harness.assetStore, createReadStream }
     const repositoryFactory = (client) => {
       const repository = createDeliveryRepository(client)
       return {
@@ -5739,8 +5980,8 @@ describe('hash-verified approved deliveries', () => {
       actor: harness.actor, versionId: harness.created.body.version.id,
       idempotencyKey: `metadata-mismatch-${_label.replaceAll(' ', '-')}`, input: {},
     })).rejects.toMatchObject({ code: _label === 'dimensions' ? 'asset_integrity_failure' : 'version_asset_mismatch' })
-    if (_label === 'dimensions') expect(get).toHaveBeenCalled()
-    else expect(get).not.toHaveBeenCalled()
+    if (_label === 'dimensions') expect(createReadStream).toHaveBeenCalled()
+    else expect(createReadStream).not.toHaveBeenCalled()
     expect((await harness.pool.query('SELECT count(*)::int AS count FROM deliveries')).rows[0].count).toBe(0)
     await harness.pool.end()
     pools.delete(harness.pool)
@@ -5831,7 +6072,7 @@ describe('hash-verified approved deliveries', () => {
     const harness = await approvedDeliveryHarness()
     const stalledStore = {
       ...harness.assetStore,
-      get: vi.fn(() => new Promise(() => {})),
+      createReadStream: vi.fn(async () => new PassThrough()),
     }
     const service = createDeliveryService({
       pool: harness.pool, assetStore: stalledStore,

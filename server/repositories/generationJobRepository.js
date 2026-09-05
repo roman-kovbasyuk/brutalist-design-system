@@ -583,10 +583,14 @@ export function createGenerationControlPlane({
       if (typeof deleteObject !== 'function') throw new TypeError('Orphan cleanup requires an object delete function')
       return transaction(pool, async (client) => {
         const observed = await client.query(
-          `SELECT o.id, o.object_key, o.claimed_build_id,
-                  b.actor_id, b.method, b.campaign_id, b.idempotency_key
+          `SELECT o.id, o.object_key, o.claimed_build_id, o.claimed_delivery_build_id,
+                  vb.actor_id AS version_actor_id, vb.method AS version_method,
+                  vb.campaign_id AS version_resource_id, vb.idempotency_key AS version_idempotency_key,
+                  db.actor_id AS delivery_actor_id, db.method AS delivery_method,
+                  db.version_id AS delivery_resource_id, db.idempotency_key AS delivery_idempotency_key
            FROM orphaned_uploads o
-           LEFT JOIN review_version_builds b ON b.id = o.claimed_build_id
+           LEFT JOIN review_version_builds vb ON vb.id = o.claimed_build_id
+           LEFT JOIN delivery_builds db ON db.id = o.claimed_delivery_build_id
            WHERE o.id = $1 AND o.status <> 'cleaned'`,
           [orphanId],
         )
@@ -595,34 +599,54 @@ export function createGenerationControlPlane({
 
         let idempotency = null
         let build = null
-        if (candidate.claimed_build_id) {
+        const claim = candidate.claimed_build_id
+          ? {
+              id: candidate.claimed_build_id, type: 'version', table: 'review_version_builds',
+              actorId: candidate.version_actor_id, method: candidate.version_method,
+              resourceId: candidate.version_resource_id, key: candidate.version_idempotency_key,
+              failureCode: 'stale_version_intent_cleanup', column: 'claimed_build_id',
+            }
+          : candidate.claimed_delivery_build_id
+            ? {
+                id: candidate.claimed_delivery_build_id, type: 'delivery', table: 'delivery_builds',
+                actorId: candidate.delivery_actor_id, method: candidate.delivery_method,
+                resourceId: candidate.delivery_resource_id, key: candidate.delivery_idempotency_key,
+                failureCode: 'stale_delivery_intent_cleanup', column: 'claimed_delivery_build_id',
+              }
+            : null
+        if (claim) {
           const lockedIdempotency = await client.query(
             `SELECT state, owner_token, fingerprint, lease_expires_at, clock_timestamp() AS observed_at
              FROM idempotency_records
              WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
              FOR UPDATE`,
-            [candidate.actor_id, candidate.method, candidate.campaign_id, candidate.idempotency_key],
+            [claim.actorId, claim.method, claim.resourceId, claim.key],
           )
           idempotency = lockedIdempotency.rows[0] ?? null
           const lockedBuild = await client.query(
             `SELECT id, state, owner_token, request_fingerprint
-             FROM review_version_builds WHERE id = $1 FOR UPDATE`,
-            [candidate.claimed_build_id],
+             FROM ${claim.table} WHERE id = $1 FOR UPDATE`,
+            [claim.id],
           )
           build = lockedBuild.rows[0] ?? null
         }
 
         await lockAssetObjectKey(client, candidate.object_key)
         const selected = await client.query(
-          `SELECT id, object_key, claimed_build_id FROM orphaned_uploads
+          `SELECT id, object_key, claimed_build_id, claimed_delivery_build_id FROM orphaned_uploads
            WHERE id = $1 AND object_key = $2 AND status <> 'cleaned'
            FOR UPDATE`,
           [orphanId, candidate.object_key],
         )
         const orphan = selected.rows[0]
         if (!orphan) return { kind: 'missing' }
-        if (orphan.claimed_build_id) {
-          if (!build || build.id !== orphan.claimed_build_id) return { kind: 'claimed', objectKey: orphan.object_key }
+        const selectedClaimId = orphan.claimed_build_id ?? orphan.claimed_delivery_build_id
+        if (selectedClaimId) {
+          if (!claim || !build || build.id !== selectedClaimId
+            || (claim.type === 'version' && orphan.claimed_delivery_build_id)
+            || (claim.type === 'delivery' && orphan.claimed_build_id)) {
+            return { kind: 'claimed', objectKey: orphan.object_key }
+          }
           const activeLease = idempotency?.state === 'in_progress'
             && idempotency.lease_expires_at > idempotency.observed_at
           if (activeLease) return { kind: 'claimed', objectKey: orphan.object_key }
@@ -632,28 +656,38 @@ export function createGenerationControlPlane({
             if (idempotency?.state === 'in_progress') {
               await client.query(
                 `UPDATE idempotency_records
-                 SET state = 'failed', failed_at = clock_timestamp(), failure_code = 'stale_version_intent_cleanup'
+                 SET state = 'failed', failed_at = clock_timestamp(), failure_code = $6
                  WHERE actor_id = $1 AND method = $2 AND resource_id = $3 AND key = $4
                    AND state = 'in_progress' AND owner_token = $5 AND lease_expires_at <= clock_timestamp()`,
-                [candidate.actor_id, candidate.method, candidate.campaign_id, candidate.idempotency_key, idempotency.owner_token],
+                [claim.actorId, claim.method, claim.resourceId, claim.key, idempotency.owner_token, claim.failureCode],
               )
             }
             await client.query(
-              `UPDATE review_version_builds
+              `UPDATE ${claim.table}
                SET state = 'failed', updated_at = clock_timestamp()
                WHERE id = $1 AND state = 'in_progress' AND owner_token = $2`,
               [build.id, build.owner_token],
             )
             await client.query(
               `UPDATE orphaned_uploads
-               SET claimed_build_id = NULL, reason = 'stale_version_intent_cleanup',
+               SET ${claim.column} = NULL, reason = $3,
                    status = 'pending', last_error = NULL, cleaned_at = NULL
-               WHERE id = $1 AND claimed_build_id = $2`,
-              [orphan.id, build.id],
+               WHERE id = $1 AND ${claim.column} = $2`,
+              [orphan.id, build.id, claim.failureCode],
             )
           }
         }
-        const referenced = await client.query('SELECT 1 FROM assets WHERE object_key = $1', [orphan.object_key])
+        const referenced = await client.query(
+          `SELECT 1 FROM assets WHERE object_key = $1
+           UNION ALL
+           SELECT 1 FROM deliveries delivery JOIN assets asset ON asset.id = delivery.asset_id
+             WHERE asset.object_key = $1
+           UNION ALL
+           SELECT 1 FROM delivery_builds
+             WHERE state <> 'failed' AND plan->>'objectKey' = $1
+           LIMIT 1`,
+          [orphan.object_key],
+        )
         if (referenced.rowCount > 0) return { kind: 'referenced', objectKey: orphan.object_key }
         await deleteObject({ objectKey: orphan.object_key })
         await client.query(

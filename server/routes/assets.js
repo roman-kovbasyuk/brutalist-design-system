@@ -18,6 +18,6 @@ export function registerAssetRoutes(app, { requireRole, assetService }) {
     } else if (asset.kind === 'delivery_zip') {
       reply.header('Content-Disposition', `attachment; filename="delivery-${asset.sha256.slice(0, 16)}.zip"`)
     }
-    return reply.send(asset.bytes)
+    return reply.send(asset.stream ?? asset.bytes)
   })
 }

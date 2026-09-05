@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { describe, expect, test, vi } from 'vitest'
 import { createAssetService } from './assetService.js'
+import { createDeliverySpool } from './deliverySpool.js'
 
 const bytes = Buffer.from('private immutable asset')
 const record = {
@@ -13,7 +18,10 @@ const record = {
 
 function harness({ row = record, stored = bytes } = {}) {
   const repository = { findReadableById: vi.fn(async () => row) }
-  const assetStore = { get: vi.fn(async () => stored), put: vi.fn(), delete: vi.fn() }
+  const assetStore = {
+    get: vi.fn(async () => stored), put: vi.fn(), delete: vi.fn(),
+    createReadStream: vi.fn(async () => stored == null ? null : Readable.from([stored])),
+  }
   return {
     repository, assetStore,
     service: createAssetService({
@@ -73,16 +81,49 @@ describe('authorized asset reads', () => {
   })
 
   test('hides delivery ZIP bytes from designers while allowing marketer and admin downloads', async () => {
-    const zip = { ...record, kind: 'delivery_zip', mimeType: 'application/zip', width: null, height: null }
+    const zipBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('verified')])
+    const zip = {
+      ...record, kind: 'delivery_zip', mimeType: 'application/zip', width: null, height: null,
+      byteSize: zipBytes.length, sha256: createHash('sha256').update(zipBytes).digest('hex'),
+    }
     const designer = harness({ row: zip })
     await expect(designer.service.readAsset({ actor: { id: 'designer-1', role: 'designer' }, assetId: zip.id }))
       .resolves.toBeNull()
     expect(designer.assetStore.get).not.toHaveBeenCalled()
 
     for (const role of ['marketer', 'admin']) {
-      const allowed = harness({ row: zip })
-      await expect(allowed.service.readAsset({ actor: { id: `${role}-1`, role }, assetId: zip.id }))
-        .resolves.toMatchObject({ kind: 'delivery_zip', bytes: expect.any(Buffer) })
+      const allowed = harness({ row: zip, stored: zipBytes })
+      const asset = await allowed.service.readAsset({ actor: { id: `${role}-1`, role }, assetId: zip.id })
+      expect(asset).toMatchObject({ kind: 'delivery_zip', stream: expect.anything() })
+      const parts = []
+      for await (const chunk of asset.stream) parts.push(Buffer.from(chunk))
+      expect(Buffer.concat(parts)).toEqual(zipBytes)
+      expect(allowed.assetStore.get).not.toHaveBeenCalled()
+    }
+  })
+
+  test('removes the verified delivery download spool after the response stream closes', async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'delivery-download-test-'))
+    try {
+      const zipBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(256 * 1024, 0x61)])
+      const zip = {
+        ...record, kind: 'delivery_zip', mimeType: 'application/zip', width: null, height: null,
+        byteSize: zipBytes.length, sha256: createHash('sha256').update(zipBytes).digest('hex'),
+      }
+      const input = harness({ row: zip, stored: zipBytes })
+      const service = createAssetService({
+        pool: { query: vi.fn() }, assetStore: input.assetStore,
+        repositoryFactory: vi.fn(() => input.repository),
+        deliverySpool: createDeliverySpool({ tempRoot, maxAggregateBytes: zipBytes.length }),
+      })
+      const asset = await service.readAsset({ actor: { id: 'marketer-1', role: 'marketer' }, assetId: zip.id })
+      for await (const _chunk of asset.stream) { /* consume with stream backpressure */ }
+      for (let attempt = 0; attempt < 100 && (await readdir(tempRoot)).length > 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2))
+      }
+      expect(await readdir(tempRoot)).toEqual([])
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
     }
   })
 })

@@ -4,13 +4,19 @@ import { createDeliveryService } from './deliveryService.js'
 function dependencies() {
   return {
     pool: { query: vi.fn(), connect: vi.fn() },
-    assetStore: { put: vi.fn(), get: vi.fn(), delete: vi.fn() },
+    assetStore: { put: vi.fn(), get: vi.fn(), delete: vi.fn(), createReadStream: vi.fn(), putStream: vi.fn() },
     transaction: vi.fn(),
     recoveryTransaction: vi.fn(),
   }
 }
 
 describe('approved delivery service boundary', () => {
+  test('requires a streaming asset store so approved packages cannot be buffered', () => {
+    const input = dependencies()
+    delete input.assetStore.createReadStream
+    expect(() => createDeliveryService(input)).toThrow(/createReadStream/)
+  })
+
   test('rejects designers before persistence or storage access', async () => {
     const input = dependencies()
     const service = createDeliveryService(input)

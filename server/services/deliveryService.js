@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import {
   campaignRecordSchema,
   campaignVersionRecordSchema,
@@ -12,11 +14,13 @@ import { canonicalJson, hashCanonical } from '../../shared/canonicalJson.js'
 import { deriveReviewStatus, InvalidReviewHistoryError, orderReviewEvents } from '../../shared/reviewHistory.js'
 import { transitionCampaign } from '../../shared/workflowRules.js'
 import { withDeadlineTransaction } from '../db/pool.js'
-import { decodeGeneratedImage } from '../images/imageDecoder.js'
 import { createDeliveryRepository } from '../repositories/deliveryRepository.js'
 import { createIdempotencyRepository } from '../repositories/idempotencyRepository.js'
-import { assertSafeObjectKey, validateAssetStore } from '../storage/assetStore.js'
-import { buildDeterministicDeliveryArchive } from './deliveryArchive.js'
+import { assertSafeObjectKey, validateStreamingAssetStore } from '../storage/assetStore.js'
+import { buildDeterministicDeliveryArchiveFile } from './deliveryArchive.js'
+import {
+  createDeliverySpool, DeliverySpoolError, sharedDeliverySpool, streamToVerifiedFile, verifyPngFile, verifyReadable,
+} from './deliverySpool.js'
 
 const exporters = new Set(['marketer', 'admin'])
 
@@ -268,22 +272,16 @@ function verifyStoredDeliveryRecord(delivery, version) {
   return result
 }
 
-async function readAssetBytes(assetStore, asset, deadlineAt) {
-  let stored
+async function openAssetStream(assetStore, asset, signal, unavailableCode = 'asset_bytes_missing') {
   try {
-    stored = await beforeDeadline(deadlineAt, (timeoutMs) => assetStore.get({
-      objectKey: asset.objectKey, maxBytes: asset.byteSize, timeoutMs,
-    }))
+    const stream = await assetStore.createReadStream({ objectKey: asset.objectKey, signal })
+    if (stream == null) fail(502, unavailableCode, 'Stored approved asset bytes are unavailable')
+    return stream
   } catch (error) {
     if (error instanceof DeliveryServiceError) throw error
+    if (signal?.aborted) throw signal.reason ?? operationTimeout()
     fail(502, 'asset_bytes_missing', 'Stored approved asset bytes are unavailable')
   }
-  if (stored == null) fail(502, 'asset_bytes_missing', 'Stored approved asset bytes are unavailable')
-  const result = Buffer.from(stored.buffer, stored.byteOffset, stored.byteLength)
-  if (result.length !== asset.byteSize || createHash('sha256').update(result).digest('hex') !== asset.sha256) {
-    fail(502, 'asset_integrity_failure', 'Stored approved asset integrity verification failed')
-  }
-  return result
 }
 
 function parseCanonicalManifest(bytes) {
@@ -346,24 +344,46 @@ function verifyRenderManifest(value, version, pngAssets) {
   }
 }
 
-async function buildPackage({ assetStore, plan, version, deadlineAt, maxArchiveBytes }) {
+async function spoolReviewAsset({ assetStore, asset, outputPath, signal, maxArchiveBytes }) {
+  const readable = await openAssetStream(assetStore, asset, signal)
+  try {
+    return await streamToVerifiedFile({
+      readable, outputPath, expectedByteSize: asset.byteSize, expectedSha256: asset.sha256,
+      maxBytes: maxArchiveBytes, signal,
+    })
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? operationTimeout()
+    if (error instanceof DeliverySpoolError) fail(502, 'asset_integrity_failure', 'Stored approved asset integrity verification failed')
+    fail(502, 'asset_bytes_missing', 'Stored approved asset bytes are unavailable')
+  }
+}
+
+async function buildPackage({
+  assetStore, plan, version, workspace, signal, maxArchiveBytes, maxManifestBytes,
+}) {
   if (plan.reviewAssets.reduce((total, asset) => total + asset.byteSize, 0) > maxArchiveBytes) {
     fail(413, 'delivery_too_large', 'Approved assets exceed the delivery size limit')
   }
-  const loaded = []
-  for (const asset of plan.reviewAssets) {
-    const bytes = await readAssetBytes(assetStore, asset, deadlineAt)
+  const spooled = []
+  for (const [index, asset] of plan.reviewAssets.entries()) {
+    if (asset.kind === 'manifest' && asset.byteSize > maxManifestBytes) {
+      fail(413, 'delivery_too_large', 'The render manifest exceeds its byte limit')
+    }
+    const file = await spoolReviewAsset({
+      assetStore, asset, outputPath: workspace.file(index), signal, maxArchiveBytes,
+    })
     if (asset.kind === 'review_png') {
-      const decoded = await beforeDeadline(deadlineAt, () => decodeGeneratedImage(bytes, 'image/png'))
+      const decoded = await verifyPngFile({ path: file.path, width: asset.width, height: asset.height, signal })
       if (!decoded || decoded.width !== asset.width || decoded.height !== asset.height) {
         fail(502, 'asset_integrity_failure', 'Stored approved PNG dimensions are invalid')
       }
     }
-    loaded.push({ asset, bytes })
+    spooled.push({ asset, path: file.path })
   }
-  const manifestEntry = loaded.find((entry) => entry.asset.kind === 'manifest')
-  const pngEntries = loaded.filter((entry) => entry.asset.kind === 'review_png')
-  const renderManifest = parseCanonicalManifest(manifestEntry.bytes)
+  const manifestEntry = spooled.find((entry) => entry.asset.kind === 'manifest')
+  const pngEntries = spooled.filter((entry) => entry.asset.kind === 'review_png')
+  const renderManifestBytes = await readFile(manifestEntry.path, { signal })
+  const renderManifest = parseCanonicalManifest(renderManifestBytes)
   verifyRenderManifest(renderManifest, version, pngEntries.map((entry) => entry.asset))
 
   const sortedPng = [...pngEntries].sort((left, right) => {
@@ -389,30 +409,44 @@ async function buildPackage({ assetStore, plan, version, deadlineAt, maxArchiveB
     approval: { actorId: plan.approval.actorId, at: plan.approval.at }, files,
   })
   const deliveryManifestBytes = Buffer.from(canonicalJson(deliveryManifest), 'utf8')
+  if (deliveryManifestBytes.length > maxManifestBytes) {
+    fail(413, 'delivery_too_large', 'The delivery manifest exceeds its byte limit')
+  }
   let archive
   try {
-    archive = await beforeDeadline(deadlineAt, () => buildDeterministicDeliveryArchive({
+    archive = await buildDeterministicDeliveryArchiveFile({
       entries: [
-        ...sortedPng.map((entry, index) => ({ filename: `banners/banner-${String(index + 1).padStart(3, '0')}.png`, bytes: entry.bytes })),
-        { filename: 'render-manifest.json', bytes: manifestEntry.bytes },
+        ...sortedPng.map((entry, index) => ({
+          filename: `banners/banner-${String(index + 1).padStart(3, '0')}.png`,
+          path: entry.path, byteSize: entry.asset.byteSize,
+        })),
+        { filename: 'render-manifest.json', path: manifestEntry.path, byteSize: manifestEntry.asset.byteSize },
       ],
       deliveryManifestBytes,
       timestamp: version.createdAt,
       maxBytes: maxArchiveBytes,
-    }))
+      outputPath: workspace.archivePath,
+      signal,
+    })
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? operationTimeout()
     if (error?.code === 'archive_too_large') fail(413, 'delivery_too_large', 'Approved assets exceed the delivery size limit')
     throw error
   }
   return { ...archive, deliveryManifest }
 }
 
-async function verifyStoredZip(assetStore, asset, deadlineAt) {
-  const bytes = await readAssetBytes(assetStore, asset, deadlineAt)
-  if (bytes.length < 4 || bytes.readUInt32LE(0) !== 0x04034b50) {
+async function verifyStoredZip(assetStore, asset, signal) {
+  const readable = await openAssetStream(assetStore, asset, signal, 'delivery_integrity_failure')
+  try {
+    await verifyReadable({
+      readable, expectedByteSize: asset.byteSize, expectedSha256: asset.sha256,
+      maxBytes: asset.byteSize, signature: Buffer.from([0x50, 0x4b, 0x03, 0x04]), signal,
+    })
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? operationTimeout()
     fail(502, 'delivery_integrity_failure', 'Stored delivery ZIP is invalid')
   }
-  return bytes
 }
 
 export function createDeliveryService({
@@ -430,14 +464,21 @@ export function createDeliveryService({
   timeoutMs = 30_000,
   recoveryTimeoutMs = 250,
   maxArchiveBytes = 256 * 1024 * 1024,
+  maxManifestBytes = 4 * 1024 * 1024,
+  maxSpoolBytes = 512 * 1024 * 1024,
+  spool,
 } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required')
-  validateAssetStore(assetStore)
+  validateStreamingAssetStore(assetStore)
   if (![transaction, recoveryTransaction, repositoryFactory, idempotencyRepositoryFactory, idGenerator, clock, wait]
     .every((value) => typeof value === 'function')) throw new TypeError('Delivery persistence dependencies are required')
-  if (![leaseMs, pollIntervalMs, timeoutMs, recoveryTimeoutMs, maxArchiveBytes]
+  if (![leaseMs, pollIntervalMs, timeoutMs, recoveryTimeoutMs, maxArchiveBytes, maxManifestBytes, maxSpoolBytes]
     .every((value) => Number.isSafeInteger(value) && value > 0)) throw new TypeError('Delivery limits must be positive safe integers')
   if (leaseMs <= timeoutMs + recoveryTimeoutMs) throw new TypeError('Delivery lease must exceed the operation and recovery deadlines')
+  const deliverySpool = spool ?? (maxSpoolBytes === 512 * 1024 * 1024
+    ? sharedDeliverySpool
+    : createDeliverySpool({ maxAggregateBytes: maxSpoolBytes }))
+  if (!deliverySpool || typeof deliverySpool.run !== 'function') throw new TypeError('A delivery spool is required')
 
   const mainTransaction = (deadlineAt, operation) => beforeDeadline(
     deadlineAt,
@@ -474,6 +515,9 @@ export function createDeliveryService({
       const context = await loadContext(repository, versionId, { forUpdate: true })
       const existing = await repository.findDeliveryByVersion(versionId)
       if (existing) {
+        if (!await repository.isDeliveryStateValid(versionId)) {
+          fail(409, 'delivery_integrity_failure', 'Stored delivery facts are invalid')
+        }
         const delivery = verifyStoredDeliveryRecord(existing, context.version)
         const chain = verifyReviewChain({ ...context, expectedStatus: 'delivered', delivery })
         return { kind: 'existing', context, delivery, event: chain.delivered, storedAsset: existing.storedAsset }
@@ -517,38 +561,43 @@ export function createDeliveryService({
     })
   }
 
-  async function storeArchive(build, archive, deadlineAt) {
+  async function storeArchive(build, archive, signal) {
     let created = true
     try {
-      await beforeDeadline(deadlineAt, (timeout) => assetStore.put({
-        objectKey: build.plan.objectKey, bytes: archive.bytes, contentType: 'application/zip', timeoutMs: timeout,
-      }))
+      await assetStore.putStream({
+        objectKey: build.plan.objectKey, stream: createReadStream(archive.path, { signal }),
+        contentType: 'application/zip', maxBytes: archive.byteSize, signal,
+      })
     } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? operationTimeout()
       if (error?.code !== 'object_exists') {
         if (error instanceof DeliveryServiceError) throw error
         fail(503, 'asset_storage_unavailable', 'Delivery storage is unavailable')
       }
       created = false
     }
-    let stored
     try {
-      stored = await beforeDeadline(deadlineAt, (timeout) => assetStore.get({
-        objectKey: build.plan.objectKey, maxBytes: archive.byteSize, timeoutMs: timeout,
-      }))
+      const stored = await assetStore.createReadStream({ objectKey: build.plan.objectKey, signal })
+      if (!stored) throw new Error('Stored ZIP is missing')
+      await verifyReadable({
+        readable: stored, expectedByteSize: archive.byteSize, expectedSha256: archive.sha256,
+        maxBytes: archive.byteSize, signature: Buffer.from([0x50, 0x4b, 0x03, 0x04]), signal,
+      })
     } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? operationTimeout()
+      if (!created && error instanceof DeliverySpoolError) {
+        fail(409, 'immutable_asset_conflict', 'A delivery object already exists with different bytes')
+      }
+      if (error instanceof DeliverySpoolError) {
+        fail(502, 'delivery_integrity_failure', 'Stored delivery ZIP failed integrity verification')
+      }
       if (error instanceof DeliveryServiceError) throw error
       fail(503, 'asset_storage_unavailable', 'Delivery storage is unavailable')
     }
-    const bytes = stored && Buffer.from(stored.buffer, stored.byteOffset, stored.byteLength)
-    if (!bytes || bytes.length !== archive.byteSize
-      || createHash('sha256').update(bytes).digest('hex') !== archive.sha256) {
-      if (!created) fail(409, 'immutable_asset_conflict', 'A delivery object already exists with different bytes')
-      fail(502, 'delivery_integrity_failure', 'Stored delivery ZIP failed integrity verification')
-    }
   }
 
-  async function completeExisting({ actor, versionId, key, fingerprint, ownerToken, existing, deadlineAt }) {
-    await verifyStoredZip(assetStore, existing.storedAsset, deadlineAt)
+  async function completeExisting({ actor, versionId, key, fingerprint, ownerToken, existing, deadlineAt, signal }) {
+    await verifyStoredZip(assetStore, existing.storedAsset, signal)
     return mainTransaction(deadlineAt, async (client) => {
       const idempotency = idempotencyRepositoryFactory(client)
       if (!await idempotency.lockOwner({
@@ -557,6 +606,9 @@ export function createDeliveryService({
       const repository = repositoryFactory(client)
       const context = await loadContext(repository, versionId, { forUpdate: true })
       const persisted = await repository.findDeliveryByVersion(versionId)
+      if (!persisted || !await repository.isDeliveryStateValid(versionId)) {
+        fail(409, 'delivery_integrity_failure', 'Stored delivery facts are invalid')
+      }
       const delivery = verifyStoredDeliveryRecord(persisted, context.version)
       const chain = verifyReviewChain({ ...context, expectedStatus: 'delivered', delivery })
       const body = { delivery, campaign: context.campaign, reviewStatus: 'delivered', event: chain.delivered }
@@ -645,51 +697,70 @@ export function createDeliveryService({
       const fingerprint = hashCanonical({ action: 'deliver', input: command })
       const scope = { actorId: actor.id, method: 'POST', resourceId: versionId, key: idempotencyKey }
       const deadlineAt = Date.now() + timeoutMs
+      const controller = new AbortController()
+      const deadlineTimer = setTimeout(() => controller.abort(operationTimeout()), timeoutMs)
 
-      while (true) {
-        const ownerToken = idGenerator()
-        const now = safeInstant(clock())
-        const claim = await mainTransaction(deadlineAt, (client) => idempotencyRepositoryFactory(client).claim({
-          ...scope, fingerprint, ownerToken, now, leaseExpiresAt: new Date(now.getTime() + leaseMs),
-        }))
-        if (claim.kind === 'conflict') fail(409, 'idempotency_conflict', 'This idempotency key was already used with a different request')
-        if (claim.kind === 'replay') return { status: claim.responseStatus, body: claim.responseBody, replayed: true }
-        if (claim.kind === 'in_progress') {
-          await beforeDeadline(deadlineAt, (timeout) => wait(Math.min(pollIntervalMs, timeout)))
-          continue
-        }
-        if (claim.kind !== 'owner') throw new TypeError(`Unknown idempotency claim result: ${claim.kind}`)
+      try {
+        while (true) {
+          const ownerToken = idGenerator()
+          const now = safeInstant(clock())
+          const claim = await mainTransaction(deadlineAt, (client) => idempotencyRepositoryFactory(client).claim({
+            ...scope, fingerprint, ownerToken, now, leaseExpiresAt: new Date(now.getTime() + leaseMs),
+          }))
+          if (claim.kind === 'conflict') fail(409, 'idempotency_conflict', 'This idempotency key was already used with a different request')
+          if (claim.kind === 'replay') return { status: claim.responseStatus, body: claim.responseBody, replayed: true }
+          if (claim.kind === 'in_progress') {
+            await beforeDeadline(deadlineAt, (timeout) => wait(Math.min(pollIntervalMs, timeout)))
+            continue
+          }
+          if (claim.kind !== 'owner') throw new TypeError(`Unknown idempotency claim result: ${claim.kind}`)
 
-        let build
-        try {
-          while (true) {
-            const prepared = await prepare({ actor, versionId, key: idempotencyKey, fingerprint, ownerToken, deadlineAt })
-            if (prepared.kind === 'wait') {
-              await beforeDeadline(deadlineAt, (timeout) => wait(Math.min(pollIntervalMs, timeout)))
-              continue
-            }
-            if (prepared.kind === 'existing') {
-              return await completeExisting({
-                actor, versionId, key: idempotencyKey, fingerprint, ownerToken, existing: prepared, deadlineAt,
+          let build
+          try {
+            while (true) {
+              const prepared = await prepare({ actor, versionId, key: idempotencyKey, fingerprint, ownerToken, deadlineAt })
+              if (prepared.kind === 'wait') {
+                await beforeDeadline(deadlineAt, (timeout) => wait(Math.min(pollIntervalMs, timeout)))
+                continue
+              }
+              if (prepared.kind === 'existing') {
+                return await completeExisting({
+                  actor, versionId, key: idempotencyKey, fingerprint, ownerToken, existing: prepared,
+                  deadlineAt, signal: controller.signal,
+                })
+              }
+              build = prepared.build
+              const version = prepared.context.version
+              await adopt(build, ownerToken, deadlineAt)
+              const sourceBytes = build.plan.reviewAssets.reduce((total, asset) => total + asset.byteSize, 0)
+              const reservationBytes = sourceBytes + maxArchiveBytes
+              return await deliverySpool.run({ reservationBytes, signal: controller.signal }, async (workspace) => {
+                const archive = await buildPackage({
+                  assetStore, plan: build.plan, version, workspace, signal: controller.signal,
+                  maxArchiveBytes, maxManifestBytes,
+                })
+                await storeArchive(build, archive, controller.signal)
+                return finalize({
+                  actor, versionId, key: idempotencyKey, fingerprint, ownerToken, build, archive, deadlineAt,
+                })
               })
             }
-            build = prepared.build
-            const version = prepared.context.version
-            await adopt(build, ownerToken, deadlineAt)
-            const archive = await buildPackage({ assetStore, plan: build.plan, version, deadlineAt, maxArchiveBytes })
-            await storeArchive(build, archive, deadlineAt)
-            return await finalize({
-              actor, versionId, key: idempotencyKey, fingerprint, ownerToken, build, archive, deadlineAt,
-            })
+          } catch (error) {
+            let replay
+            try { replay = await recover({ actor, versionId, key: idempotencyKey, fingerprint, ownerToken, build, error }) } catch {
+              fail(503, 'delivery_recovery_unavailable', 'Delivery recovery is temporarily unavailable')
+            }
+            if (replay) return replay
+            if (controller.signal.aborted) throw controller.signal.reason ?? operationTimeout()
+            if (error?.code === 'delivery_capacity_exceeded') {
+              fail(503, 'delivery_capacity_unavailable', 'Delivery packaging capacity is temporarily unavailable')
+            }
+            throw error
           }
-        } catch (error) {
-          let replay
-          try { replay = await recover({ actor, versionId, key: idempotencyKey, fingerprint, ownerToken, build, error }) } catch {
-            fail(503, 'delivery_recovery_unavailable', 'Delivery recovery is temporarily unavailable')
-          }
-          if (replay) return replay
-          throw error
         }
+      } finally {
+        clearTimeout(deadlineTimer)
+        if (!controller.signal.aborted) controller.abort()
       }
     },
 
@@ -700,6 +771,9 @@ export function createDeliveryService({
       const campaign = strictCampaign(await repository.lockCampaign(version.campaignId) ?? fail(404, 'not_found', 'Campaign was not found'))
       const deliveryRow = await repository.findDeliveryByVersion(versionId)
       if (!deliveryRow) return null
+      if (!await repository.isDeliveryStateValid(versionId)) {
+        fail(409, 'delivery_integrity_failure', 'Stored delivery facts are invalid')
+      }
       const events = strictEvents(await repository.listEvents(versionId), version)
       const reviewAssets = await repository.listReviewAssets(versionId)
       const assetSets = reviewAssetSets(await repository.listVersionAssetHashes(versionId), version, reviewAssets)
