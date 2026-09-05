@@ -73,7 +73,7 @@ export function BannerWorkspace({
 
   useEffect(() => {
     if (!hasLinkedVideo && filters.media === 'video') {
-      onFiltersChange({ media: 'static', format: 'Square', platform: 'SMM Static' })
+      onFiltersChange({ media: 'static', format: 'Vertical', platform: 'SMM Static' })
     }
   }, [filters.media, hasLinkedVideo, onFiltersChange])
 
@@ -87,7 +87,7 @@ export function BannerWorkspace({
     onFiltersChange({
       ...filters,
       media,
-      format: 'Square',
+      format: 'Vertical',
       platform: media === 'video' ? 'Video Reels' : 'SMM Static',
     })
   }
