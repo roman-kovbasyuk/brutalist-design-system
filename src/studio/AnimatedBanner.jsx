@@ -27,10 +27,10 @@ export function AnimatedBanner({
       <g aria-hidden="true">
         {template.presentation.shapes.map((shape, index) => {
           const p = shape.placements[ratio.id]
-          const props = { key: index, fill: shape.fill, className: index === 1 ? 'studio-banner__geometry' : undefined }
+          const props = { fill: shape.fill, className: index === 1 ? 'studio-banner__geometry' : undefined }
           return shape.type === 'ellipse'
-            ? <ellipse {...props} cx={p.x + p.width / 2} cy={p.y + p.height / 2} rx={p.width / 2} ry={p.height / 2} />
-            : <rect {...props} {...p} />
+            ? <ellipse key={index} {...props} cx={p.x + p.width / 2} cy={p.y + p.height / 2} rx={p.width / 2} ry={p.height / 2} />
+            : <rect key={index} {...props} {...p} />
         })}
         {template.slots.map((slot) => {
           const p = slot.placements[ratio.id]
