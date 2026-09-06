@@ -1,8 +1,8 @@
 # Copy module: two states and one card layout
 
-Status: draft v1 for review, recording Roman's Copy requirements of 6 September 2026. Documentation only; these behaviors are not claimed as implemented.
+Status: draft v2 for review, recording Roman's Copy requirements of 6 September 2026 and the subsequent Visuals handoff clarification. Documentation only; these behaviors are not claimed as implemented. Copy's two-state UI requirements are unchanged by this handoff update.
 
-Related specifications: [Brief and automatic first drafts](2026-09-06-brief-module-design.md), [six-module architecture](../plans/2026-09-06-campaign-module-architecture.md), and [structural implementation plan](../plans/2026-09-06-six-module-campaign-implementation.md).
+Related specifications: [Brief and automatic copy drafts](2026-09-06-brief-module-design.md), [Visuals generation methods](2026-09-06-visuals-module-design.md), [six-module architecture](../plans/2026-09-06-campaign-module-architecture.md), and [structural implementation plan](../plans/2026-09-06-six-module-campaign-implementation.md).
 
 This specification replaces the earlier five-state Copy interpretation and the table/cards/banners view-switching requirement. Copy has **exactly two primary presentation states**. Loading, errors, approval, deletion, preview, and appending are local feedback or interactions within these states, not additional primary states.
 
@@ -57,7 +57,7 @@ The earlier assistant assumption that only one card can be approved is not part 
 
 **Output:** generated copy options with stable IDs and source identity, per-option approval/hidden state, and the list's current generation feedback. These are module-owned results, not local page-level arrays that disappear on refresh.
 
-**Automatic handoff:** successful Brief analysis schedules the first Copy options and the first Visuals prompts independently. Visuals does not wait for Copy approval. Copy does not generate visual prompts or images.
+**Automatic handoff:** successful Brief analysis schedules the first Copy options. The analyzed brief and generated copy make Visuals ready to offer its two generation methods; prompt/image generation starts when the user chooses a method, not automatically from Brief. Campaign-wide visuals use all current generated copy without requiring approval; copy-linked visuals use the selected/approved option set. Copy does not generate visual prompts or images.
 
 **Manual operations:** approval, deletion, preview, and Generate More Options are user-triggered. Initial automatic generation must be tied to a durable job/result identity so mount effects, reloads, and duplicate analysis-completion notifications cannot produce extra initial batches.
 
@@ -80,7 +80,7 @@ This is a new functional specification, not just a visual variation of the struc
 2. Separate per-option approval from any existing single-candidate selection used by banner composition. Do not assume a single selected-copy ID stores all approval states.
 3. Preserve all earlier options and approvals when generating an additional batch. Initial generation, additional generation, and retry must have distinct, safe command identities.
 4. Persist hidden cards and enforce the 30-card capacity under concurrent requests. This limit does not replace existing cost controls.
-5. Accept the analyzed Brief as initial-generation input and preserve the independent Brief → Visuals prompt handoff.
+5. Accept the analyzed Brief as initial-generation input. Publish generated options and per-option approval/selection state to Visuals; do not trigger Visuals generation. Follow the later Visuals specification for selected-copy versus campaign-wide requests.
 6. Use shared design-system cards, empty states, icon controls, preview presentation, and motion conventions. If a reusable element is missing, add it to the design system first.
 
 This requirements task edits documentation only. Do not change shared application contracts, backend behavior, or another task's implementation plan from this specification-capture step.
@@ -99,5 +99,5 @@ This requirements task edits documentation only. Do not change shared applicatio
 - [ ] Earlier cards, their order, and approval states survive additional generation, failures, and refreshes.
 - [ ] No append or replay causes the list to exceed 30 non-hidden cards; the control is disabled at capacity.
 - [ ] Duplicate initial-generation notifications or retries do not create duplicate batches.
-- [ ] Copy does not wait for or trigger image generation, and Visuals does not wait for Copy approval.
+- [ ] Copy does not wait for or trigger image generation. Visuals requires generated copy; campaign-wide generation does not require approved/selected copy, while linked generation uses that selected set.
 - [ ] Downstream selection conflicts and stale Brief revisions cannot silently change reviewed or approved assets.
