@@ -47,3 +47,7 @@ Same `copy-ready` fixture and direct Copy target, with manually fired Intersecti
 - The separately labelled legacy Copy selection command invokes one select mutation and one workspace refresh, with no generation or other Copy mutation.
 
 These are controlled component/runtime policy and API-boundary counts, not a browser network waterfall or timing measurement. Short initial frames and the 400px near-viewport margin can activate several modules in a real viewport. Browser automation stopped activating controls even in the fixture-only playground; therefore actual initial loaded-chunk counts and physical browser timings are not certified. No page-speed improvement is claimed from these byte or mount changes.
+
+## Final browser closeout
+
+Physical-browser workflow and responsive/keyboard acceptance subsequently completed; see [integration verification](2026-09-07-integration-verification.md). No new speed or network-waterfall claim is made. After the final spacing-only CSS change, production entry is `index-NckjzIya.js`: 346,790 bytes / 106,272 same-method gzip bytes; 26 JS files; no checked playground/fixture markers. The DEV-only playground style-scope fix remains excluded from production.

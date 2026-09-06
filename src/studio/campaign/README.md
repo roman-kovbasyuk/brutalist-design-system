@@ -99,11 +99,11 @@ Copy implementation checkpoint, 6 September 2026: cards replace the earlier comp
 - [x] Connected UI/HTTP designer feedback, pointer/keyboard reopen, independent approval and exact v2 delivery regression.
 - [x] Final-review production fixes: dependency-aware saved batch invalidation and fresh-source duplication, with real runtime/API regressions.
 - [x] Final fix re-review, full suite, app/docs build, production artifact checks and isolated delivery verification.
-- [ ] Scoped integration checkpoint commit (see integration handoff and git history).
-- [ ] Complete physical-browser workflow and comprehensive responsive/keyboard checks after browser activation recovers.
+- [x] Scoped integration checkpoint commit: `f9282b7` (see integration handoff and git history).
+- [x] Complete physical-browser workflow, feedback/reopen/v2 delivery, responsive/keyboard checks and reload.
 
 All six headings/anchors render immediately. Allowed content activates on direct navigation or within a 400px viewport margin, then remains mounted. Without IntersectionObserver, accessible content mounts directly. The template route and AnimatedBanner now have separate production chunks; Copy's preview import is dynamic. Entry changed from 350,573 to 346,790 bytes (same-method gzip 107,628 to 106,263); emitted JS files increased from 22 to 26. This is build evidence, not a claim of faster browser rendering. See [measurement evidence](../../../../docs/superpowers/plans/2026-09-07-module-loading-measurements.md).
 
-Parent full-suite checkpoint on 7 September after the final production fixes: **136 files / 1,340 tests passed**, with no skipped tests reported. Browser QA reached immutable review and designer feedback, but control activation later stopped even on the fixture playground. Do not treat that as a verified application defect or a completed physical-browser approval/delivery loop. The connected UI/API and isolated CLI checks are separate evidence layers.
+Parent full-suite checkpoint on 7 September after the final production fixes: **136 files / 1,340 tests passed**, with no skipped tests reported. Physical-browser QA completed creation, feedback, reopening, independent version-2 approval and a verified 73,326-byte two-format ZIP download. All six modules were inspected at 2252/1440/390px; keyboard navigation, focus return, mobile timeline/drawer, error/retry and reload were verified. Intermittent role-switch browser-control stalls were recovered without changing application logic. See [final evidence](../../../../docs/superpowers/plans/2026-09-07-integration-verification.md) for exact artifact identity and remaining environment limits.
 
 No live demo records or settings were changed. Legacy Stage exports remain compatibility adapters. Shared working-tree changes are preserved; final commit/deploy status is tracked in the integration handoff.

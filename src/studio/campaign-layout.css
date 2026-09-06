@@ -12,7 +12,7 @@
 .bs-timeline-toggle { display: none; }
 .bs-campaign-overview { margin-bottom: 40px; }
 .bs-long-section { scroll-margin-top: 92px; margin-bottom: 32px; }
-.bs-module-toolbar { display: flex; justify-content: flex-end; margin-bottom: var(--v2-space-6); }
+.bs-module-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--v2-space-3); margin-bottom: var(--v2-space-6); }
 .bs-long-section .bs-section-heading h2 { font-size: 36px; line-height: 1.15; }
 .bs-long-section:last-child { margin-bottom: 0; }
 .bs-locked-section { padding: 48px; }

@@ -2,7 +2,7 @@
 
 ## Goal and scope
 
-User assigned Architecture & implementation to synchronize completed agent work, add unit tests, verify complete flows, and unify UI/UX with the app design system. Preserve Brief → Copy → Visuals → Banners → Review → Distribute and the existing sidebar. The earlier commit request remains pending until stable, verified integration.
+User assigned Architecture & implementation to synchronize completed agent work, add unit tests, verify complete flows, and unify UI/UX with the app design system. Preserve Brief → Copy → Visuals → Banners → Review → Distribute and the existing sidebar. Reviewed integration was committed as `f9282b7`; the final browser closeout is recorded below.
 
 This is a coordination ledger, not approval to implement design-only proposals. Plan concrete fixes after stable handoffs and inspection; follow applicable design, TDD, and review skills.
 
@@ -39,11 +39,11 @@ App worktree: `/Users/roman/Documents/Dev/crisp/lingu-agents/.worktrees/integrat
 - [x] Verify analysis → first Copy → prompt preparation without automatic images, refinement/retry, copy approval, and stale-source invalidation.
 - [x] Verify explicit Visuals generation/upload, copy lineage, multi-design/multi-format Banners selection, Review version integrity and approved Distribute output.
 - [x] Verify pending/error/empty states, navigation/draft persistence, role restrictions, stale revisions and idempotent retry across module boundaries.
-- [ ] Browser-test complete flow with isolated local mock data, including reload/recovery and desktop/mobile layouts; record actual evidence and limitations.
+- [x] Browser-test complete flow with isolated local mock data, including reload/recovery and desktop/mobile layouts; record actual evidence and limitations.
 - [x] Audit canonical DS usage and unify existing controls, headings, spacing, loading/disabled/error patterns and keyboard behavior without redesigning the flow.
 - [x] Run full unit/integration suite, application/docs build and relevant production checks after edits stabilize.
 - [x] Obtain independent integration review, resolve findings and rerun affected checks.
-- [ ] Update architecture and handoff documentation with final evidence; commit verified in-scope changes, leaving unrelated edits intact.
+- [x] Update architecture and handoff documentation with final evidence; commit verified in-scope changes, leaving unrelated edits intact.
 - [ ] Mark goal complete, pause integration heartbeat and report commit, results and limitations.
 
 ## Verification baseline (not current acceptance)
@@ -149,3 +149,11 @@ UI consistency candidate for regression test: `ModuleHost.jsx` renders Visuals o
 - Parent final suite: **136 files / 1,340 tests passed**. App/docs build, production artifacts/configuration, and isolated delivered ZIP all passed. Exact results and limits: [integration verification](2026-09-07-integration-verification.md).
 - Final scoped re-review accepted both P2 corrections, live Copy approval request-count coverage and DS documentation reconciliation; no new breakage. The review's nonblocking inventory observation concerned this parent-owned ledger edit, not an omitted implementer production change.
 - All source owners and the final fixer are stopped. The local verified integration can be committed as a checkpoint; full physical-browser acceptance and goal completion remain open. No push/merge/deployment is authorized by this checkpoint.
+
+### Final browser closeout — 7 September
+
+- Continued the same disposable campaign through marketer reopen, two-format version 2, designer checks, independent marketer approval, delivery and actual browser download. ZIP files/hashes/dimensions and campaign/version identity verified. Full evidence and requirement audit are in [integration verification](2026-09-07-integration-verification.md).
+- Inspected all six module layouts at 2252/1440/390px. Verified keyboard step navigation, Copy preview Escape/focus return, Banners arrow-key tabs, mobile timeline selection/collapse, drawer Escape/focus return, and delivered-state reload. Isolated Visuals failure shows one alert and records retry/reconcile commands.
+- Two bounded styling fixes: count/action gap and wrapping in the Visuals toolbar; canonical control scope on the DEV playground. Browser assertions failed before and passed after each fix. No business behavior changed.
+- Fresh full suite: 136 files / 1,340 tests; focused follow-up: 3 files / 35 tests. App/docs build, production artifacts, fixture exclusion and isolated workflow passed. Exact package and measurement details are in the evidence documents.
+- Owned browser fixture PID13618 closed cleanly; exact schema and temporary assets verified absent. QA tabs closed, viewport reset, downloaded QA ZIP retained. User demo untouched. Final closeout commit and goal/heartbeat transition follow this recorded acceptance; git history and task state are authoritative.

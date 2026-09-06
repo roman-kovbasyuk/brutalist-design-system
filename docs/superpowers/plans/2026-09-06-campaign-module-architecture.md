@@ -1,6 +1,6 @@
 # Campaign module architecture
 
-Status: six-module structure approved on 2026-09-06 and present in the integrated worktree. Independent module fixtures, explicit commands, stable hosts and real workflow tests are implemented. Final acceptance remains open for the physical-browser verification limitation recorded in the [integration handoff](2026-09-06-integration-handoff.md); this is not a deployment or real-provider certification. Later step-specific changes follow their separately approved specifications.
+Status: implemented and locally verified on 2026-09-07. Independent module fixtures, explicit commands, stable hosts and real workflow tests are implemented. Physical-browser verification completed the feedback/reopen/version-2 approval and download loop, plus responsive and keyboard checks. See the [requirement audit and verification limits](2026-09-07-integration-verification.md); this is not a deployment or real-provider certification. Later step-specific changes follow their separately approved specifications.
 
 Execution breakdown: [Six-module campaign implementation plan](2026-09-06-six-module-campaign-implementation.md). It defines reviewable phases, contracts, migration tasks, and verification without adding new step functionality.
 

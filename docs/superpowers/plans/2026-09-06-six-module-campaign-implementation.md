@@ -10,7 +10,7 @@
 
 **Spec:** [Approved campaign module architecture](2026-09-06-campaign-module-architecture.md).
 
-**Current status (7 September):** Live six-module page, DEV-only fixture playground, isolated real-API runner, persistent near-viewport activation and team module documentation are implemented. Final full suite after integration fixes: **136 files / 1,340 tests passed**. Physical-browser acceptance remains incomplete after browser controls stopped activating. The historical checklist below is the original execution record; current evidence and commit status are in the [integration handoff](2026-09-06-integration-handoff.md). No deployment, browser speed gain or real-provider end-to-end pass is claimed.
+**Current status (7 September):** Implementation and local acceptance are complete. Live six-module page, DEV-only fixture playground, isolated real-API runner, persistent near-viewport activation and team documentation are implemented. Full suite: **136 files / 1,340 tests passed**. The physical browser completed feedback/reopen/version-2 approval and verified download, plus six-module responsive/keyboard/reload checks. The detailed tasks below preserve the original execution record; planned per-task commits were consolidated into reviewed integration commit `f9282b7`. The [requirement audit](2026-09-07-integration-verification.md) and final acceptance checklist supersede historical unchecked milestones. No deployment, browser speed gain or real-provider end-to-end pass is claimed.
 
 ## Implementation checkpoint — 6 September 2026
 
@@ -541,18 +541,18 @@ Phase 5 review: use a current campaign, an old `?step=5` review link, and a narr
 
 ## Final acceptance checklist
 
-- [ ] Exactly six module IDs and six workflow headings: Brief, Copy, Visuals, Banners, Review, Distribute.
-- [ ] Each module can be opened directly in the app when allowed and exercised independently with fixtures.
-- [ ] Every module has named actions, explicit input/output boundaries, and local draft/loading/error ownership.
-- [ ] Changing module internals behind the same contract requires no page or sibling-module edits.
-- [ ] A changed contract has tests for its actual dependents and the full workflow, including non-adjacent artifact consumers.
-- [ ] Full workspace refresh, title rename, or another module's error does not reset unrelated drafts.
-- [ ] Existing campaign URLs and old review/approval links resolve safely; numeric steps are not reinterpreted as six-step indices.
-- [ ] Review preserves designer/approver separation, exact versions, revision conflicts, feedback, and reopen behavior.
-- [ ] Distribute operates only on the authorized approved version; a successful download/package matches that version.
-- [ ] Sidebar, app design system, and banner brand design systems remain separate and intact.
-- [ ] No unrequested step functionality, new provider/service split, or production-data mutation was introduced.
-- [ ] Tests/build/isolated workflow results and any measured performance changes are recorded for review.
+- [x] Exactly six module IDs and six workflow headings: Brief, Copy, Visuals, Banners, Review, Distribute.
+- [x] Each module can be opened directly in the app when allowed and exercised independently with fixtures.
+- [x] Every module has named actions, explicit input/output boundaries, and local draft/loading/error ownership.
+- [x] Changing module internals behind the same contract requires no page or sibling-module edits.
+- [x] A changed contract has tests for its actual dependents and the full workflow, including non-adjacent artifact consumers.
+- [x] Full workspace refresh, title rename, or another module's error does not reset unrelated drafts.
+- [x] Existing campaign URLs and old review/approval links resolve safely; numeric steps are not reinterpreted as six-step indices.
+- [x] Review preserves designer/approver separation, exact versions, revision conflicts, feedback, and reopen behavior.
+- [x] Distribute operates only on the authorized approved version; a successful download/package matches that version.
+- [x] Sidebar, app design system, and banner brand design systems remain separate and intact.
+- [x] No unrequested step functionality, new provider/service split, or production-data mutation was introduced.
+- [x] Tests/build/isolated workflow results and any measured performance changes are recorded for review.
 
 ## Plan self-review
 
@@ -569,4 +569,4 @@ Phase 5 review: use a current campaign, an old `?step=5` review link, and a narr
 | Design-system-first UI | Tasks 4–9 and shared frame |
 | Functional changes specified separately | Global constraints and final acceptance checklist |
 
-Execution is in progress. Use the checkpoint section above for verified implementation status; the remaining task and final-acceptance checkboxes still govern completion of the migration.
+Execution and local acceptance are complete. The dated checkpoint and detailed task lists above remain historical; the final acceptance checklist is supported by the linked requirement audit, fresh test/build results and browser-delivered artifact. Later module functionality remains separately specified.

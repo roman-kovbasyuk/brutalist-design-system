@@ -50,7 +50,7 @@ export function ModulePlayground() {
     history.replaceState({}, '', `/mvp/dev/modules/${moduleId}?scenario=${value}`)
   }
 
-  return <main className="module-playground">
+  return <main className="system-screen--v2 module-playground">
     <header className="module-playground__header">
       <div><p className="module-playground__eyebrow">Development-only module playground</p>
         <h1>Fixture records — never production data</h1></div>
