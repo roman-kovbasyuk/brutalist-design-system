@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { hashCanonical } from '../../shared/canonicalJson.js'
-import { transitionCampaign } from '../../shared/workflowRules.js'
+import { transitionCampaign, applyArtifactEdit } from '../../shared/workflowRules.js'
+import { rawBrief } from '../../shared/briefAnalysis.js'
 import { copyVariantSchema, generateImageInputSchema, visualDirectionSchema } from '../../shared/contracts.js'
 import { withDeadlineTransaction, withTransaction } from '../db/pool.js'
 import { createAuditRepository } from './auditRepository.js'
 import { createCampaignRepository } from './campaignRepository.js'
 import { createSettingsRepository } from './settingsRepository.js'
+import { loadVisualContext } from '../services/visualContext.js'
 import {
   assertProviderRegistry,
   generationProviderRegistry,
@@ -227,7 +229,10 @@ function providerContextError(step) {
 }
 
 async function loadContext(client, campaign, step, input) {
-  if (step === 'brief_analysis') return { brief: campaign.brief }
+  if (step === 'brief_analysis') {
+    if (input.expectedRevision !== undefined && campaign.revision !== input.expectedRevision) conflict('revision_conflict', 'The brief changed. Refresh before analyzing it.')
+    return { brief: campaign.brief, title: campaign.title, ...(input.instruction ? { instruction: input.instruction } : {}) }
+  }
   if (step === 'copy') {
     const analysis = await client.query(
       `SELECT result_metadata->'analysis' AS analysis, input_snapshot->'brief' AS analysed_brief
@@ -237,12 +242,28 @@ async function loadContext(client, campaign, step, input) {
       [campaign.id],
     )
     if (!analysis.rows[0]?.analysis) throw providerContextError(step)
-    if (!analysis.rows[0].analysed_brief || hashCanonical(analysis.rows[0].analysed_brief) !== hashCanonical(campaign.brief)) {
+    if (!analysis.rows[0].analysed_brief || hashCanonical(rawBrief(analysis.rows[0].analysed_brief)) !== hashCanonical(rawBrief(campaign.brief))) {
       throw new GenerationControlPlaneError(409, 'brief_analysis_stale', 'Analyse the current campaign brief before generating copy')
     }
-    return { brief: campaign.brief, analysis: analysis.rows[0].analysis }
+    // Read published cards and reservations in one MVCC snapshot. A concurrent
+    // completion moves slots between these totals without freeing capacity.
+    const capacity = await client.query(
+      `SELECT COALESCE((SELECT jsonb_agg(candidate ORDER BY sets.created_at, sets.id, position)
+        FROM copy_sets AS sets, jsonb_array_elements(sets.candidates) WITH ORDINALITY AS items(candidate, position)
+        WHERE sets.campaign_id = $1 AND sets.stale = false
+          AND NOT (sets.deleted_candidate_ids ? (candidate->>'id'))), '[]'::jsonb) AS copies,
+        (SELECT COALESCE(sum(COALESCE((input_snapshot->>'copySlots')::int, 5)), 0)::int
+         FROM generation_jobs WHERE campaign_id = $1 AND step = 'copy'
+         AND status IN ('pending', 'unknown')) AS reserved`, [campaign.id],
+    )
+    const { copies, reserved } = capacity.rows[0]
+    const available = 30 - copies.length - reserved
+    if (available <= 0) conflict('copy_limit_reached', 'You can keep up to 30 copy options. Delete an option to make room.')
+    return { brief: campaign.brief, analysis: campaign.brief.analysis ?? analysis.rows[0].analysis,
+      previousHeadlines: copies.map(copy => copy.headline), copySlots: Math.min(5, available) }
   }
   if (step === 'directions') {
+    if (input.mode) return loadVisualContext(client, campaign, input)
     if (!campaign.selectedCopyId) throw providerContextError(step)
     const selected = await client.query('SELECT candidates, selected_candidate_id FROM copy_sets WHERE campaign_id = $1 AND id = $2', [campaign.id, campaign.selectedCopyId])
     const copy = selected.rows[0]?.candidates?.find((candidate) => candidate.id === selected.rows[0].selected_candidate_id)
@@ -252,6 +273,10 @@ async function loadContext(client, campaign, step, input) {
   if (step === 'image') {
     const selected = await client.query('SELECT * FROM visual_directions WHERE campaign_id = $1 AND id = $2 AND stale = false', [campaign.id, input.directionId])
     if (!selected.rows[0]) throw providerContextError(step)
+    if (selected.rows[0].preview_asset_id || selected.rows[0].status === 'ready') conflict('visual_already_ready', 'This visual already has an image. Add a new visual instead.')
+    const active = await client.query(`SELECT id FROM generation_jobs WHERE campaign_id = $1 AND step = 'image'
+      AND input_snapshot->'direction'->>'id' = $2 AND status IN ('pending', 'unknown') LIMIT 1`, [campaign.id, input.directionId])
+    if (active.rowCount) conflict('visual_generation_pending', 'This image is still processing or needs reconciliation.')
     return {
       direction: visualDirectionSchema.parse({
         id: selected.rows[0].id,
@@ -513,6 +538,10 @@ export function createGenerationControlPlane({
       if (!['succeeded', 'failed', 'blocked'].includes(status)) throw new TypeError('Known provider results require a terminal status')
       safeMicrounits(actualCostMicrounits, 'actualCostMicrounits')
       return transaction(pool, async (client) => {
+        // Match preparation's lock order: campaign, then generation job.
+        const identity = await client.query('SELECT campaign_id FROM generation_jobs WHERE id = $1', [jobId])
+        const campaigns = createCampaignRepository(client)
+        const campaign = identity.rows[0] ? await campaigns.findByIdForUpdate(identity.rows[0].campaign_id) : null
         const locked = await client.query('SELECT * FROM generation_jobs WHERE id = $1 FOR UPDATE', [jobId])
         const current = locked.rows[0]
         if (!current || current.owner_token !== ownerToken || current.status !== 'pending' || current.dispatch_state !== 'dispatched') {
@@ -526,9 +555,24 @@ export function createGenerationControlPlane({
         }
 
         let persistedResult = resultMetadata
-        if (status === 'succeeded' && current.step === 'copy') {
+        if (status === 'succeeded' && (!campaign || !editableStatuses.has(campaign.status)
+          || hashCanonical(campaign.brief) !== hashCanonical(current.input_snapshot.brief))) {
+          // Settle the paid job, but never publish a late result over newer edits.
+          status = 'failed'; errorCode = 'brief_source_changed'; persistedResult = null
+        }
+        if (status === 'succeeded' && current.step === 'brief_analysis') {
+          const analysis = resultMetadata.analysis
+          const edit = applyArtifactEdit(campaign, 'brief')
+          const previous = await client.query("SELECT id FROM generation_jobs WHERE campaign_id = $1 AND step = 'brief_analysis' AND status = 'succeeded' LIMIT 1", [campaign.id])
+          const title = !previous.rowCount && analysis.title && campaign.title === current.input_snapshot.title ? analysis.title : campaign.title
+          await campaigns.updateState({ ...mapCampaignUpdate(campaign, campaign.revision),
+            title, brief: { ...campaign.brief, analysis }, status: edit.campaign.status,
+            selectedCopyId: null, selectedDirectionId: null, compositionId: null })
+          await campaigns.markArtifactsStale(campaign.id, { copy: true, directions: true, composition: true })
+        } else if (status === 'succeeded' && current.step === 'copy') {
           const copySetId = idGenerator()
-          const copies = resultMetadata.copies.map((copy) => ({ ...copy, id: `${jobId}:${copy.id}` }))
+          const copies = resultMetadata.copies.slice(0, current.input_snapshot.copySlots ?? 5)
+            .map((copy) => ({ ...copy, id: `${jobId}:${copy.id}` }))
           await client.query(
             `INSERT INTO copy_sets (id, campaign_id, generation_job_id, candidates)
              VALUES ($1, $2, $3, $4)`,
@@ -536,13 +580,16 @@ export function createGenerationControlPlane({
           )
           persistedResult = { copySetId, copies }
         } else if (status === 'succeeded' && current.step === 'directions') {
-          const directions = resultMetadata.directions.map((direction) => ({ ...direction, id: `${jobId}:${direction.id}` }))
-          for (const direction of directions) {
+          const context = current.input_snapshot
+          const ordered = context.mode === 'selected_copy' ? context.copies.map(copy => resultMetadata.directions.find(item => item.copyId === copy.id)) : resultMetadata.directions
+          const directions = ordered.map((direction) => ({ ...direction, id: `${jobId}:${direction.id}` }))
+          for (const [position, direction] of directions.entries()) {
             await client.query(
               `INSERT INTO visual_directions
-                 (id, campaign_id, generation_job_id, title, prompt, status, preview_asset_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [direction.id, current.campaign_id, jobId, direction.title, direction.prompt, direction.status, direction.previewAssetId],
+                 (id, campaign_id, generation_job_id, title, prompt, status, preview_asset_id, scope, copy_snapshot, batch_id, batch_position)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $3, $10)`,
+              [direction.id, current.campaign_id, jobId, direction.title, direction.prompt, direction.status, direction.previewAssetId,
+                context.mode ?? 'legacy', context.mode === 'selected_copy' ? context.copies.find(copy => copy.id === direction.copyId) : null, position],
             )
           }
           persistedResult = { directions }
@@ -1108,8 +1155,9 @@ export function createGenerationControlPlane({
         const selected = await client.query(
           `SELECT * FROM copy_sets
            WHERE campaign_id = $1 AND candidates @> $2::jsonb
+             AND NOT (deleted_candidate_ids ? $3)
            ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`,
-          [campaignId, JSON.stringify([{ id: input.copyId }])],
+          [campaignId, JSON.stringify([{ id: input.copyId }]), input.copyId],
         )
         const copySet = selected.rows[0]
         const copy = copySet?.candidates.find((candidate) => candidate.id === input.copyId)
@@ -1117,13 +1165,109 @@ export function createGenerationControlPlane({
         const transition = transitionCampaign({ campaign, action: 'select_copy', actor, input: { copy } })
         if (!transition.ok) conflict(transition.code, transition.message, transition.status)
         await client.query('UPDATE copy_sets SET selected_candidate_id = $2 WHERE id = $1', [copySet.id, copy.id])
-        await client.query('UPDATE visual_directions SET stale = true WHERE campaign_id = $1', [campaignId])
+        await client.query("UPDATE visual_directions SET stale = true WHERE campaign_id = $1 AND scope = 'legacy'", [campaignId])
         await client.query('UPDATE compositions SET stale = true WHERE campaign_id = $1', [campaignId])
         const updated = await campaigns.updateState(mapCampaignUpdate(campaign, expectedRevision, { status: transition.campaign.status, selectedCopyId: copySet.id }))
         await createAuditRepository(client).append({
           id: idGenerator(), actorId: actor.id, actorRole: actor.role, action: 'campaign.copy_selected',
           entityType: 'campaign', entityId: campaignId, beforeStatus: campaign.status, afterStatus: updated.status,
           payload: { copyId: copy.id, copySetId: copySet.id }, createdAt: clock(),
+        })
+        return updated
+      })
+    },
+
+    async approveCopy({ actor, campaignId, expectedRevision, input }) {
+      validateExpectedRevision(expectedRevision)
+      return transaction(pool, async (client) => {
+        const campaigns = createCampaignRepository(client)
+        const campaign = await campaigns.findByIdForUpdate(campaignId)
+        if (!campaign) conflict('not_found', 'Campaign was not found', 404)
+        if (campaign.revision !== expectedRevision) conflict('revision_conflict', 'The resource changed since it was loaded')
+        if (!editableStatuses.has(campaign.status) || campaign.openVersionId) conflict('campaign_locked', 'Campaign content is not editable in its current state')
+        const running = await client.query("SELECT id FROM generation_jobs WHERE campaign_id = $1 AND status IN ('pending', 'unknown') LIMIT 1", [campaignId])
+        if (running.rowCount) conflict('generation_pending', 'Wait for generation to finish before approving copy')
+        const result = await client.query(
+          `SELECT * FROM copy_sets WHERE campaign_id = $1 AND stale = false
+           AND candidates @> $2::jsonb AND NOT (deleted_candidate_ids ? $3)
+           ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`,
+          [campaignId, JSON.stringify([{ id: input.copyId }]), input.copyId],
+        )
+        const copySet = result.rows[0]
+        if (!copySet) conflict('copy_not_found', 'The requested copy candidate was not found', 404)
+        const alreadyApproved = copySet.approved_candidate_ids.includes(input.copyId)
+        if (alreadyApproved && campaign.selectedCopyId) return campaign
+        const copy = copySet.candidates.find(candidate => candidate.id === input.copyId)
+        const updates = {}
+        // Until Banners supports choosing among approved cards, keep its existing
+        // selection stable. Later approvals must not overwrite a user's design.
+        if (!campaign.selectedCopyId) {
+          const transition = transitionCampaign({ campaign, action: 'select_copy', actor, input: { copy } })
+          if (!transition.ok) conflict(transition.code, transition.message, transition.status)
+          updates.status = transition.campaign.status
+          updates.selectedCopyId = copySet.id
+          await client.query('UPDATE copy_sets SET selected_candidate_id = $2 WHERE id = $1', [copySet.id, copy.id])
+          await client.query("UPDATE visual_directions SET stale = true WHERE campaign_id = $1 AND scope = 'legacy'", [campaignId])
+          await campaigns.markArtifactsStale(campaignId, { composition: true })
+        }
+        if (!alreadyApproved) await client.query('UPDATE copy_sets SET approved_candidate_ids = approved_candidate_ids || $2::jsonb WHERE id = $1', [copySet.id, JSON.stringify([copy.id])])
+        const updated = await campaigns.updateState(mapCampaignUpdate(campaign, expectedRevision, updates))
+        await createAuditRepository(client).append({
+          id: idGenerator(), actorId: actor.id, actorRole: actor.role, action: 'campaign.copy_approved',
+          entityType: 'campaign', entityId: campaignId, beforeStatus: campaign.status, afterStatus: updated.status,
+          payload: { copyId: copy.id, copySetId: copySet.id }, createdAt: clock(),
+        })
+        return updated
+      })
+    },
+
+    async deleteCopy({ actor, campaignId, expectedRevision, input }) {
+      validateExpectedRevision(expectedRevision)
+      return transaction(pool, async (client) => {
+        const campaigns = createCampaignRepository(client)
+        const campaign = await campaigns.findByIdForUpdate(campaignId)
+        if (!campaign) conflict('not_found', 'Campaign was not found', 404)
+        if (campaign.revision !== expectedRevision) conflict('revision_conflict', 'The resource changed since it was loaded')
+        if (!editableStatuses.has(campaign.status) || campaign.openVersionId) {
+          conflict('campaign_locked', 'Campaign content is not editable in its current state')
+        }
+        const running = await client.query(
+          "SELECT id FROM generation_jobs WHERE campaign_id = $1 AND status IN ('pending', 'unknown') LIMIT 1",
+          [campaignId],
+        )
+        if (running.rowCount) conflict('generation_pending', 'Wait for generation to finish before deleting copy')
+        const result = await client.query(
+          `SELECT * FROM copy_sets WHERE campaign_id = $1 AND stale = false
+             AND candidates @> $2::jsonb AND NOT (deleted_candidate_ids ? $3)
+           ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE`,
+          [campaignId, JSON.stringify([{ id: input.copyId }]), input.copyId],
+        )
+        const copySet = result.rows[0]
+        if (!copySet) conflict('copy_not_found', 'The requested copy candidate was not found', 404)
+        const wasSelected = campaign.selectedCopyId === copySet.id && copySet.selected_candidate_id === input.copyId
+        const activeComposition = campaign.compositionId ? await client.query(
+          'SELECT designs FROM compositions WHERE campaign_id = $1 AND id = $2 AND stale = false FOR UPDATE',
+          [campaignId, campaign.compositionId],
+        ) : null
+        const usedByBatch = activeComposition?.rows[0]?.designs?.some(design => design.copyId === input.copyId) ?? false
+        const invalidatesComposition = wasSelected || usedByBatch
+        await client.query(
+          'UPDATE copy_sets SET deleted_candidate_ids = deleted_candidate_ids || $2::jsonb WHERE id = $1',
+          [copySet.id, JSON.stringify([input.copyId])],
+        )
+        await client.query(`UPDATE visual_directions SET stale = true WHERE campaign_id = $1
+          AND (copy_snapshot->>'id' = $2 OR ($3 AND scope = 'legacy'))`, [campaignId, input.copyId, wasSelected])
+        if (invalidatesComposition) await client.query(
+          'UPDATE compositions SET stale = true WHERE campaign_id = $1 AND id = $2 AND stale = false',
+          [campaignId, campaign.compositionId],
+        )
+        const updated = await campaigns.updateState({ ...mapCampaignUpdate(campaign, expectedRevision), ...(wasSelected ? {
+          status: 'draft', selectedCopyId: null, selectedDirectionId: null, compositionId: null,
+        } : usedByBatch ? { status: 'direction_selected', compositionId: null } : {}) })
+        await createAuditRepository(client).append({
+          id: idGenerator(), actorId: actor.id, actorRole: actor.role, action: 'campaign.copy_deleted',
+          entityType: 'campaign', entityId: campaignId, beforeStatus: campaign.status, afterStatus: updated.status,
+          payload: { copyId: input.copyId, copySetId: copySet.id, wasSelected }, createdAt: clock(),
         })
         return updated
       })
@@ -1139,11 +1283,36 @@ export function createGenerationControlPlane({
         const selected = await client.query('SELECT * FROM visual_directions WHERE campaign_id = $1 AND id = $2 AND stale = false FOR UPDATE', [campaignId, input.directionId])
         const row = selected.rows[0]
         if (!row) conflict('direction_not_found', 'The requested visual direction was not found', 404)
+        let selectedCopyId = campaign.selectedCopyId
+        let transitionSource = campaign
+        if (row.scope === 'selected_copy') {
+          const linked = await client.query(`SELECT * FROM copy_sets WHERE campaign_id = $1 AND stale = false
+            AND candidates @> $2::jsonb AND (approved_candidate_ids ? $3 OR (id = $4 AND selected_candidate_id = $3))
+            AND NOT (deleted_candidate_ids ? $3) FOR UPDATE`,
+          [campaignId, JSON.stringify([{ id: row.copy_snapshot.id }]), row.copy_snapshot.id, campaign.selectedCopyId])
+          const copySet = linked.rows[0]
+          if (!copySet) conflict('copy_not_approved', 'The linked copy is no longer available. Choose a current visual.')
+          if (campaign.status === 'draft') {
+            const copyTransition = transitionCampaign({ campaign, action: 'select_copy', actor, input: { copy: row.copy_snapshot } })
+            if (!copyTransition.ok) conflict(copyTransition.code, copyTransition.message, copyTransition.status)
+            transitionSource = copyTransition.campaign
+          }
+          selectedCopyId = copySet.id
+          // Promote the exact legacy selection before moving the Banners bridge.
+          // Its approval must not disappear when another linked visual is chosen.
+          await client.query(`UPDATE copy_sets
+            SET approved_candidate_ids = approved_candidate_ids || jsonb_build_array(selected_candidate_id)
+            WHERE campaign_id = $1 AND id = $2 AND stale = false AND selected_candidate_id IS NOT NULL
+              AND candidates @> jsonb_build_array(jsonb_build_object('id', selected_candidate_id))
+              AND NOT (deleted_candidate_ids ? selected_candidate_id)
+              AND NOT (approved_candidate_ids ? selected_candidate_id)`, [campaignId, campaign.selectedCopyId])
+          await client.query('UPDATE copy_sets SET selected_candidate_id = $2 WHERE id = $1', [copySet.id, row.copy_snapshot.id])
+        }
         const direction = visualDirectionSchema.parse({ id: row.id, title: row.title, prompt: row.prompt, status: row.status, previewAssetId: row.preview_asset_id })
-        const transition = transitionCampaign({ campaign, action: 'select_direction', actor, input: { direction } })
+        const transition = transitionCampaign({ campaign: transitionSource, action: 'select_direction', actor, input: { direction } })
         if (!transition.ok) conflict(transition.code, transition.message, transition.status)
         await client.query('UPDATE compositions SET stale = true WHERE campaign_id = $1', [campaignId])
-        const updated = await campaigns.updateState(mapCampaignUpdate(campaign, expectedRevision, { status: transition.campaign.status, selectedDirectionId: direction.id }))
+        const updated = await campaigns.updateState(mapCampaignUpdate(campaign, expectedRevision, { status: transition.campaign.status, selectedDirectionId: direction.id, selectedCopyId }))
         await createAuditRepository(client).append({
           id: idGenerator(), actorId: actor.id, actorRole: actor.role, action: 'campaign.direction_selected',
           entityType: 'campaign', entityId: campaignId, beforeStatus: campaign.status, afterStatus: updated.status,

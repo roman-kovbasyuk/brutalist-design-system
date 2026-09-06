@@ -11,6 +11,7 @@ import { createGenerationControlPlane } from '../server/repositories/generationJ
 import { createLocalDemoAssetStore } from '../server/storage/localDemoAssetStore.js'
 import { createMockProvider } from '../server/providers/mockProvider.js'
 import { createAssetService } from '../server/services/assetService.js'
+import { createVisualUploadService } from '../server/services/visualUploadService.js'
 import { createVersionService } from '../server/services/versionService.js'
 import { createReviewService } from '../server/services/reviewService.js'
 import { createDeliveryService } from '../server/services/deliveryService.js'
@@ -49,8 +50,8 @@ export async function startDemoServer({ port = 3010 } = {}) {
       provider: 'mock', model: 'mock-v1', region: 'europe-west6', dailyBudgetMicrounits: 1_000_000_000,
       perStepRegenerationLimit: 20, generationDisabled: false,
     } })
-    const { legacyStudioTemplates, studioTemplates } = await import('../shared/studioTemplates.js')
-    for (const manifest of [...legacyStudioTemplates, ...studioTemplates]) {
+    const { legacyStudioTemplates, taggedStudioTemplates, studioTemplates } = await import('../shared/studioTemplates.js')
+    for (const manifest of [...legacyStudioTemplates, ...taggedStudioTemplates, ...studioTemplates]) {
       const existing = await workflowService.getTemplateVersion({ actor: admin, templateId: manifest.id, version: manifest.version })
       if (!existing) await workflowService.createTemplateVersion({ actor: admin, input: { id: manifest.id, name: manifest.name, version: manifest.version, manifest } })
     }
@@ -79,6 +80,7 @@ export async function startDemoServer({ port = 3010 } = {}) {
       readiness: async () => { await pool.query('SELECT 1'); return true },
       generationService: createGenerationService({ pool, assetStore, controlPlane: createGenerationControlPlane({ pool }), providers: { mock: demoProvider } }),
       assetService: createAssetService({ pool, assetStore }), versionService: createVersionService({ pool, assetStore }),
+      visualUploadService: createVisualUploadService({ pool, assetStore }),
       reviewService: createReviewService({ pool }), deliveryService: createDeliveryService({ pool, assetStore }),
     })
     // This guard and demo identity resolver exist only in this launcher. Firebase production startup is unchanged.

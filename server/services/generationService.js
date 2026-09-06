@@ -10,6 +10,7 @@ import {
 import { invokeProvider, validateGenerationProvider } from '../providers/provider.js'
 import { decodeGeneratedImage } from '../images/imageDecoder.js'
 import { assertAssetBytes, validateAssetStore } from '../storage/assetStore.js'
+import { validVisualResult } from './visualContext.js'
 
 const editorRoles = ['marketer', 'admin']
 const readerRoles = ['marketer', 'designer', 'admin']
@@ -55,9 +56,10 @@ function safeInstant(value, name) {
 }
 
 function providerInput(step, context, input) {
-  if (step === 'brief_analysis') return { brief: context.brief }
-  if (step === 'copy') return { brief: context.brief, analysis: context.analysis }
-  if (step === 'directions') return { brief: context.brief, copy: context.copy }
+  if (step === 'brief_analysis') return { brief: context.brief, ...(context.instruction ? { instruction: context.instruction } : {}) }
+  if (step === 'copy') return { brief: context.brief, analysis: context.analysis,
+    ...(context.previousHeadlines ? { previousHeadlines: context.previousHeadlines } : {}) }
+  if (step === 'directions') return context.mode ? { brief: context.brief, analysis: context.analysis, mode: context.mode, copies: context.copies } : { brief: context.brief, copy: context.copy }
   if (step === 'image') return { direction: context.direction, width: input.width, height: input.height }
   throw new TypeError(`Unknown generation step ${step}`)
 }
@@ -366,6 +368,11 @@ export function createGenerationService({
     }
 
     const normalized = normalizedResult(step, result)
+    if (step === 'directions' && normalized.status === 'succeeded' && !validVisualResult(prepared.context, result.directions)) {
+      normalized.status = 'failed'
+      normalized.resultMetadata = null
+      normalized.errorCode = 'invalid_output'
+    }
     const committed = await controlPlane.completeProviderResult({
       jobId: prepared.job.id,
       ownerToken: prepared.ownerToken,
@@ -395,6 +402,16 @@ export function createGenerationService({
     async selectCopy({ actor, campaignId, expectedRevision, input }) {
       requireRole(actor, editorRoles)
       return controlPlane.selectCopy({ actor, campaignId, expectedRevision, input: validate(copySelectionRequestSchema, input) })
+    },
+
+    async approveCopy({ actor, campaignId, expectedRevision, input }) {
+      requireRole(actor, editorRoles)
+      return controlPlane.approveCopy({ actor, campaignId, expectedRevision, input: validate(copySelectionRequestSchema, input) })
+    },
+
+    async deleteCopy({ actor, campaignId, expectedRevision, input }) {
+      requireRole(actor, editorRoles)
+      return controlPlane.deleteCopy({ actor, campaignId, expectedRevision, input: validate(copySelectionRequestSchema, input) })
     },
 
     async selectDirection({ actor, campaignId, expectedRevision, input }) {

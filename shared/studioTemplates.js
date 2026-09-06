@@ -1,3 +1,5 @@
+import { bannerFormats } from './bannerFormats.js'
+
 // One geometry source for animated previews and immutable PNG exports.
 const box = (x, y, width, height) => ({ x, y, width, height })
 const placements = (square, portrait, story, landscape) => ({ square, portrait, story, landscape })
@@ -87,11 +89,32 @@ const tagPlacements = {
 }
 
 // Published versions are immutable. Old compositions keep their original manifest.
-export const studioTemplates = legacyStudioTemplates.map(template => ({
+export const taggedStudioTemplates = legacyStudioTemplates.map(template => ({
   ...structuredClone(template), version: '1.1.0',
   presentation: { ...structuredClone(template.presentation), slotColors: { ...template.presentation.slotColors, tag: template.presentation.slotColors.body } },
   slots: [...structuredClone(template.slots), { ...text('tag', 18, 600, [40, 2], tagPlacements[template.id]), required: false }],
 }))
+
+// 1.0 and 1.1 manifests remain unchanged for saved compositions and snapshots.
+// Added placements use the nearest existing layout, scaled to the exact canvas.
+export const studioTemplates = taggedStudioTemplates.map(original => {
+  const template = structuredClone(original)
+  template.version = '1.2.0'
+  for (const format of bannerFormats.filter(format => !template.ratios.some(ratio => ratio.id === format.id))) {
+    const baseId = format.width === format.height ? 'square' : format.width > format.height ? 'landscape' : 'portrait'
+    const base = original.ratios.find(ratio => ratio.id === baseId)
+    const scaleBox = position => ({
+      x: Math.round(position.x * format.width / base.width),
+      y: Math.round(position.y * format.height / base.height),
+      width: Math.floor(position.width * format.width / base.width),
+      height: Math.floor(position.height * format.height / base.height),
+    })
+    template.ratios.push({ id: format.id, width: format.width, height: format.height, safeArea: { top: 48, right: 48, bottom: 48, left: 48 } })
+    for (const slot of template.slots) slot.placements[format.id] = scaleBox(slot.placements[baseId])
+    for (const shape of template.presentation.shapes) shape.placements[format.id] = scaleBox(shape.placements[baseId])
+  }
+  return template
+})
 
 export const studioTemplateSamples = {
   'editorial-split': { headline: 'A little more quiet.', body: 'Make room for the sounds you love. Thoughtfully made for your everyday.', cta: 'Find your focus' },

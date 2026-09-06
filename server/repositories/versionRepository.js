@@ -31,6 +31,7 @@ function mapComposition(row) {
     slotValues: row.slot_values,
     validation: row.validation,
     stale: row.stale,
+    ...(row.designs ? { designs: row.designs } : {}),
   }
 }
 
@@ -170,6 +171,8 @@ export function createVersionRepository(client) {
         selectedCandidateId: row.selected_candidate_id,
         selectedCopy: row.candidates?.find((candidate) => candidate.id === row.selected_candidate_id) ?? null,
         candidates: row.candidates,
+        approvedCandidateIds: row.approved_candidate_ids ?? [],
+        deletedCandidateIds: row.deleted_candidate_ids ?? [],
         stale: row.stale,
         generationStep: row.generation_step,
         generationStatus: row.generation_status,
@@ -195,6 +198,8 @@ export function createVersionRepository(client) {
       return {
         id: row.id, title: row.title, prompt: row.prompt, status: row.status,
         previewAssetId: row.preview_asset_id, stale: row.stale,
+        scope: row.scope, copy: row.copy_snapshot, uploadProvenance: row.upload_provenance,
+        generationJobId: row.generation_job_id,
         generationStep: row.generation_step, generationStatus: row.generation_status,
         generationSafety: row.generation_safety, generationInput: row.generation_input,
         generationResult: row.generation_result,
@@ -278,11 +283,12 @@ export function createVersionRepository(client) {
       }
       const inserted = await client.query(
         `INSERT INTO compositions
-           (id, campaign_id, template_id, template_version, ratio_ids, slot_values, validation, stale, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8)
+           (id, campaign_id, template_id, template_version, ratio_ids, slot_values, validation, stale, created_at${composition.designs ? ', designs' : ''})
+         VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8${composition.designs ? ', $9' : ''})
          RETURNING *`,
         [composition.id, campaign.id, composition.templateId, composition.templateVersion,
-          JSON.stringify(composition.ratioIds), composition.slotValues, composition.validation, createdAt],
+          JSON.stringify(composition.ratioIds), composition.slotValues, composition.validation, createdAt,
+          ...(composition.designs ? [JSON.stringify(composition.designs)] : [])],
       )
       const updated = await campaigns.updateState(campaignUpdateInput(campaign, {
         status: 'composed', compositionId: composition.id,

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 
-const designSystemStyles = readFileSync(join(process.cwd(), 'src/styles/design-system.css'), 'utf8')
+const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
 
 describe('DesignSystemScreen', () => {
   test('uses accessible secondary copy, white selected tabs, and the specified field spacing', () => {
@@ -70,19 +70,25 @@ describe('DesignSystemScreen', () => {
 
   test('presents the complete UI v2 reference structure', () => {
     render(<DesignSystemScreen />)
-    expect(screen.getByRole('heading', { name: 'Banner Studio design system' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Application design system' })).toBeVisible()
+    for (const name of ['Basics', 'Components', 'UI blocks']) {
+      expect(screen.getByRole('tab', { name, exact: true })).toBeVisible()
+    }
+    expect(screen.getByRole('heading', { name: 'Controls', exact: true })).toBeVisible()
     for (const name of ['Foundations', 'Actions and controls', 'Navigation', 'Feedback', 'Data display', 'Content objects', 'Overlays', 'Motion', 'Responsive behavior']) {
       expect(screen.getByRole('heading', { name })).toBeVisible()
     }
     expect(screen.getByText('#79d9ff')).toBeVisible()
-    expect(screen.getByText('16px / 22px')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Copy Body typography token' })).toBeVisible()
+    expect(screen.queryByText('--v2-text-body')).not.toBeInTheDocument()
+    expect(screen.queryByText('--v2-line-body')).not.toBeInTheDocument()
     expect(screen.getByText('4px base unit')).toBeVisible()
   })
 
   test('keeps the documented 48px page role at every breakpoint', () => {
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-page-header h1\s*{[^}]*font-size:\s*var\(--v2-text-page\);/)
-    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--page p\s*{[^}]*font-size:\s*var\(--v2-text-page\);/)
-    expect(designSystemStyles).not.toMatch(/\.system-screen--v2 \.(?:v2-page-header h1|v2-type-sample--page p)\s*{[^}]*font-size:\s*40px;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--h1 p\s*{[^}]*font-size:\s*var\(--v2-text-h1\);/)
+    expect(designSystemStyles).not.toMatch(/\.system-screen--v2 \.(?:v2-page-header h1|v2-type-sample--h1 p)\s*{[^}]*font-size:\s*40px;/)
   })
 
   test('fills range tracks from the left edge and allows date fields to shrink', () => {

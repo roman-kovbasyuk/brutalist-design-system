@@ -1,36 +1,51 @@
+import { PromptComposerExample } from '../components/design-system/examples/PromptComposerExample.jsx'
+import { LibraryIndex } from '../components/design-system/examples/LibraryIndex.jsx'
+import { TokenCopyTarget } from '../components/design-system/atoms/TokenCopyTarget.jsx'
 import { Sparkles } from 'lucide-react'
-import { ResponsiveSpecimen } from '../components/design-system/ResponsiveSpecimen.jsx'
-import { ControlSpecimens, NavigationSpecimens } from '../components/design-system/ControlSpecimens.jsx'
+import { ResponsiveSpecimen } from '../components/design-system/examples/ResponsiveSpecimen.jsx'
+import { ControlSpecimens, NavigationSpecimens } from '../components/design-system/examples/ControlSpecimens.jsx'
 import {
   ContentObjectSpecimens,
   DataSpecimens,
   FeedbackSpecimens,
-} from '../components/design-system/DataSpecimens.jsx'
-import { MotionSpecimens } from '../components/design-system/MotionSpecimens.jsx'
-import { SpecimenSection } from '../components/design-system/SpecimenSection.jsx'
-import { UIBlocks } from '../components/design-system/UIBlocks.jsx'
+} from '../components/design-system/examples/DataSpecimens.jsx'
+import { MotionSpecimens } from '../components/design-system/examples/MotionSpecimens.jsx'
+import { SpecimenSection } from '../components/design-system/examples/SpecimenSection.jsx'
+import { UIBlocks } from '../components/design-system/examples/UIBlocks.jsx'
 import '../styles/design-system.css'
 
 const colors = [
-  { name: 'Canvas', value: '#f4f4f0', token: 'var(--v2-canvas)' },
-  { name: 'Surface', value: '#ffffff', token: 'var(--v2-surface)' },
-  { name: 'Ink', value: '#000000', token: 'var(--v2-ink)' },
-  { name: 'Accent', value: '#79d9ff', token: 'var(--v2-accent)' },
-  { name: 'Success', value: '#23a094', token: 'var(--v2-success)' },
-  { name: 'Danger', value: '#dc341e', token: 'var(--v2-danger)' },
-  { name: 'Muted', value: '50% black', token: 'var(--v2-muted)' },
+  { name: 'Canvas', value: '#f4f4f0', token: '--v2-canvas' },
+  { name: 'Surface', value: '#ffffff', token: '--v2-surface' },
+  { name: 'Ink', value: '#000000', token: '--v2-ink' },
+  { name: 'Accent', value: '#79d9ff', token: '--v2-accent' },
+  { name: 'Success', value: '#23a094', token: '--v2-success' },
+  { name: 'Danger', value: '#dc341e', token: '--v2-danger' },
+  { name: 'Muted swatch — decorative only', value: '50% black', token: '--v2-muted' },
 ]
 
 const typeRoles = [
-  { name: 'Page title', value: '48px', className: 'v2-type-sample--page' },
-  { name: 'Display', value: '32px', className: 'v2-type-sample--display' },
-  { name: 'Section title', value: '24px', className: 'v2-type-sample--section' },
-  { name: 'Component title', value: '20px', className: 'v2-type-sample--component' },
-  { name: 'Body and controls', value: '16px / 22px', className: 'v2-type-sample--body' },
-  { name: 'Metadata', value: '14px', className: 'v2-type-sample--meta' },
+  { name: 'H1', key: 'h1', size: 48, line: 52, weight: 500 },
+  { name: 'H2', key: 'h2', size: 32, line: 36, weight: 500 },
+  { name: 'H3', key: 'h3', size: 24, line: 28, weight: 500 },
+  { name: 'H4', key: 'h4', size: 20, line: 24, weight: 500 },
+  { name: 'H5', key: 'h5', size: 18, line: 24, weight: 500 },
+  { name: 'Lead Large', key: 'lead-large', size: 24, line: 36, weight: 400 },
+  { name: 'Lead Medium', key: 'lead-medium', size: 20, line: 28, weight: 400 },
+  { name: 'Body', key: 'body', size: 16, line: 22, weight: 400 },
+  { name: 'Small text', key: 'small', size: 14, line: 20, weight: 400 },
 ]
 
-const spacingSteps = [4, 8, 12, 16, 24, 32, 48, 64]
+const spacingSteps = [
+  { value: 4, token: '--v2-space-1' },
+  { value: 8, token: '--v2-space-2' },
+  { value: 12, token: '--v2-space-3' },
+  { value: 16, token: '--v2-space-4' },
+  { value: 24, token: '--v2-space-6' },
+  { value: 32, token: '--v2-space-8' },
+  { value: 48, token: '--v2-space-12' },
+  { value: 64, token: '--v2-space-16' },
+]
 const iconSizes = [16, 20, 24]
 
 export function DesignSystemScreen() {
@@ -38,18 +53,20 @@ export function DesignSystemScreen() {
     <div className="system-screen--v2">
       <header className="v2-page-header">
         <div>
-          <h1>Banner Studio design system</h1>
+          <h1>Application design system</h1>
         </div>
         <p className="v2-page-header__intro">
           A practical reference for the foundations, components, states, and responsive
-          behavior that shape the Banner Studio interface.
+          behavior that shape every Banner Studio interface. Banner brand styles are separate.
         </p>
       </header>
+
+      <LibraryIndex />
 
       <SpecimenSection
         index={1}
         title="Foundations"
-        description="The shared visual constraints behind every production surface."
+        description="Shared visual values for every production surface."
         className="v2-section--foundations"
       >
         <div className="v2-foundation-group v2-foundation-group--colors">
@@ -60,7 +77,9 @@ export function DesignSystemScreen() {
           <div className="v2-color-grid">
             {colors.map((color) => (
               <div className="v2-color-swatch" key={color.name}>
-                <span className="v2-color-swatch__sample" style={{ background: color.token }} />
+                <TokenCopyTarget copyValue={color.token} label={`${color.name} token`} className="v2-color-token-target">
+                  <span className="v2-color-swatch__sample" style={{ background: `var(${color.token})` }} aria-hidden="true" />
+                </TokenCopyTarget>
                 <strong>{color.name}</strong>
                 <small>{color.value}</small>
               </div>
@@ -68,18 +87,23 @@ export function DesignSystemScreen() {
           </div>
         </div>
 
-        <div className="v2-foundation-group">
+        <div className="v2-foundation-group" id="ds-typography">
           <div className="v2-foundation-group__heading">
             <h3>Typography</h3>
-            <p>Regular-weight roles with a compact, readable base rhythm.</p>
+            <p>Each sample shows its size, line height, and weight. Click to copy the combined token.</p>
           </div>
           <div className="v2-type-grid">
             {typeRoles.map((role) => (
-              <div className={`v2-type-sample ${role.className}`} key={role.name}>
-                <span>{role.name}</span>
-                <p>Make creative work clear.</p>
-                <small>{role.value}</small>
-              </div>
+              <TokenCopyTarget
+                key={role.name}
+                copyValue={`font: var(${role.weight === 500 ? '--v2-weight-heading' : '--v2-weight-text'}) var(--v2-text-${role.key}) / var(--v2-line-${role.key}) var(--v2-font);`}
+                label={`${role.name} typography token`}
+                className={`v2-type-sample v2-type-sample--${role.key}`}
+              >
+                <span className="v2-type-sample__name">{role.name}</span>
+                <p className="v2-type-sample__copy">Make creative work clear.</p>
+                <small className="v2-type-sample__value">{role.size}px / {role.line}px · {role.weight}</small>
+              </TokenCopyTarget>
             ))}
           </div>
         </div>
@@ -91,10 +115,10 @@ export function DesignSystemScreen() {
           </div>
           <div className="v2-spacing-grid">
             {spacingSteps.map((step) => (
-              <div className="v2-spacing-step" key={step}>
-                <span style={{ width: step, height: step }} />
-                <small>{step}px</small>
-              </div>
+              <TokenCopyTarget copyValue={step.token} label={`${step.value}px spacing token`} className="v2-spacing-step" key={step.token}>
+                <span style={{ width: step.value, height: step.value }} aria-hidden="true" />
+                <small>{step.value}px</small>
+              </TokenCopyTarget>
             ))}
           </div>
         </div>
@@ -150,6 +174,7 @@ export function DesignSystemScreen() {
         <ResponsiveSpecimen />
       </SpecimenSection>
       <UIBlocks />
+      <PromptComposerExample />
     </div>
   )
 }

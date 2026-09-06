@@ -92,7 +92,12 @@ export function createMockProvider({ model = 'mock-v1', region = 'europe-west6' 
       const audience = command.brief.audience || 'the audience described in the campaign notes'
       const intent = command.brief.objective || 'the campaign intent described in the notes'
       const analysis = {
-        summary: short(`${subject} for ${audience}, focused on ${intent}.`, 1_000),
+        title: command.brief.analysis?.title || short(command.brief.product || command.brief.notes.split(/[.!?\n]/)[0], 80),
+        audience: command.brief.analysis?.audience ?? command.brief.audience,
+        objective: command.brief.analysis?.objective ?? command.brief.objective,
+        channels: command.brief.analysis?.channels ?? ['Instagram', 'Facebook', 'LinkedIn', 'TikTok', 'YouTube'].filter(channel => command.brief.notes.toLowerCase().includes(channel.toLowerCase())),
+        formats: command.brief.analysis?.formats ?? [...new Set(command.brief.notes.match(/\b\d{2,4}\s*[x×]\s*\d{2,4}\b/g) ?? [])],
+        summary: short(`${command.brief.analysis?.summary || `${subject} for ${audience}, focused on ${intent}.`}${command.instruction ? ` ${command.instruction}` : ''}`, 1_000),
         themes: [intent, command.brief.offer || 'clear value', 'confident simplicity'],
         warnings: command.brief.notes.toLowerCase().includes('personal data') ? ['Review the brief for personal data before publishing.'] : [],
       }
@@ -111,11 +116,19 @@ export function createMockProvider({ model = 'mock-v1', region = 'europe-west6' 
         ['A fresh approach to', 'Discover an approachable experience created for', 'Discover more'],
         ['Ready for', 'Move forward with a clear next step shaped for', 'Try it today'],
       ]
-      const subject = command.brief.product || 'your next goal'
-      const audience = command.brief.audience || 'the audience in your brief'
-      const copies = angles.map(([lead, bodyLead, cta], index) => ({
+      const subject = command.analysis.title || command.brief.product || 'your next goal'
+      const audience = command.analysis.audience ?? (command.brief.audience || 'the audience in your brief')
+      const extraLeads = ['Discover', 'Make time for', 'Meet', 'Step into', 'A little more',
+        'Find your way with', 'Make it yours:', 'Everyday possibilities with', 'A new chapter with', 'Look closer at',
+        'Bring home', 'Start something with', 'The next move is', 'Open the door to', 'Life with',
+        'Your moment for', 'Fresh possibilities with', 'Try a new perspective on', 'Room to grow with', 'Put a spotlight on',
+        'Move ahead with', 'A better day with', 'Simple starts with', 'Choose your path with', 'The everyday power of']
+      const availableLeads = [...angles.map(angle => angle[0]), ...extraLeads]
+        .filter(lead => !(command.previousHeadlines ?? []).includes(short(`${lead} ${subject}`, 80))).slice(0, 5)
+      // Deleted cards free slots, so even repeated local-demo requests have five candidates.
+      const copies = angles.map(([fallbackLead, bodyLead, cta], index) => ({
         id: `copy-${seed.slice(index * 8, index * 8 + 8)}`,
-        headline: short(`${lead} ${subject}`, 80),
+        headline: short(`${availableLeads[index] ?? fallbackLead} ${subject}`, 80),
         body: short(`${bodyLead} ${audience}. ${command.brief.offer}`.trim(), 160),
         offer: short(command.brief.offer, 40),
         cta,
@@ -136,13 +149,19 @@ export function createMockProvider({ model = 'mock-v1', region = 'europe-west6' 
         ['Product clarity', 'Clean studio still life, exact details, restrained palette'],
         ['Editorial story', 'Magazine composition, tactile layers, premium art direction'],
       ]
-      const directions = concepts.map(([title, style], index) => ({
-        id: `direction-${seed.slice(index * 6, index * 6 + 6)}`,
+      const count = command.mode === 'campaign' ? 3 : command.mode === 'selected_copy' ? command.copies.length : 5
+      const directions = Array.from({ length: count }, (_, index) => {
+        const [title, style] = concepts[index % concepts.length]
+        const message = command.mode === 'selected_copy' ? command.copies[index].headline
+          : command.mode === 'campaign' ? command.copies.map(copy => copy.headline).join('; ') : command.copy.headline
+        return {
+        id: `direction-${seed.slice(0, 12)}-${index + 1}`,
         title,
-        prompt: short(`${style}. Communicate “${command.copy.headline}” for ${command.brief.audience}. No embedded text or logos.`, 2_000),
+        prompt: short(`${style}. Communicate “${message}” for ${command.brief.audience}. No embedded text or logos.`, 2_000),
         status: 'pending',
         previewAssetId: null,
-      }))
+        ...(command.mode === 'selected_copy' ? { copyId: command.copies[index].id } : {}),
+      } })
       return generateDirectionsResultSchema.parse({ ...metadata({ ...options, input: command, outputUnits: 260, actualCostMicrounits: 320 }), directions })
     },
 

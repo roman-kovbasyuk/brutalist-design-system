@@ -1,0 +1,6 @@
+.application-design-system { min-height: 100dvh; background: var(--v2-canvas); color: var(--v2-ink); font-family: var(--v2-font); }
+.application-design-system__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px clamp(20px, 4vw, 64px); border-bottom: 1px solid var(--v2-border); font-size: 14px; }
+.application-design-system__header a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: inherit; text-underline-offset: 4px; }
+.application-design-system__header a:focus-visible { outline: 2px solid var(--v2-ink); outline-offset: 4px; }
+.application-design-system__header > span { color: var(--v2-text-secondary); }
+@media (max-width: 600px) { .application-design-system__header { flex-wrap: wrap; gap: 0 16px; } }

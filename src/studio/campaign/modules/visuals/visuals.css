@@ -1,0 +1,11 @@
+.bs-visuals-module { container-type: inline-size; display: grid; gap: var(--v2-space-6); min-width: 0; }
+.bs-visual-methods, .bs-visual-results { display: grid; gap: var(--v2-space-6); min-width: 0; }
+.bs-visual-methods .v2-action-card__content { align-content: start; }
+.bs-visual-methods .v2-button { white-space: normal; justify-self: start; }
+.bs-visual-guidance, .bs-visual-feedback { margin: 0; font-size: var(--v2-text-small); line-height: var(--v2-line-body); color: var(--v2-text-secondary); }
+.bs-visual-progress { margin: 0; font-size: var(--v2-text-body); }
+.bs-visual-placeholder { min-height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--v2-space-4); padding: var(--v2-space-4); background: var(--v2-canvas); color: var(--v2-text-secondary); text-align: center; }
+.bs-visual-image { aspect-ratio: 1; background: var(--v2-canvas); display: grid; place-items: center; overflow: hidden; }
+.bs-visual-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.bs-visual-file-input { display: none; }
+@container (min-width: 640px) { .bs-visual-methods { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

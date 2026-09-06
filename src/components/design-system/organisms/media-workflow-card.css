@@ -1,0 +1,17 @@
+.v2-media-workflow-card { container-type: inline-size; min-width: 0; border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
+.v2-media-workflow-card[data-selected="true"] { outline: 2px solid var(--v2-ink); outline-offset: 3px; }
+.v2-media-workflow-card__heading { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: var(--v2-space-4); padding: var(--v2-space-6); border-bottom: var(--v2-border-width) solid var(--v2-border); }
+.v2-media-workflow-card__heading h3 { margin: 0; font-size: var(--v2-text-h3); line-height: var(--v2-line-h3); font-weight: var(--v2-weight-heading); overflow-wrap: anywhere; }
+.v2-media-workflow-card__context { margin-top: var(--v2-space-2); color: var(--v2-text-secondary); font-size: var(--v2-text-small); line-height: var(--v2-line-body); overflow-wrap: anywhere; }
+.v2-media-workflow-card__columns { display: grid; }
+.v2-media-workflow-card__column { display: flex; flex-direction: column; min-width: 0; padding: var(--v2-space-6); gap: var(--v2-space-4); }
+.v2-media-workflow-card__column + .v2-media-workflow-card__column { border-top: var(--v2-border-width) solid var(--v2-border); }
+.v2-media-workflow-card__column h4 { margin: 0; font-size: var(--v2-text-body); line-height: var(--v2-line-body); font-weight: var(--v2-weight-heading); }
+.v2-media-workflow-card__body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.v2-media-workflow-card__body p { margin: 0; font-size: var(--v2-text-body); line-height: var(--v2-line-body); white-space: pre-wrap; }
+.v2-media-workflow-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-2); }
+/* Three useful columns need 240px each. Stack by card width, not device label. */
+@container (min-width: 720px) {
+  .v2-media-workflow-card__columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .v2-media-workflow-card__column + .v2-media-workflow-card__column { border-top: 0; border-left: var(--v2-border-width) solid var(--v2-border); }
+}

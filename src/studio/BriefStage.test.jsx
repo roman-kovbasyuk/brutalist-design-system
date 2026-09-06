@@ -73,7 +73,8 @@ describe('brief composer', () => {
   test('keeps structured legacy context readable while hiding configuration fields', () => {
     render(<BriefStage campaign={{ id: 'old', revision: 1, title: 'Launch', brief: { product: 'Headphones', audience: 'Commuters', objective: 'Try the collection', offer: '20% off', locale: 'fr', notes: 'Keep it simple.' } }} readOnly />)
     expect(screen.getAllByRole('textbox')).toHaveLength(1)
-    expect(screen.getByLabelText('Campaign description')).toBeDisabled()
+    expect(screen.getByLabelText('Campaign description')).toBeEnabled()
+    expect(screen.getByLabelText('Campaign description')).toHaveAttribute('readonly')
     expect(screen.getByLabelText('Campaign description').value).toContain('Headphones')
     expect(screen.getByLabelText('Campaign description').value).toContain('Keep it simple.')
     expect(screen.queryByRole('button', { name: 'Analyze brief' })).not.toBeInTheDocument()

@@ -50,6 +50,7 @@ function services(overrides = {}) {
       updatedAt: '2026-09-04T10:00:00.000Z',
     })),
     archiveCampaign: vi.fn(async () => campaign({ revision: 1, archivedAt: '2026-09-04T10:00:00.000Z' })),
+    duplicateCampaign: vi.fn(async () => campaign({ id: 'campaign-2', title: 'Autumn launch copy' })),
     ...overrides,
   }
 }
@@ -136,6 +137,15 @@ describe('versioned workflow routes', () => {
     expect(archived.headers['x-request-id']).toBeTruthy()
     expect(workflowService.archiveCampaign).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'campaign-1', expectedRevision: 0 }))
     await app.close()
+  })
+
+  test('duplicates a campaign into a fresh draft', async () => {
+    const { app, workflowService } = makeApp()
+    const response = await app.inject({ method: 'POST', url: '/api/v1/campaigns/campaign-1/duplicate' })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json().id).toBe('campaign-2')
+    expect(workflowService.duplicateCampaign).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'campaign-1' }))
   })
 
   test('returns a normalized revision conflict without leaking persistence errors', async () => {

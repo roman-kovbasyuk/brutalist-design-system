@@ -20,7 +20,7 @@ export function StepRail({ currentStep, maxStep, onStepChange, items = steps, hi
     <nav className={`step-rail ${className}`} aria-label={ariaLabel}>
       <p className="step-rail-title">Campaign</p>
       <ol>
-        {items.map(([label], index) => {
+        {items.map(([label, context = ''], index) => {
           const number = index + 1
           if (hiddenSteps.includes(number)) return null
           const isComplete = number < maxStep && number !== currentStep
@@ -42,6 +42,7 @@ export function StepRail({ currentStep, maxStep, onStepChange, items = steps, hi
                 </span>
                 <span>
                   <strong>{label}</strong>
+                  {context && <small>{context}</small>}
                 </span>
               </a> : <button
                 type="button"
@@ -53,7 +54,7 @@ export function StepRail({ currentStep, maxStep, onStepChange, items = steps, hi
                 disabled={disabled || !isAvailable}
                 onClick={() => jumpTo(number)}
               >
-                <span className="step-number">{isComplete ? <Check size={13} aria-hidden="true" /> : String(number)}</span><span><strong>{label}</strong></span>
+                <span className="step-number">{isComplete ? <Check size={13} aria-hidden="true" /> : String(number)}</span><span><strong>{label}</strong>{context && <small>{context}</small>}</span>
               </button>}
             </li>
           )

@@ -1,0 +1,64 @@
+.v2-workflow-steps {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v2-workflow-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--v2-space-8) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--v2-space-3);
+  min-height: 64px;
+}
+
+.v2-workflow-steps li:not(:last-child)::after {
+  position: absolute;
+  top: 48px;
+  bottom: -16px;
+  left: 15px;
+  width: 1px;
+  background: var(--v2-border);
+  content: '';
+}
+
+.v2-workflow-steps li > span {
+  z-index: 1;
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--v2-border);
+  border-radius: 50%;
+  background: var(--v2-surface);
+  font-size: var(--v2-text-meta);
+  font-weight: 600;
+}
+
+.v2-workflow-steps li.is-complete > span {
+  background: var(--v2-success);
+}
+
+.v2-workflow-steps li[aria-current="step"] > span {
+  background: var(--v2-accent);
+}
+
+.v2-workflow-steps strong,
+.v2-workflow-steps small {
+  display: block;
+}
+
+.v2-workflow-steps small {
+  margin-top: var(--v2-space-1);
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-meta);
+}
+.v2-workflow-steps a { color: inherit; text-decoration: none; }
+.v2-workflow-steps a::after { content: ''; position: absolute; inset: 0; z-index: 2; }
+.v2-workflow-steps a[aria-disabled] { cursor: not-allowed; }
+.v2-workflow-steps a:focus-visible { outline: 2px solid var(--v2-ink); outline-offset: 4px; }

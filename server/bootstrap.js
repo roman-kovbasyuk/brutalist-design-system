@@ -13,6 +13,7 @@ import { reconcileGenerationSettings } from './services/generationSettingsServic
 import { createMemoryAssetStore } from './storage/memoryAssetStore.js'
 import { createGcsAssetStore } from './storage/gcsAssetStore.js'
 import { createAssetService } from './services/assetService.js'
+import { createVisualUploadService } from './services/visualUploadService.js'
 import { createVersionService } from './services/versionService.js'
 import { createReviewService } from './services/reviewService.js'
 import { createDeliveryService } from './services/deliveryService.js'
@@ -34,6 +35,7 @@ const productionDependencies = {
   createMemoryAssetStore,
   createGcsAssetStore,
   createAssetService,
+  createVisualUploadService,
   createVersionService,
   createReviewService,
   createDeliveryService,
@@ -134,6 +136,7 @@ export async function createServerRuntime({ environment = process.env, dependenc
       workflowService,
       generationService,
       assetService,
+      visualUploadService: resolved.createVisualUploadService({ pool, assetStore }),
       versionService,
       reviewService,
       deliveryService,

@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -8,7 +10,6 @@ import {
 import {
   ArrowLeft,
   ArrowUpRight,
-  BookOpen,
   Check,
   ChevronDown,
   CircleHelp,
@@ -16,36 +17,41 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  MoreHorizontal,
+  Pin,
+  PinOff,
   Plus,
   RefreshCw,
+  Search,
+  Settings,
   Shapes,
+  Copy,
+  Trash2,
+  Users,
   X,
 } from 'lucide-react'
 import { createStudioApi } from './api.js'
 import { useStudioAuth } from './auth.js'
 import { BriefStage } from './BriefStage.jsx'
-import { CampaignOverview } from './CampaignOverview.jsx'
-import { CampaignTimeline } from './CampaignTimeline.jsx'
-import { CopyStage } from './CopyStage.jsx'
-import { VisualStage } from './VisualStage.jsx'
-import { BannerStage } from './BannerStage.jsx'
-import { ReviewStage } from './ReviewStage.jsx'
-import { TemplateLibrary } from './TemplateLibrary.jsx'
+import { UpdatedText, useTextUpdate } from '../components/design-system/atoms/UpdatedText.jsx'
+import { CampaignPage } from './campaign/CampaignPage.jsx'
+import { useCampaignRuntime } from './campaign/useCampaignRuntime.js'
+import { campaignModuleUrl, parseCampaignModule } from './campaign/campaignRoutes.js'
 import { BrandDesignSystems } from './BrandDesignSystems.jsx'
 import { Button, ErrorNotice } from './primitives.jsx'
 import {
-  actionKey,
-  canVisitStage,
-  currentStage,
   editableStatuses,
   routeFromLocation,
-  stages,
   statusLabel,
 } from './workflow.js'
 import './studio.css'
 import './campaign-layout.css'
 
-const readRoute = () => routeFromLocation(location.pathname, location.search)
+const TemplateLibrary = lazy(() => import('./TemplateLibrary.jsx')
+  .then(module => ({ default: module.TemplateLibrary })))
+
+const readRoute = () => ({ ...routeFromLocation(location.pathname, location.search),
+  module: parseCampaignModule(location.search, location.hash) })
 
 export function StudioApp() {
   const auth = useStudioAuth()
@@ -97,6 +103,7 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
   const [campaigns, setCampaigns] = useState([])
   const [templates, setTemplates] = useState([])
   const [workspace, setWorkspace] = useState(null)
+  const titleUpdated = useTextUpdate(workspace?.campaign.title, workspace?.campaign.id)
   const [route, setRoute] = useState(readRoute)
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
@@ -105,21 +112,67 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
   const [notice, setNotice] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [copyView, setCopyView] = useState('Table')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [pinnedIds, setPinnedIds] = useState([])
+  const [openCampaignMenu, setOpenCampaignMenu] = useState(null)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const titleRef = useRef(null)
+  const titleDraft = useRef('')
   const [requestedTemplate, setRequestedTemplate] = useState(null)
-  const [dirty, setDirty] = useState(false)
   const dirtyRef = useRef(false)
   const inFlight = useRef(false)
   const loadId = useRef(0)
   const mainRef = useRef(null)
   const mobileRef = useRef(null)
-  const cancelRef = useRef(null)
-  const generationKeys = useRef(new Map())
-  const [waiting, setWaiting] = useState(false)
+  const analyzeOnOpen = useRef(null)
+  const runtime = useCampaignRuntime({ api, actor, templates,
+    workspace: route.view === 'campaign' && workspace?.campaign.id === route.id ? workspace : null,
+    onCampaignChange: campaign => {
+      setWorkspace(current => current?.campaign.id === campaign.id ? { ...current, campaign } : current)
+      setCampaigns(items => items.map(item => item.id === campaign.id ? campaign : item))
+    }, onError: setError })
+  const runtimeRef = useRef(runtime)
+  runtimeRef.current = runtime
+  const acceptedLocation = useRef({ route, url: location.pathname + location.search + location.hash })
+  useEffect(() => { acceptedLocation.current = { route, url: location.pathname + location.search + location.hash } }, [route])
+  const hasUnsavedChanges = () => dirtyRef.current || runtimeRef.current?.hasDirty()
+  const campaignBusy = () => inFlight.current || runtimeRef.current?.isBusy()
   const markDirty = useCallback((value) => {
     dirtyRef.current = value
-    setDirty(value)
   }, [])
+  useEffect(() => {
+    if (!actor?.id) return
+    try {
+      const saved = JSON.parse(localStorage.getItem(`studio:pins:${actor.id}`) ?? '[]')
+      setPinnedIds(Array.isArray(saved) ? saved.filter((id) => typeof id === 'string') : [])
+    } catch {
+      setPinnedIds([])
+    }
+  }, [actor?.id])
+  function togglePin(id) {
+    const next = pinnedIds.includes(id) ? pinnedIds.filter((value) => value !== id) : [id, ...pinnedIds]
+    setPinnedIds(next)
+    setOpenCampaignMenu(null)
+    try {
+      localStorage.setItem(`studio:pins:${actor.id}`, JSON.stringify(next))
+    } catch { /* Pins still work for this session when browser storage is unavailable. */ }
+  }
+  const focusSearchInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      document.querySelector('.bs-sidebar .bs-search input, .bs-mobile-sidebar[open] .bs-search input')?.focus()
+    })
+  }, [])
+  useEffect(() => {
+    if (!editingTitle || !titleRef.current) return
+    titleRef.current.focus()
+    const selection = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(titleRef.current)
+    range.collapse(false)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }, [editingTitle])
 
   const loadLists = useCallback(async () => {
     const [session, campaignList, templateList] = await Promise.all([
@@ -142,7 +195,6 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
       })
     return () => {
       active = false
-      cancelRef.current?.abort()
     }
   }, [loadLists])
   const loadWorkspace = useCallback(
@@ -176,33 +228,79 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
   }, [route.view, route.id, loadWorkspace])
   useEffect(() => {
     const pop = () => {
-      markDirty(false)
-      setRoute(readRoute())
+      const next = readRoute()
+      const previous = acceptedLocation.current
+      const sameCampaign = next.view === 'campaign' && previous.route.view === 'campaign' && next.id === previous.route.id
+      if (!sameCampaign) {
+        if (inFlight.current || runtimeRef.current?.isBusy() ||
+          ((dirtyRef.current || runtimeRef.current?.hasDirty()) && !window.confirm('Discard your unsaved changes?'))) {
+          history.pushState({}, '', previous.url)
+          return
+        }
+        markDirty(false)
+      }
+      setRoute(next)
     }
     const unload = (event) => {
-      if (dirtyRef.current) {
+      if (dirtyRef.current || runtimeRef.current?.hasDirty()) {
         event.preventDefault()
         event.returnValue = ''
       }
     }
     window.addEventListener('popstate', pop)
+    window.addEventListener('hashchange', pop)
     window.addEventListener('beforeunload', unload)
     return () => {
       window.removeEventListener('popstate', pop)
+      window.removeEventListener('hashchange', pop)
       window.removeEventListener('beforeunload', unload)
     }
   }, [markDirty])
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setSearchOpen(true)
+        focusSearchInput()
+      }
+      if (event.key === 'Escape') {
+        setOpenCampaignMenu(null)
+        setUserMenuOpen(false)
+        if (searchOpen) {
+          setSearchOpen(false)
+          setSearch('')
+        }
+      }
+    }
+    const onPointerDown = (event) => {
+      if (!event.target.closest?.('.bs-campaign-item')) setOpenCampaignMenu(null)
+      if (!event.target.closest?.('.bs-profile-shell')) setUserMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [focusSearchInput, searchOpen])
   useEffect(() => {
     if (sidebarOpen) mobileRef.current?.showModal()
     else mobileRef.current?.close()
   }, [sidebarOpen])
   useEffect(() => {
     if (!workspaceLoading) mainRef.current?.focus({ preventScroll: true })
-  }, [route.view, route.id, route.step, workspaceLoading])
+  }, [route.view, route.id, workspaceLoading])
   function navigate(path) {
-    if (inFlight.current) return
-    if (dirtyRef.current && !window.confirm('Discard your unsaved changes?'))
+    if (campaignBusy()) return
+    const target = new URL(path, location.origin)
+    const next = routeFromLocation(target.pathname, target.search)
+    if (route.view === 'campaign' && next.view === 'campaign' && route.id === next.id) {
+      history.pushState({}, '', path)
+      setRoute(readRoute())
+      setSidebarOpen(false)
       return
+    }
+    if (hasUnsavedChanges() && !window.confirm('Discard your unsaved changes?')) return
     markDirty(false)
     history.pushState({}, '', path)
     setRoute(readRoute())
@@ -211,162 +309,52 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
     setNotice('')
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
-  function goStage(index) {
-    if (workspace && canVisitStage(index, workspace))
-      navigate(
-        `/mvp/campaign/${encodeURIComponent(workspace.campaign.id)}?step=${index}`,
-      )
-  }
-  function scrollToStage(index) {
-    if (workspace && canVisitStage(index, workspace)) {
-      document.getElementById(`campaign-step-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }
-  async function run(
-    label,
-    operation,
-    { next, success = 'Changes saved' } = {},
-  ) {
-    if (inFlight.current) return
-    inFlight.current = true
-    setPending(label)
-    setError(null)
-    setNotice('')
-    try {
-      await operation()
-      markDirty(false)
-      const updated = workspace
-        ? await loadWorkspace(workspace.campaign.id)
-        : null
-      await loadLists()
-      setNotice(success)
-      if (updated && next !== undefined) {
-        const step = typeof next === 'function' ? next(updated) : next
-        history.replaceState(
-          {},
-          '',
-          `/mvp/campaign/${encodeURIComponent(updated.campaign.id)}?step=${step}`,
-        )
-        setRoute(readRoute())
-      }
-      return true
-    } catch (value) {
-      setError(value)
-      if (label.startsWith('Generate') && workspace)
-        await loadWorkspace(workspace.campaign.id).catch(() => {})
-      throw value
-    } finally {
-      inFlight.current = false
-      setPending('')
-    }
-  }
-  const safeRun = (...args) => run(...args).catch(() => {})
-  async function waitJob(response) {
-    let job = response.job ?? response
-    const controller = new AbortController()
-    cancelRef.current = controller
-    setWaiting(job.status === 'pending')
-    const deadline = Date.now() + 120000
-    while (
-      job.status === 'pending' &&
-      Date.now() < deadline &&
-      !controller.signal.aborted
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 900))
-      job = await api.getJob(job.id)
-    }
-    cancelRef.current = null
-    setWaiting(false)
-    if (job.status === 'pending') {
-      throw new Error(
-        'Generation is still running. Reload the campaign to check its result before starting another request.',
-      )
-    }
-    if (job.status !== 'succeeded')
-      throw new Error(
-        job.status === 'unknown'
-          ? 'The provider result is uncertain. Contact an administrator before generating again.'
-          : `Generation ${job.status}. ${job.errorCode ?? 'Try adjusting the brief and review the workspace limits.'}`,
-      )
-    return job
-  }
-  async function generate(step, input = {}, source = workspace) {
-    if (source.jobs.some((job) => ['pending', 'unknown'].includes(job.status)))
-      throw new Error(
-        'A generation is still pending or needs reconciliation. Reload the campaign or contact an administrator before starting another generation.',
-      )
-    const fingerprint = JSON.stringify([
-      source.campaign.id,
-      source.campaign.revision,
-      step,
-      input,
-    ])
-    const key = generationKeys.current.get(fingerprint) ?? actionKey()
-    generationKeys.current.set(fingerprint, key)
-    try {
-      const response = await api.generate(source.campaign.id, step, input, key)
-      const result = await waitJob(response)
-      generationKeys.current.delete(fingerprint)
-      return result
-    } finally {
-      setWaiting(false)
-      cancelRef.current = null
-    }
-  }
-  async function generateCopy(input) {
-    let source = workspace
-    if (input) {
-      try {
-        await run('Save brief', () =>
-          api.patchCampaign(
-            workspace.campaign.id,
-            input,
-            workspace.campaign.revision,
-          ),
-        )
-        source = await api.getWorkspace(workspace.campaign.id)
-      } catch (value) {
-        setError(value)
-        return
-      }
-    }
-    return safeRun(
-      'Generate copy',
-      async () => {
-        await generate('brief', {}, source)
-        await generate('copy', {}, source)
-      },
-      { next: 1, success: 'Five copy options are ready' },
-    )
+  function goModule(id) {
+    const current = runtimeRef.current
+    if (!current?.getSnapshot(id).access.canVisit || !route.id) return
+    history.pushState({}, '', campaignModuleUrl(route.id, id))
+    setRoute(readRoute())
+    document.getElementById(`campaign-module-${id}`)?.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' })
   }
   async function create(input) {
-    if (inFlight.current) return
+    if (campaignBusy()) return
     inFlight.current = true
     setPending('Create campaign')
     setError(null)
     try {
       const campaign = await api.createCampaign(input)
       markDirty(false)
-      history.pushState(
-        {},
-        '',
-        `/mvp/campaign/${encodeURIComponent(campaign.id)}?step=0`,
-      )
+      analyzeOnOpen.current = campaign.id
+      setCampaigns(items => [campaign, ...items.filter(item => item.id !== campaign.id)])
+      history.pushState({}, '', campaignModuleUrl(campaign.id, 'brief'))
       setRoute(readRoute())
+      return { ok: true }
+    } catch (failure) {
+      const uncertain = failure.status === undefined || failure.status === 0 || failure.status >= 500
+      const value = uncertain ? new Error('Creation may have completed. Check the campaign list before creating another campaign.') : failure
+      setError(value)
+      if (uncertain) await loadLists().catch(() => {})
+      return { ok: false, message: value.message }
+    } finally {
+      inFlight.current = false
+      setPending('')
+    }
+  }
+  async function duplicateCampaign(campaign) {
+    if (!editor || campaignBusy()) return
+    if (hasUnsavedChanges() && !window.confirm('Discard your unsaved changes?')) return
+    inFlight.current = true
+    setOpenCampaignMenu(null)
+    setPending('Duplicate campaign')
+    setError(null)
+    try {
+      const duplicated = await api.duplicateCampaign(campaign.id)
       await loadLists()
-      const source = await api.getWorkspace(campaign.id)
-      setPending('Generate copy')
-      await generate('brief', {}, source)
-      await generate('copy', {}, source)
-      await loadWorkspace(campaign.id)
-      await loadLists()
-      history.replaceState(
-        {},
-        '',
-        `/mvp/campaign/${encodeURIComponent(campaign.id)}?step=1`,
-      )
+      markDirty(false)
+      history.pushState({}, '', `/mvp/campaign/${encodeURIComponent(duplicated.id)}?step=0`)
       setRoute(readRoute())
-      setNotice('Five copy options are ready')
+      setWorkspace(null)
+      setNotice('Campaign duplicated as a new draft')
     } catch (value) {
       setError(value)
     } finally {
@@ -374,14 +362,47 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
       setPending('')
     }
   }
+  async function deleteCampaign(campaign) {
+    if (!editor || campaignBusy()) return
+    if (!window.confirm(`Remove “${campaign.title}” from active campaigns? Its files and history will be retained.`)) return
+    inFlight.current = true
+    setOpenCampaignMenu(null)
+    setPending('Remove campaign')
+    setError(null)
+    try {
+      await api.deleteCampaign(campaign.id, campaign.revision)
+      await loadLists()
+      markDirty(false)
+      if (route.id === campaign.id) {
+        history.pushState({}, '', '/mvp')
+        setRoute(readRoute())
+        setWorkspace(null)
+      }
+      setNotice('Campaign removed from active campaigns')
+    } catch (value) {
+      setError(value)
+    } finally {
+      inFlight.current = false
+      setPending('')
+    }
+  }
+  async function saveCampaignTitle() {
+    const title = titleDraft.current.trim()
+    const current = workspace?.campaign
+    setEditingTitle(false)
+    if (!current || !title || title === current.title) {
+      if (titleRef.current && current) titleRef.current.textContent = current.title
+      return
+    }
+    const result = await runtimeRef.current?.execute('brief', 'rename', async ({ api, workspace: source }) => {
+      await api.patchCampaign(source.campaign.id, { title }, source.campaign.revision)
+    }, { intent: { title }, reconcile: ({ current: refreshed }) => refreshed.campaign.title === title ? 'applied' : 'unknown' })
+    if (result?.ok === false) setError(result)
+
+  }
   const visibleCampaigns = campaigns.filter((item) =>
     item.title.toLowerCase().includes(search.toLowerCase()),
   )
-  const stage = workspace
-    ? route.step !== null && canVisitStage(route.step, workspace)
-      ? route.step
-      : currentStage(workspace)
-    : 0
   const editor = actor?.role === 'admin' || actor?.role === 'marketer'
   const generationBlocked = workspace?.jobs.some((job) =>
     ['pending', 'unknown'].includes(job.status),
@@ -390,9 +411,6 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
     !editor ||
     !editableStatuses.has(workspace?.campaign.status) ||
     generationBlocked
-  const version = workspace?.versions.find(
-    (item) => item.versionNumber === workspace.campaign.currentVersionNumber,
-  )
   const navItems = [
     ['campaigns', 'Campaigns', MessageSquare, '/mvp'],
     ['templates', 'Templates', LayoutTemplate, '/mvp/templates'],
@@ -400,10 +418,24 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
   ]
   const sidebar = (
     <>
-      <button className="bs-brand" onClick={() => navigate('/mvp')}>
-        <Shapes size={25} strokeWidth={1.7} aria-hidden="true" />
-        <span>Banner Studio</span>
-      </button>
+      <div className="bs-brand-row">
+        <button className="bs-brand" onClick={() => navigate('/mvp')}>
+          <Shapes size={25} strokeWidth={1.7} aria-hidden="true" />
+          <span>Studio</span>
+        </button>
+        <button
+          className="bs-search-trigger"
+          type="button"
+          aria-label="Search campaigns"
+          aria-expanded={searchOpen}
+          onClick={() => {
+            setSearchOpen(true)
+            focusSearchInput()
+          }}
+        >
+          <Search size={18} aria-hidden="true" />
+        </button>
+      </div>
       <Button
         className="bs-new"
         primary
@@ -437,33 +469,86 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
         ))}
       </nav>
       <div className="bs-campaign-history">
-        <label className="bs-search">
-          <span className="sr-only">Search campaigns</span>
-          <input
-            type="search"
-            placeholder="Search campaigns"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-        <p>Recent campaigns</p>
-        <div>
-          {visibleCampaigns.map((campaign) => (
-            <a
-              key={campaign.id}
-              href={`/mvp/campaign/${encodeURIComponent(campaign.id)}`}
-              onClick={(event) => {
-                if (!event.metaKey && !event.ctrlKey) {
-                  event.preventDefault()
-                  navigate(event.currentTarget.getAttribute('href'))
-                }
+        {searchOpen && (
+          <div className="bs-search">
+            <Search size={16} aria-hidden="true" />
+            <label>
+              <span className="sr-only">Search campaigns</span>
+              <input
+                type="search"
+                placeholder="Search campaigns"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              aria-label="Close search"
+              onClick={() => {
+                setSearchOpen(false)
+                setSearch('')
               }}
-              aria-current={route.id === campaign.id ? 'page' : undefined}
-              title={campaign.title}
             >
-              <MessageSquare size={15} aria-hidden="true" />
-              <span>{campaign.title}</span>
-            </a>
+              <X size={15} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        <div className="bs-project-groups">
+          {[
+            ['Pinned projects', pinnedIds.map((id) => visibleCampaigns.find((campaign) => campaign.id === id)).filter(Boolean)],
+            ['Recent projects', visibleCampaigns.filter((campaign) => !pinnedIds.includes(campaign.id))],
+          ].filter(([label, projects]) => label !== 'Pinned projects' || projects.length > 0).map(([label, projects]) => (
+          <section className="bs-project-group" aria-label={label} key={label}>
+            <p>{label}</p>
+          {projects.map((campaign) => (
+            <div className="bs-campaign-item" key={campaign.id}>
+              <a
+                href={`/mvp/campaign/${encodeURIComponent(campaign.id)}`}
+                onClick={(event) => {
+                  if (!event.metaKey && !event.ctrlKey) {
+                    event.preventDefault()
+                    navigate(event.currentTarget.getAttribute('href'))
+                  }
+                }}
+                aria-current={route.id === campaign.id ? 'page' : undefined}
+                title={campaign.title}
+              >
+                <UpdatedText value={campaign.title} identity={campaign.id} />
+              </a>
+              <button
+                type="button"
+                className="bs-campaign-actions"
+                aria-label={`${pinnedIds.includes(campaign.id) ? 'Unpin' : 'Pin'} ${campaign.title}`}
+                aria-pressed={pinnedIds.includes(campaign.id)}
+                onClick={() => togglePin(campaign.id)}
+              >
+                {pinnedIds.includes(campaign.id) ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}
+              </button>
+              <button
+                type="button"
+                className="bs-campaign-actions"
+                aria-label={`Actions for ${campaign.title}`}
+                aria-expanded={openCampaignMenu === campaign.id}
+                onClick={() => setOpenCampaignMenu((value) => value === campaign.id ? null : campaign.id)}
+              >
+                <MoreHorizontal size={16} aria-hidden="true" />
+              </button>
+              {openCampaignMenu === campaign.id && (
+                <div className="bs-campaign-menu" role="menu" aria-label={`Actions for ${campaign.title}`}>
+                  <button type="button" role="menuitem" disabled={!editor} onClick={() => duplicateCampaign(campaign)}>
+                    <Copy size={15} aria-hidden="true" />
+                    Duplicate
+                  </button>
+                  <button type="button" role="menuitem" disabled={!editor} onClick={() => deleteCampaign(campaign)}>
+                    <Trash2 size={15} aria-hidden="true" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {!projects.length && !search && <span className="bs-history-empty">No recent projects.</span>}
+          </section>
           ))}
           {!visibleCampaigns.length && (
             <span className="bs-history-empty">
@@ -475,46 +560,82 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
         </div>
       </div>
       <footer className="bs-sidebar-footer">
-        <a href="/docs/">
-          <BookOpen size={16} aria-hidden="true" />
-          Team documentation
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </a>
         {actor && (
-          <div className="bs-profile">
-            <span className="bs-avatar" aria-hidden="true">
-              {actor.displayName?.slice(0, 1) ?? 'B'}
-            </span>
-            <div>
-              <strong>{actor.displayName}</strong>
-              {demo ? (
-                <label>
-                  <span className="sr-only">Demo role</span>
-                  <select
-                    aria-label="Demo role"
-                    value={actor.role}
-                    disabled={Boolean(pending)}
-                    onChange={(event) => {
-                      if (
-                        !dirtyRef.current ||
-                        window.confirm('Discard your unsaved changes?')
-                      )
-                        onRole(event.target.value)
-                    }}
-                  >
-                    <option value="marketer">Marketer</option>
-                    <option value="designer">Designer</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </label>
-              ) : (
+          <div className="bs-profile-shell">
+            <button
+              type="button"
+              className="bs-profile"
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              onClick={() => setUserMenuOpen((value) => !value)}
+            >
+              <span className="bs-avatar" aria-hidden="true">
+                {actor.displayName?.slice(0, 1) ?? 'B'}
+              </span>
+              <span className={`bs-profile-copy${demo ? ' is-demo' : ''}`}>
+                <strong>{actor.displayName}</strong>
                 <small>{actor.role}</small>
-              )}
-            </div>
-            {!demo && (
-              <Button aria-label="Sign out" onClick={onSignOut}>
-                <LogOut size={16} />
-              </Button>
+              </span>
+              <ChevronDown size={16} aria-hidden="true" />
+            </button>
+            {demo && (
+              <label className="bs-profile-role">
+                <span className="sr-only">Demo role</span>
+                <select
+                  aria-label="Demo role"
+                  value={actor.role}
+                  disabled={Boolean(pending)}
+                  onChange={(event) => {
+                    if (campaignBusy()) return
+                    if (
+                      !hasUnsavedChanges() ||
+                      window.confirm('Discard your unsaved changes?')
+                    )
+                      onRole(event.target.value)
+                  }}
+                >
+                  <option value="marketer">Marketer</option>
+                  <option value="designer">Designer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+            )}
+            {userMenuOpen && (
+              <div className="bs-user-menu" role="menu" aria-label="User menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!editor}
+                  onClick={() => {
+                    setUserMenuOpen(false)
+                    navigate('/mvp/new')
+                  }}
+                >
+                  <Plus size={17} aria-hidden="true" />
+                  New campaign
+                </button>
+                <hr />
+                <button type="button" role="menuitem" disabled>
+                  <Settings size={17} aria-hidden="true" />
+                  Settings
+                </button>
+                <button type="button" role="menuitem" disabled>
+                  <Users size={17} aria-hidden="true" />
+                  Teams
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    if (campaignBusy() || (hasUnsavedChanges() && !window.confirm('Discard your unsaved changes?'))) return
+                    setUserMenuOpen(false)
+                    onSignOut?.()
+                  }}
+                >
+                  <LogOut size={17} aria-hidden="true" />
+                  Sign out
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -588,14 +709,14 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
           id="studio-main"
           tabIndex={-1}
           ref={mainRef}
-          className="bs-content"
+          className={`bs-content${route.view === 'new' ? ' bs-content--new' : ''}`}
         >
           <ErrorNotice
             error={error}
             onRetry={() => {
               setError(null)
               route.id
-                ? loadWorkspace(route.id).catch(setError)
+                ? (runtimeRef.current ? runtimeRef.current.refresh().catch(setError) : loadWorkspace(route.id).catch(setError))
                 : loadLists().catch(setError)
             }}
           />
@@ -617,14 +738,9 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
                 <RefreshCw size={17} />
               </span>
               {pending}…
-              {cancelRef.current && (
-                <Button onClick={() => cancelRef.current?.abort()}>
-                  Stop waiting
-                </Button>
-              )}
             </div>
           )}
-          {loading || workspaceLoading ? (
+          {loading || workspaceLoading || (route.view === 'campaign' && workspace && !runtime) ? (
             <div
               className="bs-loading"
               role="status"
@@ -637,180 +753,53 @@ export function ConnectedStudio({ api, demo = false, onRole, onSignOut }) {
           ) : route.view === 'system' ? (
             <BrandDesignSystems />
           ) : route.view === 'templates' ? (
-            <TemplateLibrary
-              templates={templates}
-              canChoose={editor && !pending}
-              onChoose={(id) => {
-                setRequestedTemplate(id)
-                if (workspace?.campaign.selectedDirectionId)
-                  navigate(`/mvp/campaign/${workspace.campaign.id}?step=3`)
-                else navigate('/mvp/new')
-              }}
-            />
+            <Suspense fallback={<div className="bs-loading" role="status" aria-label="Loading templates"><span /><span /><span /></div>}>
+              <TemplateLibrary
+                templates={templates}
+                canChoose={editor && !pending}
+                onChoose={(id) => {
+                  setRequestedTemplate(id)
+                  if (workspace?.campaign.selectedDirectionId)
+                    navigate(campaignModuleUrl(workspace.campaign.id, 'banners'))
+                  else navigate('/mvp/new')
+                }}
+              />
+            </Suspense>
           ) : route.view === 'campaign' && workspace ? (
-            <div className="bs-campaign-layout">
-              <div className="bs-campaign-heading">
-                <div>
-                  <h1>{workspace.campaign.title}</h1>
-                </div>
-              </div>
-              <CampaignTimeline workspace={workspace} stage={stage} pending={pending} onChange={scrollToStage} />
-              <div
-                className="bs-stage"
-              >
-                <section id="campaign-step-0" className="bs-long-section"><BriefStage
-                    campaign={workspace.campaign}
-                    api={api}
-                    pending={pending}
-                    readOnly={readOnly}
-                    onDirty={markDirty}
-                    onGenerate={generateCopy}
-                  /></section>
-                <section id="campaign-step-1" className="bs-long-section"><CopyStage
-                  view={copyView}
-                  onViewChange={setCopyView}
-                    workspace={workspace}
-                    api={api}
-                    pending={pending}
-                    readOnly={readOnly}
-                    onGenerate={generateCopy}
-                    onSelect={(copyId) =>
-                      safeRun(
-                        'Select copy',
-                        () =>
-                          api.selectCopy(
-                            workspace.campaign.id,
-                            { copyId },
-                            workspace.campaign.revision,
-                          ),
-                        { success: 'Copy selected' },
-                      )
-                    }
-                    onNext={() => goStage(2)}
-                  /></section>
-                <section id="campaign-step-2" className="bs-long-section"><VisualStage
-                    workspace={workspace}
-                    api={api}
-                    pending={pending}
-                    readOnly={readOnly}
-                    onGenerate={() =>
-                      safeRun(
-                        'Generate directions',
-                        () => generate('directions'),
-                        { success: 'Visual directions are ready' },
-                      )
-                    }
-                    onImage={(directionId) =>
-                      safeRun(
-                        'Generate image',
-                        () =>
-                          generate('image', {
-                            directionId,
-                            width: 1080,
-                            height: 1080,
-                          }),
-                        { success: 'Image is ready' },
-                      )
-                    }
-                    onSelect={(directionId) =>
-                      safeRun(
-                        'Select image',
-                        () =>
-                          api.selectDirection(
-                            workspace.campaign.id,
-                            { directionId },
-                            workspace.campaign.revision,
-                          ),
-                        { success: 'Image selected' },
-                      )
-                    }
-                    onNext={() => goStage(3)}
-                  /></section>
-                <section id="campaign-step-3" className="bs-long-section"><BannerStage
-                    key={`${workspace.campaign.id}-${workspace.campaign.revision}`}
-                    workspace={workspace}
-                    templates={templates}
-                    api={api}
-                    pending={pending}
-                    readOnly={readOnly}
-                    requestedTemplate={requestedTemplate}
-                    onDirty={markDirty}
-                    onSave={(input) =>
-                      run(
-                        'Save composition',
-                        () =>
-                          api.saveComposition(
-                            workspace.campaign.id,
-                            input,
-                            workspace.campaign.revision,
-                          ),
-                        { success: 'Composition saved' },
-                      )
-                    }
-                    onNext={() => goStage(4)}
-                  /></section>
-                <section id="campaign-step-4" className="bs-long-section"><ReviewStage
-                    stage={stage}
-                    workspace={workspace}
-                    api={api}
-                    actor={actor}
-                    pending={pending}
-                    onVersion={() =>
-                      safeRun(
-                        'Create review version',
-                        () =>
-                          api.createVersion(
-                            workspace.campaign.id,
-                            {},
-                            workspace.campaign.revision,
-                            actionKey(),
-                          ),
-                        { next: 5, success: 'Version sent to design review' },
-                      )
-                    }
-                    onReview={(action, input) =>
-                      safeRun(
-                        'Update review',
-                        () =>
-                          api.review(
-                            version.id,
-                            action,
-                            input,
-                            workspace.campaign.revision,
-                            actionKey(),
-                          ),
-                        { next: currentStage, success: 'Review updated' },
-                      )
-                    }
-                    onDeliver={() =>
-                      safeRun(
-                        'Build delivery',
-                        () => api.deliver(version.id, {}, actionKey()),
-                        { success: 'Package ready to download' },
-                      )
-                    }
-                    onReopen={() =>
-                      safeRun(
-                        'Start new round',
-                        () =>
-                          api.request(
-                            'POST',
-                            `/api/v1/campaigns/${workspace.campaign.id}/reopen`,
-                            {
-                              body: {},
-                              revision: workspace.campaign.revision,
-                              idempotencyKey: actionKey(),
-                            },
-                          ),
-                        { next: 0, success: 'New round opened' },
-                      )
-                    }
-                  /></section>
-                {[5, 6, 7].map((reviewStage) => <section id={`campaign-step-${reviewStage}`} className="bs-long-section bs-locked-section" key={reviewStage} aria-label={stages[reviewStage]}>
-                  <h2>{stages[reviewStage]}</h2><p>Complete the previous step to unlock this section.</p>
-                </section>)}
-              </div>
-            </div>
+            <CampaignPage key={workspace.campaign.id} runtime={runtime} activeModule={route.module}
+              onNavigate={goModule} requestedTemplate={requestedTemplate}
+              analyzeOnOpen={analyzeOnOpen.current === workspace.campaign.id}
+              onAnalysisStarted={() => { analyzeOnOpen.current = null }}
+              heading={<h1
+                    className="v2-updated-text"
+                    data-updated={titleUpdated || undefined}
+                    ref={titleRef}
+                    contentEditable={editingTitle}
+                    suppressContentEditableWarning
+                    onClick={() => {
+                      if (!editor || readOnly || pending) return
+                      titleDraft.current = workspace.campaign.title
+                      setEditingTitle(true)
+                    }}
+                    onInput={(event) => { titleDraft.current = event.currentTarget.textContent ?? '' }}
+                    onBlur={saveCampaignTitle}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        event.currentTarget.blur()
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        titleDraft.current = workspace.campaign.title
+                        event.currentTarget.textContent = workspace.campaign.title
+                        setEditingTitle(false)
+                        event.currentTarget.blur()
+                      }
+                    }}
+                    data-editable={editor && !readOnly ? 'true' : undefined}
+                  >
+                    {workspace.campaign.title}
+                  </h1>} />
           ) : editor ? (
             <BriefStage
               key="new-campaign"

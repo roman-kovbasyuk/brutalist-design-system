@@ -33,6 +33,7 @@ describe('production server composition', () => {
       createGcsAssetStore: vi.fn(() => assetStore),
       createMemoryAssetStore: vi.fn(() => { throw new Error('production must not create memory storage') }),
       createAssetService: vi.fn(() => assetService),
+      createVisualUploadService: vi.fn(() => ({ kind: 'visual-upload-service' })),
       createVersionService: vi.fn(() => versionService),
       createDeliveryService: vi.fn(() => deliveryService),
       createGenerationProviderRegistry: vi.fn(() => providerRegistry),
@@ -139,6 +140,7 @@ describe('production server composition', () => {
       createAuthenticator: vi.fn(() => vi.fn()), buildApp: vi.fn(() => app),
       reconcileGenerationSettings: vi.fn(),
       createMemoryAssetStore: vi.fn(() => assetStore), createGcsAssetStore: vi.fn(), createAssetService: vi.fn(() => ({})),
+      createVisualUploadService: vi.fn(() => ({})),
       createVersionService: vi.fn(() => ({})),
       createDeliveryService: vi.fn(() => ({})),
     }

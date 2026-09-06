@@ -199,8 +199,8 @@ describe('migration runner', () => {
     await runMigrations({ pool: firstPool })
 
     const tracked = await firstPool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows).toHaveLength(22)
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'])
+    expect(tracked.rows).toHaveLength(28)
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'])
     expect(tracked.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum))).toBe(true)
     await Promise.all([firstPool.end(), secondPool.end()])
     pools.delete(firstPool)
@@ -315,11 +315,11 @@ describe('migration runner', () => {
       ['upgrade-template', { version: '1.9.0' }, '3'.repeat(64), actorId, { version: '1.10.0' }, '4'.repeat(64)],
     )
 
-    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool })).toEqual({ applied: ['002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     expect(await runMigrations({ pool })).toEqual({ applied: [] })
 
     const tracked = await pool.query('SELECT name, checksum FROM schema_migrations ORDER BY name')
-    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'])
+    expect(tracked.rows.map((row) => row.name)).toEqual(['001_core.sql', '002_harden_persistence.sql', '003_retryable_idempotency.sql', '004_crash_safe_commands.sql', '005_authentication.sql', '006_disabled_rollout_compatibility.sql', '007_generation_control_plane.sql', '008_correct_generation_budget_day.sql', '009_generated_asset_integrity.sql', '010_immutable_review_versions.sql', '011_immutable_version_provenance.sql', '012_exact_version_provenance.sql', '013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'])
     expect((await pool.query("SELECT budget_day::text AS day FROM generation_jobs WHERE id = 'legacy-generation-job'")).rows[0].day).toBe('2025-12-31')
     expect(tracked.rows[0].checksum).toBe('ec612d4f294390b992f06f4b75d93f21e95a1e2333bb243417bc5ea0fe0fdb3d')
     expect((await createSettingsRepository(pool).get()).dailyBudgetMicrounits).toBe(5_000_000)
@@ -2279,7 +2279,7 @@ describe('persisted generation control plane', () => {
     const harness = await generationHarness({ budget: 1_000_000 })
     await harness.service.analyseBrief({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'analysis', input: {} })
     const copied = await harness.service.generateCopy({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'copy', input: {} })
-    const selectedCopy = await harness.service.selectCopy({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 0, input: { copyId: copied.body.job.result.copies[0].id } })
+    const selectedCopy = await harness.service.selectCopy({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 1, input: { copyId: copied.body.job.result.copies[0].id } })
     const directions = await harness.service.generateDirections({ actor: harness.actor, campaignId: harness.campaign.id, idempotencyKey: 'directions', input: {} })
     const direction = directions.body.job.result.directions[0]
     await harness.pool.query(
@@ -2288,10 +2288,10 @@ describe('persisted generation control plane', () => {
       ['preview-1', harness.campaign.id, `campaigns/${harness.campaign.id}/preview-1.png`, 'a'.repeat(64), directions.body.job.id],
     )
     await harness.pool.query("UPDATE visual_directions SET status = 'ready', preview_asset_id = 'preview-1' WHERE id = $1", [direction.id])
-    const selectedDirection = await harness.service.selectDirection({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: 1, input: { directionId: direction.id } })
+    const selectedDirection = await harness.service.selectDirection({ actor: harness.actor, campaignId: harness.campaign.id, expectedRevision: selectedCopy.revision, input: { directionId: direction.id } })
 
-    expect(selectedCopy).toMatchObject({ status: 'copy_ready', revision: 1, selectedCopyId: copied.body.job.result.copySetId })
-    expect(selectedDirection).toMatchObject({ status: 'direction_selected', revision: 2, selectedDirectionId: direction.id })
+    expect(selectedCopy).toMatchObject({ status: 'copy_ready', revision: 2, selectedCopyId: copied.body.job.result.copySetId })
+    expect(selectedDirection).toMatchObject({ status: 'direction_selected', revision: 3, selectedDirectionId: direction.id })
     expect((await harness.pool.query("SELECT action FROM audit_events WHERE action IN ('campaign.copy_selected', 'campaign.direction_selected') ORDER BY created_at, action")).rows.map((row) => row.action).sort())
       .toEqual(['campaign.copy_selected', 'campaign.direction_selected'])
     await harness.pool.end()
@@ -2507,7 +2507,7 @@ describe('immutable review version workflow', () => {
     const imageJobId = `${harness.campaign.id}:image-job`
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [imageJobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
     expect((await harness.pool.query('SELECT input_snapshot FROM generation_jobs WHERE id = $1', [imageJobId])).rows[0].input_snapshot)
       .toMatchObject({ width: 1000, height: 1000 })
@@ -2547,7 +2547,7 @@ describe('immutable review version workflow', () => {
       [imageJobId],
     )
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     expect((await harness.pool.query(
       'SELECT status, error_code, response_status, response_body FROM generation_jobs WHERE id = $1',
       [imageJobId],
@@ -2619,7 +2619,7 @@ describe('immutable review version workflow', () => {
     await harness.controlPlane.markDispatched({ jobId, ownerToken, dispatchedAt: now })
     await harness.pool.query("UPDATE generation_jobs SET input_snapshot = input_snapshot - 'width' - 'height' WHERE id = $1", [jobId])
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     expect((await harness.pool.query(
       'SELECT status, unknown_reason, response_status, response_body FROM generation_jobs WHERE id = $1', [jobId],
     )).rows[0]).toMatchObject({
@@ -2697,7 +2697,7 @@ describe('immutable review version workflow', () => {
 
     expect((await harness.pool.query("SELECT count(*)::int AS count FROM audit_events WHERE action LIKE 'migration.%'")).rows[0].count).toBe(0)
     expect(await runMigrations({ pool: harness.pool })).toEqual({
-      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'],
+      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'],
     })
     expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: [] })
 
@@ -2831,7 +2831,7 @@ describe('immutable review version workflow', () => {
     })
 
     expect(await runMigrations({ pool: harness.pool })).toEqual({
-      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'],
+      applied: ['013_migrate_legacy_image_provenance.sql', '014_preserve_legacy_multi_source_provenance.sql', '015_human_review_gates.sql', '016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'],
     })
     expect((await harness.pool.query(
       'SELECT status, revision, selected_direction_id, composition_id FROM campaigns WHERE id = $1', [harness.campaign.id],
@@ -5814,7 +5814,7 @@ describe('append-only human review gates', () => {
       "SELECT bool_and(payload ? 'assetHashes') AS has_hashes FROM review_events WHERE event_type IN ('ready', 'approved')",
     )).rows[0].has_hashes).toBe(true)
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     const facts = (await harness.pool.query(
       `SELECT event_type, payload, immutable_asset_hashes
        FROM review_events WHERE event_type IN ('ready', 'approved') ORDER BY event_type`,
@@ -5901,7 +5901,7 @@ describe('append-only human review gates', () => {
       )
     })
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['016_review_integrity_hardening.sql', '017_review_fact_compatibility.sql', '018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     const review = await createReviewService({ pool: harness.pool }).getReview({
       actor: harness.actor, versionId: created.body.version.id,
     })
@@ -6628,7 +6628,7 @@ describe('hash-verified approved deliveries', () => {
       idempotencyKey: 'rolling-pre-021', input: {},
     })
     expect(delivered.status).toBe(201)
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     expect((await harness.pool.query(
       `SELECT expected_sha256, expected_byte_size, expected_mime_type
        FROM orphaned_uploads`,
@@ -6725,7 +6725,7 @@ describe('hash-verified approved deliveries', () => {
       await client.query('SET CONSTRAINTS ALL IMMEDIATE')
     })
 
-    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql'] })
+    expect(await runMigrations({ pool: harness.pool })).toEqual({ applied: ['018_hash_verified_deliveries.sql', '019_delivery_recovery_and_audit_integrity.sql', '020_durable_generation_fenced_cleanup.sql', '021_cleanup_lock_and_upload_intent.sql', '022_unknown_upload_fence.sql', '023_copy_option_deletion.sql', '024_copy_approvals.sql', '025_visual_assets.sql', '026_visual_upload_provenance.sql', '027_banner_batches.sql', '028_banner_batch_source_provenance.sql'] })
     expect((await harness.pool.query(
       `SELECT delivery.content_hash, delivery.zip_sha256, delivery.byte_size::int AS byte_size,
               asset.version_id, event.payload, event.immutable_asset_hashes, audit.action, audit.payload AS audit_payload,

@@ -6,6 +6,7 @@ import {
   compositionCommandResponseSchema,
   createCampaignVersionRequestSchema,
   saveCompositionRequestSchema,
+  saveBannerBatchRequestSchema,
 } from '../../shared/contracts.js'
 import { notFound, parse, parseIdempotencyKey, parseIfMatch, setRevisionEtag, strictResponse } from './support.js'
 
@@ -17,6 +18,15 @@ const versionParamsSchema = z.strictObject({
 const editors = ['marketer', 'admin']
 
 export function registerVersionRoutes(app, { requireRole, versionService }) {
+  app.put('/api/v1/campaigns/:campaignId/banner-batch', { preHandler: requireRole(...editors) }, async (request, reply) => {
+    const { campaignId } = parse(campaignParamsSchema, request.params)
+    const expectedRevision = parseIfMatch(request)
+    const input = parse(saveBannerBatchRequestSchema, request.body)
+    const result = await versionService.saveBannerBatch({ actor: request.actor, campaignId, expectedRevision, input })
+    const response = strictResponse(compositionCommandResponseSchema, request, result)
+    setRevisionEtag(reply, response.campaign)
+    return response
+  })
   app.put('/api/v1/campaigns/:campaignId/composition', { preHandler: requireRole(...editors) }, async (request, reply) => {
     const { campaignId } = parse(campaignParamsSchema, request.params)
     const expectedRevision = parseIfMatch(request)

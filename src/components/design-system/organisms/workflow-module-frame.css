@@ -1,0 +1,7 @@
+.v2-workflow-module { min-width: 0; padding: var(--v2-space-12); border: 1px solid var(--v2-text-secondary); border-radius: 42px; background: var(--v2-surface); }
+.v2-workflow-module-heading { margin-bottom: var(--v2-space-8); }
+.v2-workflow-module-heading h2 { font-size: var(--v2-text-h2); line-height: 1.15; margin: 0; font-weight: var(--v2-weight-heading); }
+@media (max-width: 600px) {
+  .v2-workflow-module { padding: 28px 20px; border-radius: 28px; }
+  .v2-workflow-module-heading h2 { font-size: 30px; }
+}

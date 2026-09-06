@@ -1,0 +1,4 @@
+.bs-brief-results { display: grid; gap: var(--v2-space-6); min-width: 0; }
+.bs-brief-results-summary { font-size: var(--v2-text-h4); line-height: 1.5; max-width: 70ch; }
+.bs-brief-results .v2-prompt-block { margin: 0; }
+.bs-brief-results .v2-block-composer textarea { min-height: 100px; }

@@ -8,12 +8,12 @@ export const studioSampleImage = sampleImage
 // The canvas is also the export coordinate space: responsive scaling never changes composition.
 // Expressive artwork is isolated from the application's operational motion and type tokens.
 export function AnimatedBanner({
-  templateId = 'editorial-split', headline, body, cta, tag = '', imageUrl = sampleImage,
+  templateId = 'editorial-split', manifest, headline, body, cta, tag = '', imageUrl = sampleImage,
   ratioId = 'square', playing = true, className = '', title, ...rest
 }) {
-  const template = studioTemplates.find((item) => item.id === templateId) ?? studioTemplates[0]
+  const template = manifest ?? studioTemplates.find((item) => item.id === templateId) ?? studioTemplates[0]
   const ratio = template.ratios.find((item) => item.id === ratioId) ?? template.ratios[0]
-  const defaults = studioTemplateSamples[template.id]
+  const defaults = studioTemplateSamples[template.id] ?? { headline: '', body: '', cta: '' }
   const values = { headline: headline ?? defaults.headline, body: body ?? defaults.body, cta: cta ?? defaults.cta, tag }
   const titleId = useId()
   const [hasPlayed, setHasPlayed] = useState(playing)

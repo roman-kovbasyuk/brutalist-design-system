@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { z } from 'zod'
+import { rawBrief } from '../../shared/briefAnalysis.js'
 import {
   analyseBriefInputSchema,
   briefAnalysisSchema,
@@ -13,6 +15,7 @@ import {
   generateImageInputSchema,
   roleSchema,
   saveCompositionRequestSchema,
+  saveBannerBatchRequestSchema,
   visualDirectionSchema,
 } from '../../shared/contracts.js'
 import { canonicalJson, hashCanonical } from '../../shared/canonicalJson.js'
@@ -21,7 +24,7 @@ import { transitionCampaign } from '../../shared/workflowRules.js'
 import { withDeadlineTransaction } from '../db/pool.js'
 import { decodeGeneratedImage } from '../images/imageDecoder.js'
 import { validateBannerRenderer } from '../rendering/bannerRenderer.js'
-import { compileRenderSlotProvenance, createInProcessRenderer } from '../rendering/inProcessRenderer.js'
+import { compileRenderSlotProvenance, createInProcessRenderer, RendererError } from '../rendering/inProcessRenderer.js'
 import { createIdempotencyRepository } from '../repositories/idempotencyRepository.js'
 import { createVersionRepository } from '../repositories/versionRepository.js'
 import { validateVersionedAssetStore } from '../storage/assetStore.js'
@@ -43,6 +46,29 @@ export class VersionServiceError extends Error {
 
 function fail(statusCode, code, message, details) {
   throw new VersionServiceError(statusCode, code, message, details)
+}
+
+function renderFailure(error, { manifest, composition, designIndex, ratioId }) {
+  if (!(error instanceof RendererError)) return error
+  if (error.code === 'invalid_font') return new VersionServiceError(503, 'renderer_unavailable', 'Banner fonts are temporarily unavailable. Please retry.')
+  const slotId = manifest.slots.find(slot => error.message.startsWith(`Slot ${slot.id} `))?.id ?? null
+  const ratio = manifest.ratios.find(ratio => ratio.id === ratioId)
+  const dimensions = ratio ? `${ratio.width}×${ratio.height}` : ratioId
+  const message = `Design ${designIndex + 1}, ${manifest.name}, ${ratioId} (${dimensions}): ${error.message}. Use shorter copy, choose a different design, or remove this size.`
+  return new VersionServiceError(400, 'invalid_composition', message, [{
+    path: `designs[${designIndex}].ratios.${ratioId}${slotId ? `.${slotId}` : ''}`,
+    designId: composition.id, designIndex, templateId: manifest.id, templateVersion: manifest.version,
+    copyId: composition.copyId ?? null, directionId: composition.directionId ?? null,
+    ratioId, slotId, code: error.code, message,
+  }])
+}
+
+function resolvedRenderSlots(slotValues, sourceById) {
+  return Object.fromEntries(Object.entries(slotValues).map(([slotId, value]) => (
+    sourceById.has(value)
+      ? [slotId, { bytes: sourceById.get(value).bytes, mimeType: sourceById.get(value).mimeType }]
+      : [slotId, value]
+  )))
 }
 
 function parse(schema, value) {
@@ -114,8 +140,9 @@ function verifyTemplate(template) {
 }
 
 function verifyCopyLineage(copy, campaignBrief, analysis) {
-  const copyInput = generateCopyInputSchema.safeParse(copy?.generationInput)
-  const analysisInput = analyseBriefInputSchema.safeParse(analysis?.generationInput)
+  // Capacity is persisted control-plane metadata, not part of the provider prompt.
+  const copyInput = generateCopyInputSchema.extend({ copySlots: z.number().int().min(1).max(5).optional() }).safeParse(copy?.generationInput)
+  const analysisInput = analyseBriefInputSchema.extend({ title: z.string().optional() }).safeParse(analysis?.generationInput)
   const analysisResult = briefAnalysisSchema.safeParse(analysis?.generationResult?.analysis)
   if (!copy?.selectedCopy || copy.stale || copy.generationStep !== 'copy' || !isSafeGeneration(copy)
     || !copyInput.success
@@ -123,8 +150,8 @@ function verifyCopyLineage(copy, campaignBrief, analysis) {
     || !analysis || analysis.generationStep !== 'brief_analysis' || !isSafeGeneration(analysis)
     || !analysisInput.success || !analysisResult.success
     || !exactObjectKeys(analysis.generationResult, ['analysis'])
-    || hashCanonical(analysisInput.data.brief) !== hashCanonical(campaignBrief)
-    || hashCanonical(copyInput.data.analysis) !== hashCanonical(analysisResult.data)
+    || hashCanonical(rawBrief(analysisInput.data.brief)) !== hashCanonical(rawBrief(campaignBrief))
+    || hashCanonical(copyInput.data.analysis) !== hashCanonical(campaignBrief.analysis ?? analysisResult.data)
     || copy.generationResult?.copySetId !== copy.id
     || !Array.isArray(copy.generationResult?.copies) || !Array.isArray(copy.candidates)
     || hashCanonical(copy.generationResult?.copies) !== hashCanonical(copy.candidates)
@@ -135,22 +162,43 @@ function verifyCopyLineage(copy, campaignBrief, analysis) {
   }
 }
 
-function verifyDirectionLineage(direction, selectedCopy, campaignBrief) {
+function matchesVisualSource(input, direction, selectedCopy, campaignBrief, analysis) {
+  if (hashCanonical(input.brief) !== hashCanonical(campaignBrief)) return false
+  if (!input.mode) return hashCanonical(input.copy) === hashCanonical(selectedCopy)
+  if (direction.scope !== input.mode || hashCanonical(input.analysis) !== hashCanonical(campaignBrief.analysis ?? analysis.generationResult.analysis)) return false
+  return input.mode === 'campaign' ? direction.copy == null
+    : direction.copy && hashCanonical(direction.copy) === hashCanonical(selectedCopy)
+      && input.copies.some(copy => copy.id === selectedCopy.id && hashCanonical(copy) === hashCanonical(selectedCopy))
+}
+
+function verifyDirectionLineage(direction, selectedCopy, campaignBrief, analysis) {
+  if (!direction || direction.stale || direction.status !== 'ready' || !direction.previewAssetId) {
+    fail(409, 'direction_selection_invalid', 'The selected direction is stale, unsafe, or unavailable')
+  }
+  // A direct upload has an explicit source snapshot instead of a provider job.
+  // It cannot impersonate generated output or bypass a failed/unsafe provider job.
+  if (direction.generationJobId == null && direction.generationStep == null) {
+    const source = generateDirectionsInputSchema.safeParse(direction.uploadProvenance?.context)
+    if (!source.success || !source.data.mode || !matchesVisualSource(source.data, direction, selectedCopy, campaignBrief, analysis)
+      || direction.prompt !== '' || hashCanonical(direction.uploadProvenance.direction) !== hashCanonical(publicDirection(direction))) {
+      fail(409, 'direction_selection_invalid', 'The uploaded direction source is stale or unavailable')
+    }
+    return
+  }
   const directionInput = generateDirectionsInputSchema.safeParse(direction?.generationInput)
   const generated = Array.isArray(direction?.generationResult?.directions)
     ? direction.generationResult.directions.find((candidate) => candidate.id === direction.id)
     : null
-  if (!direction || direction.stale || direction.status !== 'ready' || !direction.previewAssetId
-    || direction.generationStep !== 'directions' || !isSafeGeneration(direction)
+  if (direction.generationStep !== 'directions' || !isSafeGeneration(direction)
     || !directionInput.success
-    || hashCanonical(directionInput.data.brief) !== hashCanonical(campaignBrief)
-    || hashCanonical(directionInput.data.copy) !== hashCanonical(selectedCopy)
+    || !matchesVisualSource(directionInput.data, direction, selectedCopy, campaignBrief, analysis)
     || !generated || hashCanonical(generated) !== hashCanonical({
       id: direction.id,
       title: direction.title,
       prompt: direction.prompt,
       status: 'pending',
       previewAssetId: null,
+      ...(directionInput.data.mode === 'selected_copy' ? { copyId: selectedCopy.id } : {}),
     })) {
     fail(409, 'direction_selection_invalid', 'The selected direction is stale, unsafe, or unavailable')
   }
@@ -184,7 +232,7 @@ function verifiedImageInput(asset) {
   return asset.generationRequestFingerprint === expectedFingerprint ? migrated.data : null
 }
 
-function verifyImageAssetLineage(asset, direction, { requireGenerated = false } = {}) {
+function verifyImageAssetLineage(asset, direction, { requireDirectionBinding = false } = {}) {
   const imageInput = verifiedImageInput(asset)
   const validShape = asset && ['direction', 'final_image'].includes(asset.kind)
     && Number.isSafeInteger(asset.byteSize) && asset.byteSize > 0
@@ -206,7 +254,10 @@ function verifyImageAssetLineage(asset, direction, { requireGenerated = false } 
     && imageInput.height === asset.height
     && matchesGeneratedAssetResult(asset)
   const uploaded = asset?.source === 'upload' && asset.generationJobId == null
-  if (!validShape || (requireGenerated ? !generated : !(generated || uploaded))) {
+  const boundUpload = uploaded && direction.uploadProvenance?.assetId === asset.id
+    && direction.uploadProvenance.sha256 === asset.sha256
+    && hashCanonical(direction.uploadProvenance.direction) === hashCanonical(publicDirection(direction))
+  if (!validShape || (requireDirectionBinding ? !(generated || boundUpload) : !(generated || uploaded))) {
     fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
   }
 }
@@ -233,9 +284,9 @@ function immutableSourceAsset(asset) {
   }
 }
 
-function verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets, campaignBrief }) {
-  verifyDirectionLineage(direction, copy.selectedCopy, campaignBrief)
-  verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
+function verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets, campaignBrief, analysis }) {
+  verifyDirectionLineage(direction, copy.selectedCopy, campaignBrief, analysis)
+  verifyImageAssetLineage(previewAsset, direction, { requireDirectionBinding: true })
   if (previewAsset.id !== direction.previewAssetId) {
     fail(409, 'composition_source_mismatch', 'The composition image must be the verified selected direction preview')
   }
@@ -300,7 +351,7 @@ function immutableObjectKey(campaignId, versionId, leaf) {
   return `campaigns/${campaign}/versions/${version}/${leaf}`
 }
 
-function validatePreparedContext({ campaign, analysis, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision }) {
+function validatePreparedContext({ campaign, analysis, copy, direction, composition, template, previewAsset, sourceAssets, batchContexts, expectedRevision }) {
   if (!campaign) fail(404, 'not_found', 'Campaign was not found')
   if (campaign.revision !== expectedRevision) fail(409, 'revision_conflict', 'The resource changed since it was loaded')
   if (campaign.openVersionId) fail(409, 'open_version_conflict', 'The campaign already has an open review version')
@@ -312,8 +363,11 @@ function validatePreparedContext({ campaign, analysis, copy, direction, composit
   if (composition.templateId !== template.id || composition.templateVersion !== template.version) {
     fail(409, 'template_mismatch', 'The composition does not match its immutable template version')
   }
-  verifyCopyLineage(copy, campaign.brief, analysis)
-  verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets, campaignBrief: campaign.brief })
+  for (const context of batchContexts ?? [{ template, composition, copy, direction, previewAsset, sourceAssets }]) {
+    verifyTemplate(context.template)
+    verifyCopyLineage(context.copy, campaign.brief, analysis)
+    verifyCompositionSources({ ...context, campaignBrief: campaign.brief, analysis })
+  }
 }
 
 function exactObjectKeys(value, keys) {
@@ -324,12 +378,22 @@ function exactObjectKeys(value, keys) {
 function immutableBriefAnalysis(analysis) {
   return {
     id: analysis.id,
-    input: analyseBriefInputSchema.parse(analysis.generationInput),
+    input: analyseBriefInputSchema.extend({ title: z.string().optional() }).parse(analysis.generationInput),
     result: { analysis: briefAnalysisSchema.parse(analysis.generationResult.analysis) },
   }
 }
 
-function contextMatchesPlan({ analysis, copy, direction, composition, template, sourceAssets }, plan) {
+function immutableDesignContexts(contexts) {
+  return contexts.map(context => ({
+    id: context.composition.id,
+    selectedCopy: copyVariantSchema.parse(context.copy.selectedCopy),
+    selectedDirection: publicDirection(context.direction),
+    templateManifest: context.template.manifest,
+    templateManifestHash: context.template.manifestHash,
+  }))
+}
+
+function contextMatchesPlan({ analysis, copy, direction, composition, template, sourceAssets, batchContexts }, plan) {
   const sources = sourceAssets.map(immutableSourceAsset)
   return hashCanonical(immutableBriefAnalysis(analysis)) === hashCanonical(plan.briefAnalysis)
     && hashCanonical(copy.selectedCopy) === hashCanonical(plan.selectedCopy)
@@ -338,6 +402,7 @@ function contextMatchesPlan({ analysis, copy, direction, composition, template, 
     && hashCanonical(template.manifest) === hashCanonical(plan.templateManifest)
     && template.manifestHash === plan.templateManifestHash
     && hashCanonical(sources) === hashCanonical(plan.sourceAssets)
+    && hashCanonical(batchContexts ? immutableDesignContexts(batchContexts) : null) === hashCanonical(plan.designs ?? null)
 }
 
 function normalizeStoreFailure(error) {
@@ -415,9 +480,9 @@ export function createVersionService({
       const copy = await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId)
       verifyCopyLineage(copy, campaign.brief, analysis)
       const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
-      verifyDirectionLineage(direction, copy.selectedCopy, campaign.brief)
+      verifyDirectionLineage(direction, copy.selectedCopy, campaign.brief, analysis)
       const previewAsset = await repository.findAsset(campaign.id, direction.previewAssetId)
-      verifyImageAssetLineage(previewAsset, direction, { requireGenerated: true })
+      verifyImageAssetLineage(previewAsset, direction, { requireDirectionBinding: true })
       const sourceIds = provenanceImageAssetIds(template.manifest, command.slotValues, direction.previewAssetId)
       const sourceAssets = await repository.findAssets(campaign.id, sourceIds)
       if (sourceAssets.length !== sourceIds.length
@@ -442,6 +507,96 @@ export function createVersionService({
       return repository.insertComposition({
         composition, campaign, actor: { ...actor, auditId: idGenerator() }, createdAt: safeInstant(clock()),
       })
+    })
+  }
+
+  const resolveDesign = async (repository, campaign, analysis, selection, ratioIds, { persisted = false, lock = false } = {}) => {
+    const template = await repository.findTemplate(selection.templateId, selection.templateVersion)
+    verifyTemplate(template)
+    const storedCopy = await repository.findSelectedCopy(campaign.id, selection.copySetId)
+    const legacyApproved = campaign.selectedCopyId === storedCopy?.id && storedCopy?.selectedCandidateId === selection.copyId
+    if (!storedCopy || storedCopy.deletedCandidateIds?.includes(selection.copyId)
+      || !(storedCopy.approvedCandidateIds?.includes(selection.copyId) || legacyApproved)) {
+      fail(409, 'copy_selection_invalid', 'The selected copy is stale, unsafe, or unavailable')
+    }
+    const copy = { ...storedCopy, selectedCandidateId: selection.copyId,
+      selectedCopy: storedCopy.candidates.find(candidate => candidate.id === selection.copyId) }
+    verifyCopyLineage(copy, campaign.brief, analysis)
+    const direction = await repository.findSelectedDirection(campaign.id, selection.directionId)
+    verifyDirectionLineage(direction, copy.selectedCopy, campaign.brief, analysis)
+    const previewAsset = await repository.findAsset(campaign.id, direction.previewAssetId)
+    verifyImageAssetLineage(previewAsset, direction, { requireDirectionBinding: true })
+    const slotValues = Object.fromEntries(template.manifest.slots.map(slot => [slot.id,
+      slot.type === 'image' ? direction.previewAssetId : copy.selectedCopy[slot.id === 'tag' ? 'offer' : slot.id] ?? '',
+    ]))
+    const sourceIds = provenanceImageAssetIds(template.manifest, slotValues, direction.previewAssetId)
+    const sourceAssets = await repository[lock ? 'findAssetsForUpdate' : 'findAssets'](campaign.id, sourceIds)
+    const validation = validateComposition(template.manifest, { ratioIds, slotValues,
+      assetMetadata: Object.fromEntries(sourceAssets.map(asset => [asset.id, { width: asset.width, height: asset.height, mimeType: asset.mimeType }])) })
+    if (!validation.valid) fail(400, 'invalid_composition', 'Composition validation failed', validation.errors)
+    if (persisted && (hashCanonical(selection.slotValues) !== hashCanonical(slotValues) || hashCanonical(selection.validation) !== hashCanonical(validation))) {
+      fail(409, 'composition_source_mismatch', 'The saved design no longer matches its verified sources')
+    }
+    const composition = { ...selection, id: selection.id ?? idGenerator(), ratioIds, slotValues, validation }
+    verifyCompositionSources({ template, composition, copy, direction, previewAsset, sourceAssets, campaignBrief: campaign.brief, analysis })
+    return { template, composition, copy, direction, previewAsset, sourceAssets }
+  }
+
+  const loadContext = async (repository, campaign, { lock = false } = {}) => {
+    const analysis = await repository.findLatestBriefAnalysis(campaign.id)
+    const composition = await repository.findComposition(campaign.id, campaign.compositionId)
+    if (composition?.designs) {
+      const batchContexts = []
+      for (const design of composition.designs) batchContexts.push(await resolveDesign(repository, campaign, analysis, design, composition.ratioIds, { persisted: true, lock }))
+      const sourceAssets = [...new Map(batchContexts.flatMap(context => context.sourceAssets).map(asset => [asset.id, asset])).values()].sort((a, b) => a.id.localeCompare(b.id))
+      return { ...batchContexts[0], analysis, composition, sourceAssets, batchContexts }
+    }
+    const copy = await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId)
+    const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
+    const template = composition ? await repository.findTemplate(composition.templateId, composition.templateVersion) : null
+    const previewAsset = await repository.findAsset(campaign.id, direction?.previewAssetId)
+    const sourceIds = composition && template ? provenanceImageAssetIds(template.manifest, composition.slotValues, direction?.previewAssetId) : []
+    const sourceAssets = await repository[lock ? 'findAssetsForUpdate' : 'findAssets'](campaign.id, sourceIds)
+    return { analysis, copy, direction, composition, template, previewAsset, sourceAssets }
+  }
+
+  const saveBannerBatch = async ({ actor, campaignId, expectedRevision, input }) => {
+    requireRole(actor, editors)
+    validateRevision(expectedRevision)
+    const command = parse(saveBannerBatchRequestSchema, input)
+    const deadlineAt = Date.now() + timeoutMs
+    return mainTransaction(deadlineAt, async client => {
+      const repository = repositoryFactory(client)
+      const campaign = await repository.lockCampaign(campaignId)
+      if (!campaign) fail(404, 'not_found', 'Campaign was not found')
+      if (campaign.revision !== expectedRevision) fail(409, 'revision_conflict', 'The resource changed since it was loaded')
+      if (campaign.openVersionId || !['direction_selected', 'composed'].includes(campaign.status)) fail(409, 'campaign_locked', 'The campaign cannot save banners in its current state')
+      const analysis = await repository.findLatestBriefAnalysis(campaign.id)
+      const contexts = []
+      for (const selection of command.designs) contexts.push(await resolveDesign(repository, campaign, analysis, selection, command.ratioIds))
+      const sourceById = new Map()
+      for (const asset of new Map(contexts.flatMap(context => context.sourceAssets).map(asset => [asset.id, asset])).values()) {
+        sourceById.set(asset.id, { ...asset, bytes: await readVerifiedImage(assetStore, asset, deadlineAt) })
+      }
+      // The renderer's exact font metrics and image compiler are authoritative;
+      // character counts alone cannot establish that a design fits its canvas.
+      for (const [designIndex, context] of contexts.entries()) {
+        const slots = resolvedRenderSlots(context.composition.slotValues, sourceById)
+        for (const ratioId of command.ratioIds) {
+          try {
+            await beforeDeadline(deadlineAt, () => compileRenderSlotProvenance({ manifest: context.template.manifest, slots, ratio: ratioId }))
+          } catch (error) {
+            throw renderFailure(error, { manifest: context.template.manifest, composition: context.composition, designIndex, ratioId })
+          }
+        }
+      }
+      const designs = contexts.map(({ composition: { ratioIds: _ratioIds, ...design } }) => design)
+      const first = designs[0]
+      const composition = compositionSchema.parse({ id: idGenerator(), templateId: first.templateId, templateVersion: first.templateVersion,
+        ratioIds: command.ratioIds, slotValues: first.slotValues, validation: { valid: true, errors: [] }, stale: false, designs })
+      const transition = transitionCampaign({ campaign, action: 'save_composition', actor, input: { composition } })
+      if (!transition.ok) fail(transition.status, transition.code, transition.message)
+      return repository.insertComposition({ composition, campaign, actor: { ...actor, auditId: idGenerator() }, createdAt: safeInstant(clock()) })
     })
   }
 
@@ -474,16 +629,7 @@ export function createVersionService({
         existing = await repository.takeOverBuild({ id: existing.id, ownerToken })
         if (!existing) fail(409, 'version_build_in_progress', 'Another review version is being created')
       }
-      const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
-      const currentContext = {
-        analysis: await repository.findLatestBriefAnalysis(campaign.id),
-        copy: await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId),
-        direction,
-        composition: await repository.findComposition(campaign.id, campaign.compositionId),
-        template: await repository.findTemplate(existing.plan.templateManifest.id, existing.plan.templateManifest.version),
-        previewAsset: await repository.findAsset(campaign.id, direction?.previewAssetId),
-        sourceAssets: await repository.findAssets(campaign.id, existing.plan.sourceAssets.map((asset) => asset.id)),
-      }
+      const currentContext = await loadContext(repository, campaign)
       validatePreparedContext({ campaign, ...currentContext, expectedRevision })
       if (!contextMatchesPlan(currentContext, existing.plan)) {
         fail(409, 'version_source_changed', 'The selected source changed while the review version was being created')
@@ -493,22 +639,14 @@ export function createVersionService({
 
     const active = await repository.findActiveBuildForUpdate(campaignId)
     if (active) fail(409, 'version_build_in_progress', 'Another review version is being created')
-    const analysis = await repository.findLatestBriefAnalysis(campaign.id)
-    const copy = await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId)
-    const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
-    const composition = await repository.findComposition(campaign.id, campaign.compositionId)
-    const template = composition ? await repository.findTemplate(composition.templateId, composition.templateVersion) : null
-    const previewAsset = await repository.findAsset(campaign.id, direction?.previewAssetId)
-    const sourceIds = composition && template
-      ? provenanceImageAssetIds(template.manifest, composition.slotValues, direction?.previewAssetId)
-      : []
-    const sourceAssets = await repository.findAssets(campaign.id, sourceIds)
-    validatePreparedContext({ campaign, analysis, copy, direction, composition, template, previewAsset, sourceAssets, expectedRevision })
+    const context = await loadContext(repository, campaign)
+    const { analysis, copy, direction, composition, template, sourceAssets, batchContexts } = context
+    validatePreparedContext({ campaign, ...context, expectedRevision })
     const versionId = idGenerator()
-    const ratioAssets = composition.ratioIds.map((ratioId) => {
+    const ratioAssets = (composition.designs ?? [null]).flatMap(design => composition.ratioIds.map((ratioId) => {
       const id = idGenerator()
-      return { id, ratioId, objectKey: immutableObjectKey(campaign.id, versionId, `review-${createHash('sha256').update(ratioId).digest('hex')}-${id}.png`) }
-    })
+      return { id, ratioId, ...(design ? { designId: design.id } : {}), objectKey: immutableObjectKey(campaign.id, versionId, `review-${createHash('sha256').update(ratioId).digest('hex')}-${id}.png`) }
+    }))
     const manifestAssetId = idGenerator()
     const plan = {
       binding: {
@@ -523,6 +661,7 @@ export function createVersionService({
       composition: compositionSchema.parse(composition),
       templateManifest: template.manifest,
       templateManifestHash: template.manifestHash,
+      ...(batchContexts ? { designs: immutableDesignContexts(batchContexts) } : {}),
       sourceAssets: sourceAssets.map(immutableSourceAsset),
       ratioAssets,
       manifestAsset: {
@@ -555,23 +694,29 @@ export function createVersionService({
   const renderBuild = async (build, deadlineAt) => {
     const sources = await loadRenderSources(build.plan, deadlineAt)
     const sourceById = new Map(sources.map((source) => [source.id, source]))
-    const renderSlots = Object.fromEntries(Object.entries(build.plan.composition.slotValues).map(([slotId, value]) => (
-      sourceById.has(value)
-        ? [slotId, { bytes: sourceById.get(value).bytes, mimeType: sourceById.get(value).mimeType }]
-        : [slotId, value]
-    )))
     const renders = []
     for (const planned of build.plan.ratioAssets) {
-      const rendered = await beforeDeadline(deadlineAt, () => renderer.renderComposition({
-        manifest: build.plan.templateManifest, slots: renderSlots, ratio: planned.ratioId,
-      }))
+      const design = planned.designId ? build.plan.designs.find(design => design.id === planned.designId) : build.plan
+      const composition = planned.designId ? build.plan.composition.designs.find(design => design.id === planned.designId) : build.plan.composition
+      const renderSlots = resolvedRenderSlots(composition.slotValues, sourceById)
+      const errorContext = { manifest: design.templateManifest, composition,
+        designIndex: planned.designId ? build.plan.designs.findIndex(design => design.id === planned.designId) : 0, ratioId: planned.ratioId }
+      let rendered
+      try {
+        rendered = await beforeDeadline(deadlineAt, () => renderer.renderComposition({
+          manifest: design.templateManifest, slots: renderSlots, ratio: planned.ratioId,
+        }))
+      } catch (error) {
+        throw renderFailure(error, errorContext)
+      }
       let trustedSlots
       try {
         trustedSlots = await beforeDeadline(deadlineAt, () => compileRenderSlotProvenance({
-          manifest: build.plan.templateManifest, slots: renderSlots, ratio: planned.ratioId,
+          manifest: design.templateManifest, slots: renderSlots, ratio: planned.ratioId,
         }))
       } catch (error) {
         if (error instanceof VersionServiceError && error.code === 'version_operation_timeout') throw error
+        if (error instanceof RendererError) throw renderFailure(error, errorContext)
         fail(502, 'renderer_integrity_failure', 'Rendered review asset failed integrity verification')
       }
       let bytes
@@ -582,7 +727,7 @@ export function createVersionService({
       }
       const sha256 = createHash('sha256').update(bytes).digest('hex')
       const decoded = await beforeDeadline(deadlineAt, () => decodeGeneratedImage(bytes, 'image/png'))
-      const ratio = build.plan.templateManifest.ratios.find((candidate) => candidate.id === planned.ratioId)
+      const ratio = design.templateManifest.ratios.find((candidate) => candidate.id === planned.ratioId)
       const nested = rendered.renderManifest
       if (!ratio || !decoded
         || rendered.mimeType !== 'image/png' || rendered.byteSize !== bytes.length || rendered.sha256 !== sha256
@@ -591,9 +736,9 @@ export function createVersionService({
         || !exactObjectKeys(nested, ['schemaVersion', 'template', 'ratio', 'canvas', 'slots', 'output'])
         || nested.schemaVersion !== 1
         || !exactObjectKeys(nested.template, ['id', 'version', 'sha256'])
-        || nested.template.id !== build.plan.templateManifest.id
-        || nested.template.version !== build.plan.templateManifest.version
-        || nested.template.sha256 !== build.plan.templateManifestHash
+        || nested.template.id !== design.templateManifest.id
+        || nested.template.version !== design.templateManifest.version
+        || nested.template.sha256 !== design.templateManifestHash
         || nested.ratio !== planned.ratioId
         || !exactObjectKeys(nested.canvas, ['width', 'height'])
         || nested.canvas.width !== ratio.width || nested.canvas.height !== ratio.height
@@ -606,6 +751,7 @@ export function createVersionService({
       }
       renders.push({
         ratioId: planned.ratioId,
+        ...(planned.designId ? { designId: planned.designId } : {}),
         renderManifest: rendered.renderManifest,
         asset: {
           id: planned.id, kind: 'review_png', objectKey: planned.objectKey, mimeType: 'image/png',
@@ -621,7 +767,7 @@ export function createVersionService({
       template: { id: build.plan.templateManifest.id, version: build.plan.templateManifest.version, sha256: build.plan.templateManifestHash },
       compositionId: build.plan.composition.id,
       sourceAssets: build.plan.sourceAssets.map(({ objectKey: _objectKey, ...asset }) => asset),
-      renders: renders.map((render) => ({ ratioId: render.ratioId, asset: { id: render.asset.id, kind: render.asset.kind, sha256: render.asset.sha256 }, manifest: render.renderManifest })),
+      renders: renders.map((render) => ({ ratioId: render.ratioId, ...(render.designId ? { designId: render.designId } : {}), asset: { id: render.asset.id, kind: render.asset.kind, sha256: render.asset.sha256 }, manifest: render.renderManifest })),
     }
     const manifestBytes = Buffer.from(canonicalJson(renderManifest), 'utf8')
     const manifest = {
@@ -737,16 +883,7 @@ export function createVersionService({
       || campaign.currentVersionNumber !== build.plan.binding.currentVersionNumber) {
       fail(409, 'version_source_changed', 'Campaign content changed while the review version was being created')
     }
-    const direction = await repository.findSelectedDirection(campaign.id, campaign.selectedDirectionId)
-    const currentContext = {
-      analysis: await repository.findLatestBriefAnalysis(campaign.id),
-      copy: await repository.findSelectedCopy(campaign.id, campaign.selectedCopyId),
-      direction,
-      composition: await repository.findComposition(campaign.id, campaign.compositionId),
-      template: await repository.findTemplate(build.plan.templateManifest.id, build.plan.templateManifest.version),
-      previewAsset: await repository.findAsset(campaign.id, direction?.previewAssetId),
-      sourceAssets: await repository.findAssetsForUpdate(campaign.id, build.plan.sourceAssets.map((asset) => asset.id)),
-    }
+    const currentContext = await loadContext(repository, campaign, { lock: true })
     if (hashCanonical(currentContext.sourceAssets.map(immutableSourceAsset)) !== hashCanonical(build.plan.sourceAssets)) {
       fail(409, 'version_source_changed', 'Campaign content changed while the review version was being created')
     }
@@ -766,6 +903,7 @@ export function createVersionService({
       assets: assetReferences,
       templateManifest: build.plan.templateManifest,
       templateManifestHash: build.plan.templateManifestHash,
+      ...(build.plan.designs ? { designs: build.plan.designs } : {}),
     })
     const contentHash = hashCanonical(snapshot)
     const createdAt = safeInstant(clock())
@@ -878,6 +1016,7 @@ export function createVersionService({
 
   return Object.freeze({
     saveComposition,
+    saveBannerBatch,
     createVersion,
     async getVersion({ actor, campaignId, versionNumber }) {
       requireRole(actor, readers)

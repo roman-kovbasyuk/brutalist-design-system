@@ -48,4 +48,16 @@ export function registerCampaignRoutes(app, { requireRole, workflowService }) {
     setRevisionEtag(reply, archived)
     return reply.code(204).send()
   })
+
+  app.post('/api/v1/campaigns/:campaignId/duplicate', { preHandler: requireRole(...editors) }, async (request, reply) => {
+    const actor = request.actor
+    const { campaignId } = parse(paramsSchema, request.params)
+    const duplicated = strictResponse(
+      campaignResponseSchema,
+      request,
+      await workflowService.duplicateCampaign({ actor, campaignId }),
+    )
+    reply.code(201)
+    return setRevisionEtag(reply, duplicated)
+  })
 }

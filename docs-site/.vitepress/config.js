@@ -15,7 +15,7 @@ export default withMermaid({
   themeConfig: {
     nav: [],
     sidebar: [
-      { text: 'Documentation', items: [{ text: 'Overview', link: '/' }, { text: 'Workflow', link: '/workflow' }, { text: 'Technical architecture', link: '/architecture' }, { text: 'Team process', link: '/team-process' }, { text: 'MVP launch roadmap', link: '/roadmap' }] },
+      { text: 'Documentation', items: [{ text: 'Overview', link: '/' }, { text: 'Workflow', link: '/workflow' }, { text: 'Campaign modules', link: '/campaign-modules' }, { text: 'Technical architecture', link: '/architecture' }, { text: 'Team process', link: '/team-process' }, { text: 'MVP launch roadmap', link: '/roadmap' }] },
     ],
     outline: { level: [2, 2] },
     socialLinks: [],

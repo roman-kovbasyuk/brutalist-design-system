@@ -1,6 +1,6 @@
 # Visuals module: two generation methods and linked assets
 
-Status: draft v1 for review, recording Roman's Visuals states and immediate-generation clarification of 6 September 2026. Documentation only; these behaviors are not claimed as implemented.
+Status: implemented 6 September 2026, following Roman's Visuals states and immediate-generation clarification. See the [implementation and verification record](../plans/2026-09-06-visuals-implementation.md).
 
 Related specifications: [Brief](2026-09-06-brief-module-design.md), [Copy](2026-09-06-copy-module-design.md), and [six-module architecture](../plans/2026-09-06-campaign-module-architecture.md).
 
@@ -119,7 +119,7 @@ The integration must support multiple selected copy options and campaign-wide as
 
 ## Implementation handoff
 
-This is a documentation-only functional specification, not permission to modify another task's in-progress implementation plan.
+Implemented within the Visuals module and coordinated shared backend contracts. Adjacent page/module ownership remains unchanged.
 
 1. Change the initial handoff to analyzed Brief → automatic Copy → Visuals ready state. Visuals reads both Brief and Copy, but campaign-wide generation does not require a copy approval.
 2. Introduce distinct linked-copy and campaign-wide generation intents and persist their batch/card associations. Snapshot the requested copy set at activation.
@@ -131,18 +131,18 @@ This is a documentation-only functional specification, not permission to modify 
 
 ## Acceptance checklist
 
-- [ ] Before analyzed brief/copy input exists, Visuals shows the centered empty-state icon and exact guidance message.
-- [ ] Ready Visuals offers the two named methods and shows the selected-copy count.
-- [ ] The linked-copy method is disabled at zero selected options; campaign-wide generation remains available with generated copy.
-- [ ] Clicking either method prepares prompts and initiates its images without a second review/confirmation click.
-- [ ] Linked generation creates one visual per selected copy; campaign-wide generation creates three per request.
-- [ ] Cards clearly identify their scope and linked copy, and use Prompt → Static visual → Video ordering.
-- [ ] Video areas remain placeholders until a video exists; no video generation starts automatically.
-- [ ] Existing and successful assets survive later batches, partial failures, and retries.
-- [ ] Generate All Static Visuals only fills eligible missing static images and never replaces existing ones or duplicates active jobs.
-- [ ] Small Upload visuals/Upload visual controls provide an alternative to AI generation; successful uploads persist with the correct scope.
-- [ ] Copy prompt copies exactly the displayed prompt and reports clipboard failures locally.
-- [ ] Uploading and copying prompts trigger no AI-image request.
-- [ ] Analyzing Brief, automatic Copy completion, opening the page, and refreshing trigger zero image-generation calls until the user chooses a generation action.
-- [ ] Per-item retries preserve successful siblings and reconcile uncertain provider outcomes before any fresh paid request.
-- [ ] The module uses shared application design-system controls and remains usable on narrow screens, keyboard, and touch.
+- [x] Before analyzed brief/copy input exists, Visuals shows the centered empty-state icon and exact guidance message.
+- [x] Ready Visuals offers the two named methods and shows the selected-copy count.
+- [x] The linked-copy method is disabled at zero selected options; campaign-wide generation remains available with generated copy.
+- [x] Clicking either method prepares prompts and initiates its images without a second review/confirmation click.
+- [x] Linked generation creates one visual per selected copy; campaign-wide generation creates three per request.
+- [x] Cards clearly identify their scope and linked copy, and use Prompt → Static visual → Video ordering.
+- [x] Video areas remain placeholders until a video exists; no video generation starts automatically.
+- [x] Existing and successful assets survive later batches, partial failures, and retries.
+- [x] Generate All Static Visuals only fills eligible missing static images and never replaces existing ones or duplicates active jobs.
+- [x] Small Upload visuals/Upload visual controls provide an alternative to AI generation; successful uploads persist with the correct scope.
+- [x] Copy prompt copies exactly the displayed prompt and reports clipboard failures locally.
+- [x] Uploading and copying prompts trigger no AI-image request.
+- [x] Analyzing Brief, automatic Copy completion, opening the page, and refreshing trigger zero image-generation calls until the user chooses a generation action.
+- [x] Per-item retries preserve successful siblings and reconcile uncertain provider outcomes before any fresh paid request.
+- [x] The module uses shared application design-system controls and remains usable on narrow screens, keyboard, and touch.

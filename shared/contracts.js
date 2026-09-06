@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { hashCanonical } from './canonicalJson.js'
 import { templateManifestSchema } from './templateManifest.js'
+import { briefAnalysisSchema } from './briefAnalysis.js'
+export { briefAnalysisSchema } from './briefAnalysis.js'
 
 const nonEmptyString = z.string().trim().min(1)
 const nullableAssetId = nonEmptyString.nullable().optional()
@@ -42,6 +44,7 @@ export const briefSchema = z.strictObject({
   offer: z.string().trim().max(500).default(''),
   locale: z.string().trim().min(1).max(35).default('auto'),
   notes: z.string().trim().max(20_000).default(''),
+  analysis: briefAnalysisSchema.nullable().optional(),
 }).refine(
   (brief) => brief.notes.length > 0 || (brief.product.length > 0 && brief.audience.length > 0 && brief.objective.length > 0),
   { message: 'Provide campaign notes or the product, audience, and objective fields.' },
@@ -220,7 +223,7 @@ export const generatedBannerCopySchema = z.strictObject({
 export const visualDirectionSchema = z.strictObject({
   id: nonEmptyString,
   title: nonEmptyString.max(160),
-  prompt: nonEmptyString.max(2_000),
+  prompt: z.string().max(2_000), // Uploaded-only directions have no generated prompt.
   status: z.enum(['pending', 'ready', 'blocked', 'failed']),
   previewAssetId: nullableAssetId,
 })
@@ -228,6 +231,28 @@ export const visualDirectionSchema = z.strictObject({
 const compositionValidationSchema = z.strictObject({
   valid: z.boolean(),
   errors: z.array(z.string()),
+})
+
+export const bannerDesignSelectionSchema = z.strictObject({
+  templateId: nonEmptyString,
+  templateVersion: nonEmptyString,
+  copySetId: nonEmptyString,
+  copyId: nonEmptyString,
+  directionId: nonEmptyString,
+})
+
+export const bannerDesignSchema = bannerDesignSelectionSchema.extend({
+  id: nonEmptyString,
+  slotValues: z.record(z.string(), z.string()),
+  validation: compositionValidationSchema,
+})
+
+export const saveBannerBatchRequestSchema = z.strictObject({
+  designs: z.array(bannerDesignSelectionSchema).min(1).refine(
+    values => new Set(values.map(value => hashCanonical(value))).size === values.length,
+    'Design selections must be unique',
+  ),
+  ratioIds: z.array(nonEmptyString).min(1).refine(values => new Set(values).size === values.length, 'Ratio ids must be unique'),
 })
 
 export const compositionSchema = z.strictObject({
@@ -238,6 +263,7 @@ export const compositionSchema = z.strictObject({
   slotValues: z.record(z.string(), z.string()),
   validation: compositionValidationSchema,
   stale: z.boolean(),
+  designs: z.array(bannerDesignSchema).min(1).optional(),
 })
 
 export const saveCompositionRequestSchema = z.strictObject({
@@ -260,7 +286,38 @@ export const campaignVersionSnapshotSchema = z.strictObject({
   assets: z.array(assetReferenceSchema),
   templateManifest: templateManifestSchema,
   templateManifestHash: assetHashSchema,
+  designs: z.array(z.strictObject({
+    id: nonEmptyString,
+    selectedCopy: copyVariantSchema,
+    selectedDirection: visualDirectionSchema,
+    templateManifest: templateManifestSchema,
+    templateManifestHash: assetHashSchema,
+  })).min(1).optional(),
 }).superRefine((snapshot, context) => {
+  if (snapshot.composition.designs) {
+    if (!snapshot.designs || snapshot.designs.length !== snapshot.composition.designs.length) {
+      context.addIssue({ code: 'custom', path: ['designs'], message: 'Every batch design requires an immutable source snapshot.' })
+    } else for (const [index, design] of snapshot.designs.entries()) {
+      const selection = snapshot.composition.designs[index]
+      if (design.id !== selection.id || design.selectedCopy.id !== selection.copyId
+        || design.selectedDirection.id !== selection.directionId
+        || design.templateManifest.id !== selection.templateId || design.templateManifest.version !== selection.templateVersion
+        || design.templateManifestHash !== hashCanonical(design.templateManifest)) {
+        context.addIssue({ code: 'custom', path: ['designs', index], message: 'Batch design sources must match their immutable selection.' })
+      }
+      const previewId = design.selectedDirection.previewAssetId
+      const source = snapshot.assets.filter(asset => asset.id === previewId)
+      if (!previewId || source.length !== 1 || !['direction', 'final_image'].includes(source[0]?.kind)) {
+        context.addIssue({ code: 'custom', path: ['designs', index, 'selectedDirection', 'previewAssetId'], message: 'Every design preview requires one immutable source asset.' })
+      }
+      for (const slot of design.templateManifest.slots.filter(slot => slot.type === 'image')) {
+        const assetId = selection.slotValues[slot.id]
+        if ((slot.required || assetId) && assetId !== previewId) {
+          context.addIssue({ code: 'custom', path: ['composition', 'designs', index, 'slotValues', slot.id], message: 'Design image slots must match their verified direction preview.' })
+        }
+      }
+    }
+  } else if (snapshot.designs) context.addIssue({ code: 'custom', path: ['designs'], message: 'Design snapshots require a batch composition.' })
   if (snapshot.templateManifestHash !== hashCanonical(snapshot.templateManifest)) {
     context.addIssue({ code: 'custom', path: ['templateManifestHash'], message: 'Template manifest hash must match its canonical manifest.' })
   }
@@ -551,17 +608,17 @@ const providerMetadataFields = {
   }),
 }
 
-export const briefAnalysisSchema = z.strictObject({
-  summary: nonEmptyString.max(1_000),
-  themes: z.array(nonEmptyString.max(160)).max(10),
-  warnings: z.array(nonEmptyString.max(500)).max(10),
-})
-
-export const analyseBriefInputSchema = z.strictObject({ brief: briefSchema })
-export const generateCopyInputSchema = z.strictObject({ brief: briefSchema, analysis: briefAnalysisSchema })
-export const generateDirectionsInputSchema = z.strictObject({ brief: briefSchema, copy: copyVariantSchema })
+export const analyseBriefInputSchema = z.strictObject({ brief: briefSchema, instruction: nonEmptyString.max(4000).optional() })
+export const generateCopyInputSchema = z.strictObject({ brief: briefSchema, analysis: briefAnalysisSchema,
+  previousHeadlines: z.array(nonEmptyString.max(500)).max(30).optional() })
+export const generateDirectionsInputSchema = z.union([
+  z.strictObject({ brief: briefSchema, copy: copyVariantSchema }),
+  z.strictObject({ brief: briefSchema, analysis: briefAnalysisSchema, mode: z.literal('campaign'), copies: z.array(copyVariantSchema).max(30) }),
+  z.strictObject({ brief: briefSchema, analysis: briefAnalysisSchema, mode: z.literal('selected_copy'), copies: z.array(copyVariantSchema).min(1).max(30) }),
+])
+export const generatedVisualDirectionSchema = visualDirectionSchema.extend({ prompt: nonEmptyString.max(2_000), copyId: nonEmptyString.optional() })
 export const generateImageInputSchema = z.strictObject({
-  direction: visualDirectionSchema,
+  direction: visualDirectionSchema.extend({ prompt: nonEmptyString.max(2_000) }),
   width: z.number().int().min(64).max(4_096),
   height: z.number().int().min(64).max(4_096),
 })
@@ -582,7 +639,7 @@ export const generateCopyResultSchema = z.union([
   providerFailureSchema,
 ])
 export const generateDirectionsResultSchema = z.union([
-  z.strictObject({ ...providerMetadataFields, directions: z.array(visualDirectionSchema).min(1).max(10) }),
+  z.strictObject({ ...providerMetadataFields, directions: z.array(generatedVisualDirectionSchema).min(1).max(30) }),
   providerFailureSchema,
 ])
 export const generateImageResultSchema = z.union([
@@ -598,9 +655,13 @@ export const generateImageResultSchema = z.union([
   providerFailureSchema,
 ])
 
-export const analyseBriefRequestSchema = z.strictObject({})
+export const analyseBriefRequestSchema = z.strictObject({ instruction: nonEmptyString.max(4000).optional(), expectedRevision: z.number().int().nonnegative().optional() })
 export const copyGenerationRequestSchema = z.strictObject({})
-export const directionGenerationRequestSchema = z.strictObject({})
+export const directionGenerationRequestSchema = z.union([
+  z.strictObject({}),
+  z.strictObject({ mode: z.literal('campaign') }),
+  z.strictObject({ mode: z.literal('selected_copy'), copyIds: z.array(nonEmptyString).min(1).max(30).refine(ids => new Set(ids).size === ids.length, 'Copy IDs must be unique') }),
+])
 export const imageGenerationRequestSchema = z.strictObject({
   directionId: nonEmptyString,
   width: z.number().int().min(64).max(4_096),
@@ -631,7 +692,7 @@ const durableImageResultMetadataSchema = z.strictObject({
 export const generationResultMetadataSchema = z.union([
   z.strictObject({ analysis: briefAnalysisSchema }),
   z.strictObject({ copySetId: nonEmptyString, copies: z.array(copyVariantSchema) }),
-  z.strictObject({ directions: z.array(visualDirectionSchema) }),
+  z.strictObject({ directions: z.array(generatedVisualDirectionSchema) }),
   legacyImageResultMetadataSchema,
   interimImageResultMetadataSchema,
   durableImageResultMetadataSchema,

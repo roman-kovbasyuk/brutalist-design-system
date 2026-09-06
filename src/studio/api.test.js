@@ -2,6 +2,28 @@ import { describe, expect, test, vi } from 'vitest'
 import { createStudioApi, StudioApiError } from './api.js'
 
 describe('Studio HTTP client', () => {
+  test('approves the exact encoded candidate with a revision-protected PUT', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: 'campaign/1' })))
+    const api = createStudioApi({ fetchImpl })
+    await api.approveCopy('campaign/1', 'job:copy/2', 7)
+    const [url, request] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/api/v1/campaigns/campaign%2F1/copies/job%3Acopy%2F2/approval')
+    expect(request.method).toBe('PUT')
+    expect(request.body).toBe('{}')
+    expect(request.headers.get('if-match')).toBe('"7"')
+  })
+  test.each(['getWorkspace', 'getJob', 'getReview', 'getDelivery', 'getAssetBlob'])(
+    '%s forwards cancellation to the authenticated read', async method => {
+      const controller = new AbortController()
+      const fetchImpl = vi.fn(async (_url, options) => {
+        expect(options.signal).toBe(controller.signal)
+        throw controller.signal.reason
+      })
+      const api = createStudioApi({ fetchImpl })
+      controller.abort()
+      await expect(api[method]('resource-1', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    },
+  )
   test('posts brief files to the authenticated extraction endpoint', async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ text: 'Extracted copy' })))
     const api = createStudioApi({ fetchImpl, getToken: () => 'token' })
@@ -11,6 +33,21 @@ describe('Studio HTTP client', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/v1/brief-files/extract', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ name: 'brief.md', mimeType: 'text/markdown', data: 'IyBMYXVuY2g=' }),
     }))
+  })
+  test('uses dedicated campaign duplicate and revision-protected delete endpoints', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'copy', title: 'Autumn copy' }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const api = createStudioApi({ fetchImpl })
+
+    await api.duplicateCampaign('campaign/1')
+    await api.deleteCampaign('campaign/1', 4)
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/campaigns/campaign%2F1/duplicate')
+    expect(fetchImpl.mock.calls[0][1].method).toBe('POST')
+    expect(fetchImpl.mock.calls[1][0]).toBe('/api/v1/campaigns/campaign%2F1')
+    expect(fetchImpl.mock.calls[1][1].method).toBe('DELETE')
+    expect(fetchImpl.mock.calls[1][1].headers.get('if-match')).toBe('"4"')
   })
   test('sends token, local headers, exact revision and retry identity', async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ campaign: { revision: 8 } })))

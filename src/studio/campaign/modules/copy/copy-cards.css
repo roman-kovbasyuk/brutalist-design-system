@@ -1,0 +1,8 @@
+.bs-copy-card-list { display: grid; gap: var(--v2-space-4); }
+.bs-copy-card-status { display: inline-flex; align-items: center; gap: var(--v2-space-1); color: var(--v2-ink); }
+.bs-copy-card-details { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--v2-space-4); }
+.bs-copy-card-details > div { display: flex; align-items: baseline; gap: var(--v2-space-2); }
+.bs-copy-card-details span { color: var(--v2-text-secondary); font-size: var(--v2-text-small); }
+.bs-copy-card-details strong { font-size: var(--v2-text-body); font-weight: var(--v2-weight-heading); }
+.bs-copy-card-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--v2-space-4); margin-top: var(--v2-space-6); }
+.bs-copy-card-count { color: var(--v2-text-secondary); font-size: var(--v2-text-small); }

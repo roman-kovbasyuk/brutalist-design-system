@@ -48,6 +48,22 @@ export function registerGenerationRoutes(app, { requireRole, generationService }
     return setRevisionEtag(reply, strictResponse(campaignResponseSchema, request, campaign))
   })
 
+  app.put('/api/v1/campaigns/:campaignId/copies/:copyId/approval', { preHandler: requireRole(...editors) }, async (request, reply) => {
+    const { campaignId, copyId } = parse(campaignParamsSchema.extend({ copyId: z.string().trim().min(1) }), request.params)
+    parse(z.strictObject({}), request.body ?? {})
+    const campaign = await generationService.approveCopy({ actor: request.actor, campaignId,
+      expectedRevision: parseIfMatch(request), input: { copyId } })
+    return setRevisionEtag(reply, strictResponse(campaignResponseSchema, request, campaign))
+  })
+
+  app.delete('/api/v1/campaigns/:campaignId/copies/:copyId', { preHandler: requireRole(...editors) }, async (request, reply) => {
+    const { campaignId, copyId } = parse(campaignParamsSchema.extend({ copyId: z.string().trim().min(1) }), request.params)
+    const campaign = await generationService.deleteCopy({
+      actor: request.actor, campaignId, expectedRevision: parseIfMatch(request), input: { copyId },
+    })
+    return setRevisionEtag(reply, strictResponse(campaignResponseSchema, request, campaign))
+  })
+
   app.put('/api/v1/campaigns/:campaignId/direction-selection', { preHandler: requireRole(...editors) }, async (request, reply) => {
     const { campaignId } = parse(campaignParamsSchema, request.params)
     const expectedRevision = parseIfMatch(request)

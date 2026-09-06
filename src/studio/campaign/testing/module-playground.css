@@ -1,0 +1,13 @@
+.module-playground { min-height: 100dvh; padding: clamp(20px, 4vw, 56px); background: var(--v2-canvas); color: var(--v2-ink); font-family: var(--v2-font); }
+.module-playground__header, .module-playground__controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.module-playground__header { margin-bottom: 24px; }
+.module-playground__header h1 { margin: 4px 0 0; }
+.module-playground__eyebrow { margin: 0; color: var(--v2-text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+.module-playground__controls, .module-playground__diagnostics, .module-playground__events { padding: 16px; margin-bottom: 20px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-card); background: var(--v2-surface); }
+.module-playground__diagnostics dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 0; }
+.module-playground__diagnostics dl div { min-width: 0; }
+.module-playground__diagnostics dt { color: var(--v2-text-secondary); font-size: 12px; }
+.module-playground__diagnostics dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+.module-playground__events { margin-top: 20px; }
+.module-playground__events ol { max-height: 240px; overflow: auto; }
+.module-playground__events code { white-space: pre-wrap; overflow-wrap: anywhere; }

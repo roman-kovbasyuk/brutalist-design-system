@@ -80,9 +80,9 @@ const transitions = [
       stale: { copy: false, directions: true, composition: true },
     }),
   },
-  {
+  ...['copy_ready', 'direction_selected', 'composed'].map(from => ({
     action: 'select_direction',
-    from: 'copy_ready',
+    from,
     to: 'direction_selected',
     roles: marketerRoles,
     guard: ({ input }) => {
@@ -94,7 +94,7 @@ const transitions = [
       selectedDirection: input.direction,
       stale: { ...campaign.stale, directions: false, composition: true },
     }),
-  },
+  })),
   {
     action: 'save_composition',
     from: 'direction_selected',

@@ -1,0 +1,1 @@
+:is(.system-screen--v2, .bs-root) .v2-button.v2-text-action { font-size: var(--v2-text-small); font-weight: var(--v2-weight-text); padding-inline: var(--v2-space-1); text-decoration: underline; text-underline-offset: .2em; }

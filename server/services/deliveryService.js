@@ -297,7 +297,9 @@ function parseCanonicalManifest(bytes) {
   return value
 }
 
-function verifyRenderManifest(value, version, pngAssets) {
+export function verifyRenderManifest(value, version, pngAssets) {
+  const designs = version.snapshot.designs
+  const expectedKeys = (designs ?? [null]).flatMap(design => version.snapshot.composition.ratioIds.map(ratioId => JSON.stringify([design?.id ?? null, ratioId])))
   if (!exactKeys(value, ['schemaVersion', 'campaignId', 'versionId', 'versionNumber', 'template', 'compositionId', 'sourceAssets', 'renders'])
     || value.schemaVersion !== 1 || value.campaignId !== version.campaignId || value.versionId !== version.id
     || value.versionNumber !== version.versionNumber || value.compositionId !== version.snapshot.composition.id
@@ -314,32 +316,49 @@ function verifyRenderManifest(value, version, pngAssets) {
     .sort((left, right) => compareText(String(left.id), String(right.id)))
   if (hashCanonical(sourceRefs) !== hashCanonical(manifestSources)
     || value.renders.length !== pngAssets.length
-    || value.renders.length !== version.snapshot.composition.ratioIds.length) {
+    || value.renders.length !== expectedKeys.length) {
     fail(502, 'manifest_integrity_failure', 'Stored render manifest does not match the immutable version')
   }
   const assetById = new Map(pngAssets.map((asset) => [asset.id, asset]))
-  const ratios = new Map(version.snapshot.templateManifest.ratios.map((ratio) => [ratio.id, ratio]))
   const seenAssets = new Set()
   const seenRatios = new Set()
   for (const render of value.renders) {
     const asset = assetById.get(render?.asset?.id)
-    const ratio = ratios.get(render?.ratioId)
-    if (!exactKeys(render, ['ratioId', 'asset', 'manifest'])
+    const design = designs ? designs.find(design => design.id === render.designId) : version.snapshot
+    const ratio = design?.templateManifest.ratios.find(ratio => ratio.id === render?.ratioId)
+    const renderKey = JSON.stringify([designs ? render.designId : null, render.ratioId])
+    if (!exactKeys(render, designs ? ['designId', 'ratioId', 'asset', 'manifest'] : ['ratioId', 'asset', 'manifest'])
       || !exactKeys(render.asset, ['id', 'kind', 'sha256'])
       || !asset || !ratio || render.asset.kind !== 'review_png' || render.asset.sha256 !== asset.sha256
-      || seenAssets.has(asset.id) || seenRatios.has(render.ratioId)
+      || seenAssets.has(asset.id) || seenRatios.has(renderKey)
       || !version.snapshot.composition.ratioIds.includes(render.ratioId)
       || render.manifest?.ratio !== render.ratioId
+      || render.manifest?.template?.id !== design.templateManifest.id
+      || render.manifest?.template?.version !== design.templateManifest.version
+      || render.manifest?.template?.sha256 !== design.templateManifestHash
       || render.manifest?.output?.mimeType !== 'image/png'
       || render.manifest?.output?.width !== asset.width || render.manifest?.output?.height !== asset.height
       || render.manifest?.output?.byteSize !== asset.byteSize || render.manifest?.output?.sha256 !== asset.sha256
       || asset.width !== ratio.width || asset.height !== ratio.height) {
       fail(502, 'manifest_integrity_failure', 'Stored render manifest does not match its banner PNGs')
     }
+    if (designs) {
+      const selection = version.snapshot.composition.designs.find(selection => selection.id === design.id)
+      for (const slot of design.templateManifest.slots.filter(slot => slot.type === 'image')) {
+        const sourceId = selection?.slotValues[slot.id]
+        if (!sourceId && !slot.required) continue
+        const source = version.snapshot.assets.find(source => source.id === sourceId && ['direction', 'final_image'].includes(source.kind))
+        const renderedSlots = Array.isArray(render.manifest.slots)
+          ? render.manifest.slots.filter(renderedSlot => renderedSlot.id === slot.id && renderedSlot.type === 'image') : []
+        if (!source || renderedSlots?.length !== 1 || renderedSlots[0].source?.sha256 !== source.sha256) {
+          fail(502, 'manifest_integrity_failure', 'Rendered design image does not match its immutable source')
+        }
+      }
+    }
     seenAssets.add(asset.id)
-    seenRatios.add(render.ratioId)
+    seenRatios.add(renderKey)
   }
-  if (!same([...seenRatios].sort(), [...version.snapshot.composition.ratioIds].sort())) {
+  if (!same([...seenRatios].sort(), expectedKeys.sort())) {
     fail(502, 'manifest_integrity_failure', 'Stored render manifest is missing a composition ratio')
   }
 }

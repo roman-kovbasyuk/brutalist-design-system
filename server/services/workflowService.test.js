@@ -143,6 +143,23 @@ describe('workflow service', () => {
     expect(auditRepository.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'campaign.archived', entityId: 'campaign-1', beforeStatus: 'draft', afterStatus: 'draft' }))
   })
 
+  test('duplicates a campaign as a fresh draft with the original brief', async () => {
+    const { service, calls, campaignRepository, auditRepository } = harness()
+    const duplicated = { ...currentCampaign, id: 'generated-1', title: 'Autumn copy', status: 'draft', revision: 0, brief }
+    campaignRepository.create.mockResolvedValueOnce(duplicated)
+
+    const result = await service.duplicateCampaign({ actor, campaignId: currentCampaign.id })
+
+    expect(calls).toEqual(['lock/load', 'audit'])
+    expect(campaignRepository.create).toHaveBeenCalledWith({
+      id: 'generated-1', title: 'Autumn copy', brief, createdBy: actor.id,
+    })
+    expect(result).toEqual(duplicated)
+    expect(auditRepository.append).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'campaign.duplicated', entityId: 'generated-1', payload: { sourceCampaignId: currentCampaign.id },
+    }))
+  })
+
   test('uses the campaign command path for strict title and brief patches', async () => {
     const { service, campaignRepository, auditRepository } = harness()
 

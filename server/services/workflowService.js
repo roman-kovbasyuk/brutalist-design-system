@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { campaignPatchRequestSchema, campaignRecordSchema, createCampaignRequestSchema, createInvitationRequestSchema, createTemplateVersionRequestSchema, settingsPatchRequestSchema } from '../../shared/contracts.js'
 import { hashCanonical } from '../../shared/canonicalJson.js'
+import { rawBrief } from '../../shared/briefAnalysis.js'
 import { withTransaction } from '../db/pool.js'
 import { createCampaignRepository } from '../repositories/campaignRepository.js'
 import { createSettingsRepository } from '../repositories/settingsRepository.js'
@@ -214,6 +215,8 @@ export function createWorkflowService({
           return {
             ...editedCampaign,
             ...command,
+            brief: hashCanonical(rawBrief(campaign.brief)) === hashCanonical(rawBrief(command.brief))
+              ? command.brief : { ...command.brief, analysis: null },
             selectedCopyId: edit.campaign.selectedCopyId ?? null,
             selectedDirectionId: edit.campaign.selectedDirectionId ?? null,
             compositionId: edit.campaign.compositionId ?? null,
@@ -259,6 +262,27 @@ export function createWorkflowService({
           afterStatus: snapshot.status, payload: {},
         })
         return archived
+      })
+    },
+
+    async duplicateCampaign({ actor, campaignId }) {
+      requireRole(actor, campaignEditors)
+      return transaction(pool, async (client) => {
+        const campaigns = repositories.campaign(client)
+        const source = await campaigns.findByIdForUpdate(campaignId)
+        if (!source) throw missing('Campaign')
+        const created = await campaigns.create({
+          id: idGenerator(),
+          title: `${source.title} copy`,
+          brief: rawBrief(source.brief),
+          createdBy: actor.id,
+        })
+        await audit(client, {
+          actorId: actor.id, actorRole: actor.role, action: 'campaign.duplicated',
+          entityType: 'campaign', entityId: created.id, beforeStatus: null,
+          afterStatus: created.status, payload: { sourceCampaignId: source.id },
+        })
+        return created
       })
     },
 

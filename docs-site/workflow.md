@@ -1,37 +1,33 @@
 # Workflow
 
-## The happy path
+## Approved workflow
 
-The happy path is the one complete route a campaign must follow. A step cannot be skipped.
+The application now uses six modules. Each block can keep its own draft, loading state and errors while the page connects the workflow. Older eight-step links still resolve to the matching module.
 
 ```mermaid
 flowchart LR
   A[1. Brief] --> B[2. Copy]
-  B --> C[3. Image ideas]
-  C --> D[4. Templates]
-  D --> E[5. Review file]
-  E --> F[6. Figma review]
-  F --> G{7. Approval}
-  G --> H[8. Delivery]
-  M[Marketer] -. sends brief and choices .-> A
-  V[Vlad] -. provides template rules .-> D
-  S[Slack assignment] -. sends review task .-> F
-  W[Ready webhook] -. sends status .-> G
+  B --> C[3. Visuals]
+  C --> D[4. Banners]
+  D --> E[5. Review]
+  E --> F[6. Distribute]
 ```
 
 ## Steps
 
-| Step | What goes in | What comes out | Who confirms it |
-| --- | --- | --- | --- |
-| Brief | Campaign context | Campaign record | Marketer confirms the brief is clear enough to start |
-| Copy | Brief | Headline, body, offer, call to action, prompts | Marketer selects or edits the copy |
-| Image ideas | Visual prompt | Five visual directions | Marketer selects one direction |
-| Templates | Template rules + selected direction | Banner compositions | The design fits the allowed slots, ratios, and limits |
-| Review file | Locked composition snapshot | Package for the designer | Version is recorded |
-| Figma review | Review file | Edited frames + `Ready for Development` status | Designer marks the frames ready |
-| Approval | Ready snapshot | Marketer approval | Marketer approves the exact version |
-| Delivery | Approved snapshot | PNG / MP4 / ZIP | Export is allowed only after approval |
+| Step | Current functionality grouped here |
+| --- | --- |
+| Brief | Paste a description or attach a file; analyze it and refine the summary and facts |
+| Copy | Review the first five options, approve options, remove options, or generate more |
+| Visuals | Prepare prompts; explicitly generate images or upload them, then select a visual |
+| Banners | Select designs and output sizes; validate their content before preparing review files |
+| Review | Prepare an immutable version, add the Figma review link and designer checks, request changes or approve |
+| Distribute | Build and download the approved version's PNG package and manifest |
+
+Each module owns its functionality and state, receives defined inputs, and provides defined outputs. Modules must support independent development and debugging. The page connects them in this order using shared workflow coordination.
+
+Brief analysis prepares the first Copy options and text-only visual prompts. Images are generated only after an explicit action. Figma import/linking remains manual; distribution does not yet publish to advertising platforms. See [Campaign modules](/campaign-modules) for development boundaries and test commands.
 
 ## Do not skip a step
 
-Delivery cannot start from a draft. Any change after the review file is created needs a new version and another review.
+Grouping review and approval into one module does not remove the existing review gates. Distribution requires an approved version. Revised creative needs another review round; approved versions retain their original content.

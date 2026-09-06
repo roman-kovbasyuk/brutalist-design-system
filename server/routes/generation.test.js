@@ -52,6 +52,8 @@ function makeApp({ role = 'marketer', generation = {} } = {}) {
     generateImage: vi.fn(async () => ({ status: 201, body: { job: blockedImageJob } })),
     getJob: vi.fn(async () => pendingJob),
     selectCopy: vi.fn(async () => campaign),
+    approveCopy: vi.fn(async () => campaign),
+    deleteCopy: vi.fn(async () => campaign),
     selectDirection: vi.fn(async () => ({ ...campaign, status: 'direction_selected', revision: 2, selectedDirectionId: 'direction-1' })),
     ...generation,
   }
@@ -63,6 +65,33 @@ function makeApp({ role = 'marketer', generation = {} } = {}) {
 }
 
 describe('generation and selection routes', () => {
+  test('approves an individual copy with role, revision and strict-body checks', async () => {
+    const { app, generationService } = makeApp()
+    const url = '/api/v1/campaigns/campaign-1/copies/copy-1/approval'
+    expect((await app.inject({ method: 'PUT', url, payload: {} })).statusCode).toBe(428)
+    expect((await app.inject({ method: 'PUT', url, headers: { 'if-match': '"1"' }, payload: { approved: false } })).statusCode).toBe(400)
+    const response = await app.inject({ method: 'PUT', url, headers: { 'if-match': '"1"' }, payload: {} })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers.etag).toBe('"1"')
+    expect(generationService.approveCopy).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'campaign-1', expectedRevision: 1, input: { copyId: 'copy-1' } }))
+    const designer = makeApp({ role: 'designer' })
+    expect((await designer.app.inject({ method: 'PUT', url, headers: { 'if-match': '"1"' }, payload: {} })).statusCode).toBe(403)
+    expect(designer.generationService.approveCopy).not.toHaveBeenCalled()
+    await app.close(); await designer.app.close()
+  })
+  test('deletes copy with revision protection and editor permissions', async () => {
+    const { app, generationService } = makeApp()
+    const url = '/api/v1/campaigns/campaign-1/copies/copy-1'
+    expect((await app.inject({ method: 'DELETE', url })).statusCode).toBe(428)
+    const response = await app.inject({ method: 'DELETE', url, headers: { 'if-match': '"1"' } })
+    expect(response.statusCode).toBe(200)
+    expect(generationService.deleteCopy).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'campaign-1', expectedRevision: 1, input: { copyId: 'copy-1' } }))
+    const designer = makeApp({ role: 'designer' })
+    expect((await designer.app.inject({ method: 'DELETE', url, headers: { 'if-match': '"1"' } })).statusCode).toBe(403)
+    expect(designer.generationService.deleteCopy).not.toHaveBeenCalled()
+    await app.close()
+    await designer.app.close()
+  })
   test('exposes the four strict idempotent generation commands with request IDs', async () => {
     const { app, generationService } = makeApp()
     const requests = [

@@ -49,6 +49,7 @@ function makeServices() {
       getSettings: vi.fn(async () => ({})), updateSettings: vi.fn(), createInvitation: vi.fn(), disableUser: vi.fn(),
     },
     versionService: {
+      saveBannerBatch: vi.fn(async () => ({ composition: { ...composition, designs: [{ id: 'design-1', templateId: composition.templateId, templateVersion: composition.templateVersion, copySetId: 'copy-set-1', copyId: 'copy-1', directionId: 'direction-1', slotValues: composition.slotValues, validation: composition.validation }] }, campaign: { ...baseCampaign, status: 'composed', revision: 3, compositionId: composition.id } })),
       saveComposition: vi.fn(async () => ({ composition, campaign: { ...baseCampaign, status: 'composed', revision: 3, compositionId: composition.id } })),
       createVersion: vi.fn(async () => ({ status: 201, body: { version, campaign: reviewedCampaign } })),
       getVersion: vi.fn(async () => version),
@@ -67,6 +68,22 @@ function makeApp({ role = 'marketer' } = {}) {
 }
 
 describe('composition and immutable version routes', () => {
+  test('batch route requires revision and server-owned slots, preserving the complete response', async () => {
+    const { app } = makeApp()
+    const input = { designs: [{ templateId: composition.templateId, templateVersion: composition.templateVersion, copySetId: 'copy-set-1', copyId: 'copy-1', directionId: 'direction-1' }], ratioIds: ['square'] }
+    const url = '/api/v1/campaigns/campaign-1/banner-batch'
+    expect((await app.inject({ method: 'PUT', url, payload: input })).statusCode).toBe(428)
+    expect((await app.inject({ method: 'PUT', url, headers: { 'if-match': '"2"' }, payload: { ...input, designs: [{ ...input.designs[0], slotValues: { headline: 'Forged' } }] } })).statusCode).toBe(400)
+    const saved = await app.inject({ method: 'PUT', url, headers: { 'if-match': '"2"' }, payload: input })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.headers.etag).toBe('"3"')
+    expect(saved.json().composition.designs).toHaveLength(1)
+    expect(saved.json().composition.designs[0].slotValues.headline).toBe('Learn faster')
+    await app.close()
+    const designer = makeApp({ role: 'designer' }).app
+    expect((await designer.inject({ method: 'PUT', url, headers: { 'if-match': '"2"' }, payload: input })).statusCode).toBe(403)
+    await designer.close()
+  })
   test('saves a strict composition with quoted If-Match and returns the new revision', async () => {
     const { app, versionService } = makeApp()
     const missing = await app.inject({ method: 'PUT', url: '/api/v1/campaigns/campaign-1/composition', payload: compositionInput })
