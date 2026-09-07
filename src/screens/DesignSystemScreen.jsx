@@ -71,16 +71,15 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
   return (
     <div className="ds-workspace">
       <LibraryIndex activeCategory={isOverview ? 'overview' : activeCategory} onCategoryChange={selectCategory} />
-      <div className="system-screen--v2">
-      <header className="v2-page-header">
+      <div className="system-screen--v2 ds-catalog" id="ds-catalog">
+      {(!overviewOnRoot || isOverview) && <header className="v2-page-header">
         <div>
           <h1>Application design system</h1>
         </div>
         <p className="v2-page-header__intro">
-          A practical reference for the foundations, components, states, and responsive
-          behavior that shape every Banner Studio interface. Banner brand styles are separate.
+          Foundations, components, and interface patterns.
         </p>
-      </header>
+      </header>}
 
       {isOverview && <section className="ds-overview" aria-labelledby="ds-overview-title">
         <div className="ds-overview__intro">
@@ -108,7 +107,7 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
         <div className="v2-foundation-group v2-foundation-group--colors">
           <div className="v2-foundation-group__heading">
             <h3>Color</h3>
-            <p>Warm structural neutrals with explicit action and status colors.</p>
+            
           </div>
           <div className="v2-color-grid">
             {colors.map((color) => (
@@ -126,7 +125,7 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
         <div className="v2-foundation-group" id="ds-typography">
           <div className="v2-foundation-group__heading">
             <h3>Typography</h3>
-            <p>Each sample shows its size, line height, and weight. Click to copy the combined token.</p>
+            <p>Click a sample to copy</p>
           </div>
           <div className="v2-type-grid">
             {typeRoles.map((role) => (
