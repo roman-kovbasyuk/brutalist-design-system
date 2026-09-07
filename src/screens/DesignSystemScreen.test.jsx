@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 
-const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
+const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
 
 describe('DesignSystemScreen', () => {
   test('uses accessible secondary copy, white selected tabs, and the specified field spacing', () => {
@@ -13,6 +13,56 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.v2-pill-tabs button\[aria-selected="true"\]\s*{[^}]*background:\s*var\(--v2-surface\)/)
     expect(designSystemStyles).toMatch(/\.v2-field textarea\s*{[^}]*padding:\s*var\(--v2-space-3\) var\(--v2-space-4\)/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 :focus-visible,[^}]*outline:\s*2px solid var\(--v2-accent\);[^}]*box-shadow:\s*0 0 0 2px var\(--v2-ink\) !important/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2\s*{[^}]*max-width:\s*1000px;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-token-target \.v2-token-copy-target__icon\s*{[^}]*border:\s*0;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-token-target \.v2-token-copy-target__icon\s*{[^}]*transform:\s*translate\(50%, -50%\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample \.v2-token-copy-target__button\s*{[^}]*grid-template-columns:\s*92px minmax\(0, 1fr\) auto;/)
+  })
+
+  test('uses doubled padding for comparable foundation and specimen blocks', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-foundation-group__heading\s*{[^}]*padding:\s*var\(--v2-space-8\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-swatch\s*{[^}]*padding:\s*var\(--v2-space-6\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample\s*{[^}]*padding:\s*var\(--v2-space-8\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-foundation-card\s*{[^}]*padding:\s*var\(--v2-space-8\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-specimen-card__heading\s*{[^}]*padding:\s*var\(--v2-space-8\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-specimen-card__body\s*{[^}]*padding:\s*var\(--v2-space-8\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample \.v2-token-copy-target__button\s*{[^}]*align-items:\s*center;[^}]*padding:\s*0;[^}]*border-radius:\s*0;/)
+  })
+
+  test('uses proportional measurement bars for the spacing scale', () => {
+    expect(designSystemStyles).toContain('.system-screen--v2 .v2-spacing-step__measure')
+    expect(designSystemStyles).toContain('width: max(8px, calc(var(--v2-spacing-value) * 1.5))')
+    expect(designSystemStyles).toContain('border-bottom: 1px solid var(--v2-border)')
+  })
+
+  test('presents button actions in equal grid cells with copy affordances', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+
+    const buttons = screen.getByRole('heading', { name: 'Buttons' }).closest('.v2-specimen-card')
+    expect(buttons.querySelector('.v2-button-grid')).toBeInTheDocument()
+    expect(buttons.querySelectorAll('.v2-button-cell')).toHaveLength(7)
+
+    await user.click(within(buttons).getByRole('button', { name: 'Copy Create campaign' }))
+    expect(within(buttons).getByText('Copied', { selector: '.v2-button-cell__feedback' })).toBeVisible()
+  })
+
+  test('uses 500 weight for control copy and the requested type samples', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-field input,[\s\S]*font-weight:\s*var\(--v2-weight-heading\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-field input::placeholder,[\s\S]*font-weight:\s*var\(--v2-weight-heading\);/)
+    expect(designSystemStyles).toMatch(/\.v2-select-trigger\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\) !important;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-input__hex\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\) !important;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--lead-large p\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--lead-medium p\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--body p\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\);/)
+  })
+
+  test('removes the nested focus stroke from the color hex field', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-input__hex:focus-visible\s*{[^}]*outline:\s*0 !important;[^}]*box-shadow:\s*none !important;/)
+  })
+
+  test('keeps design-system token chips readable', () => {
+    expect(designSystemStyles).toMatch(/\.v2-button\.v2-token-chip\s*{[^}]*font-size:\s*11px;/)
   })
 
   test('demonstrates compact navigation, table, cards, and action reflow', async () => {
@@ -27,7 +77,7 @@ describe('DesignSystemScreen', () => {
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     expect(document.getElementById(toggle.getAttribute('aria-controls'))).toHaveAttribute('data-compact', 'true')
     await user.click(within(specimen).getByRole('button', { name: 'Save responsive draft' }))
-    expect(within(specimen).getByRole('status')).toHaveTextContent('Draft saved')
+    expect(within(specimen).getByText('Draft saved in this preview.')).toHaveAttribute('role', 'status')
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
   })
@@ -71,10 +121,10 @@ describe('DesignSystemScreen', () => {
   test('presents the complete UI v2 reference structure', () => {
     render(<DesignSystemScreen />)
     expect(screen.getByRole('heading', { name: 'Application design system' })).toBeVisible()
-    for (const name of ['Basics', 'Components', 'UI blocks']) {
-      expect(screen.getByRole('tab', { name, exact: true })).toBeVisible()
-    }
-    expect(screen.getByRole('heading', { name: 'Controls', exact: true })).toBeVisible()
+    const library = screen.getByRole('complementary', { name: 'Library' })
+    expect(within(library).getByRole('navigation', { name: 'Library components' })).toBeVisible()
+    expect(within(library).getByRole('navigation', { name: 'Design system sections' })).toBeVisible()
+    expect(within(library).getByRole('link', { name: 'Basics', exact: true })).not.toHaveAttribute('aria-current')
     for (const name of ['Foundations', 'Actions and controls', 'Navigation', 'Feedback', 'Data display', 'Content objects', 'Overlays', 'Motion', 'Responsive behavior']) {
       expect(screen.getByRole('heading', { name })).toBeVisible()
     }
@@ -83,6 +133,41 @@ describe('DesignSystemScreen', () => {
     expect(screen.queryByText('--v2-text-body')).not.toBeInTheDocument()
     expect(screen.queryByText('--v2-line-body')).not.toBeInTheDocument()
     expect(screen.getByText('4px base unit')).toBeVisible()
+  })
+
+  test('links the separate sidebar to preview metadata and filters across all groups', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+    const library = screen.getByRole('complementary', { name: 'Library' })
+    expect(library.closest('.system-screen--v2')).toBeNull()
+    for (const name of ['Basics', 'Components', 'UI blocks']) {
+      expect(within(library).getByRole('link', { name, exact: true })).toBeVisible()
+    }
+    expect(library.querySelectorAll('details, summary')).toHaveLength(0)
+    const links = [...library.querySelectorAll('.ds-tree-item')]
+    expect(links).toHaveLength(29)
+    for (const link of links) {
+      const target = document.querySelector(link.getAttribute('href'))
+      expect(target).toBeVisible()
+      expect(target).toHaveTextContent('src/')
+      expect(within(target).getAllByRole('button', { name: /^Copy --/ }).length).toBeGreaterThan(0)
+    }
+    const buttonLink = within(library).getByRole('link', { name: 'AppButton', exact: true })
+    const preview = document.querySelector(buttonLink.getAttribute('href')).closest('.v2-specimen-card')
+    expect(within(preview).getByRole('heading', { name: 'Buttons' })).toBeVisible()
+    expect(within(preview).getByRole('button', { name: 'Create campaign' })).toBeVisible()
+    expect(within(preview).queryByText('Constraints')).not.toBeInTheDocument()
+    await user.click(buttonLink)
+    expect(buttonLink).toHaveAttribute('aria-current', 'location')
+    const search = within(library).getByRole('searchbox')
+    await user.type(search, 'PromptComposer')
+    expect(within(library).getAllByRole('link', { name: /./ })).toHaveLength(5)
+    expect(within(library).getByRole('link', { name: 'PromptComposer' })).toBeVisible()
+    await user.clear(search)
+    await user.type(search, 'no-such-component')
+    expect(within(library).queryAllByRole('link', { name: /./ })).toHaveLength(4)
+    await user.clear(search)
+    expect(library.querySelectorAll('.ds-tree-item')).toHaveLength(29)
   })
 
   test('keeps the documented 48px page role at every breakpoint', () => {
@@ -142,12 +227,15 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.v2-data-table tbody tr:hover > \*\s*{[^}]*box-shadow:\s*inset 0 2px 0 var\(--v2-accent\)/)
   })
 
-  test('presents the pill radius only in its compact status context', () => {
+  test('keeps foundations focused on shared color, type, and spacing', () => {
     render(<DesignSystemScreen />)
-    const shapeSpecimen = screen.getByRole('heading', { name: 'Shape' }).closest('.v2-foundation-card')
-    expect(within(shapeSpecimen).getByText('Ready')).toBeVisible()
-    expect(within(shapeSpecimen).getByText('Compact status')).toBeVisible()
-    expect(screen.queryByText('Full pill')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Color' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Typography' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Spacing' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Shape' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Borders' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Icon sizes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Motion timing' })).not.toBeInTheDocument()
   })
 
   test('keeps segmented-control focus outlines outside unclipped children', () => {
@@ -324,9 +412,13 @@ describe('DesignSystemScreen', () => {
   test('presents the expanded picker, slider, and progress catalog with truthful semantics', () => {
     render(<DesignSystemScreen />)
 
+    expect(screen.getByRole('heading', { name: 'Foundations' }).closest('.v2-section')).toHaveClass('v2-section--foundations')
+    expect(designSystemStyles).toMatch(/\.v2-section--foundations\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;/)
     expect(screen.getByRole('searchbox', { name: 'Search campaigns' })).toBeVisible()
-    expect(screen.getByLabelText('Campaign start')).toHaveAttribute('type', 'date')
-    expect(screen.getByLabelText('Campaign end')).toHaveAttribute('type', 'date')
+    expect(screen.getByRole('button', { name: 'Campaign start' })).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(screen.queryByLabelText('Campaign end')).not.toBeInTheDocument()
+    expect(designSystemStyles).toMatch(/\.v2-stepper input\s*{[^}]*text-align:\s*center;/)
+    expect(designSystemStyles).toMatch(/\.v2-stepper input::-webkit-inner-spin-button/)
     expect(screen.getByRole('combobox', { name: 'Find a market' })).toBeVisible()
     expect(screen.getByRole('slider', { name: 'Campaign intensity' })).toHaveValue('60')
     expect(screen.getByRole('slider', { name: 'Minimum audience age' })).toHaveValue('25')
@@ -338,6 +430,22 @@ describe('DesignSystemScreen', () => {
     expect(screen.getByRole('progressbar', { name: 'Preparing export' })).not.toHaveAttribute(
       'aria-valuenow',
     )
+  })
+
+  test('uses the elevated custom menu pattern for the primary channel field', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+
+    const trigger = screen.getByRole('button', { name: 'Primary channel: Paid social' })
+    await user.click(trigger)
+    const listbox = screen.getByRole('listbox', { name: 'Primary channel' })
+    expect(listbox).toHaveClass('v2-floating-listbox')
+    expect(within(listbox).getByRole('option', { name: 'Paid social' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await user.click(within(listbox).getByRole('option', { name: 'Email' }))
+    expect(screen.getByRole('button', { name: 'Primary channel: Email' })).toBeVisible()
   })
 
   test('supports keyboard autocomplete selection and empty results', async () => {
@@ -358,15 +466,9 @@ describe('DesignSystemScreen', () => {
     expect(screen.queryByRole('listbox', { name: 'Market suggestions' })).not.toBeInTheDocument()
   })
 
-  test('updates dropdown, multiselect, stepper, rating, and slider controls', async () => {
+  test('updates multiselect, stepper, rating, and slider controls', async () => {
     const user = userEvent.setup()
     render(<DesignSystemScreen />)
-
-    const statusTrigger = screen.getByRole('button', { name: 'Open campaign status options' })
-    await user.click(statusTrigger)
-    await user.click(screen.getByRole('option', { name: 'Ready' }))
-    expect(statusTrigger).toHaveTextContent('Ready')
-    expect(statusTrigger).toHaveAttribute('aria-expanded', 'false')
 
     const channelTrigger = screen.getByRole('button', { name: 'Open channel options' })
     await user.click(channelTrigger)
@@ -386,21 +488,18 @@ describe('DesignSystemScreen', () => {
     expect(screen.getByText('61%', { selector: 'output' })).toBeVisible()
   })
 
-  test.each([
-    ['campaign status', 'Open campaign status options', 'Campaign status options'],
-    ['channel', 'Open channel options', 'Channel options'],
-  ])('closes the %s listbox on Escape and restores trigger focus', async (_, triggerName, listName) => {
+  test('closes the channel listbox on Escape and restores trigger focus', async () => {
     const user = userEvent.setup()
     render(<DesignSystemScreen />)
 
-    const trigger = screen.getByRole('button', { name: triggerName })
+    const trigger = screen.getByRole('button', { name: 'Open channel options' })
     await user.click(trigger)
-    const listbox = screen.getByRole('listbox', { name: listName })
+    const listbox = screen.getByRole('listbox', { name: 'Channel options' })
     const firstOption = within(listbox).getAllByRole('option')[0]
     firstOption.focus()
     await user.keyboard('{Escape}')
 
-    expect(screen.queryByRole('listbox', { name: listName })).not.toBeInTheDocument()
+    expect(screen.queryByRole('listbox', { name: 'Channel options' })).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
   })
 
