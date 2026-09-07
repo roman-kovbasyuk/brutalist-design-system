@@ -1,0 +1,22 @@
+.v2-settings-panel { min-width: 0; container: settings-panel / inline-size; color: var(--v2-ink); }
+.v2-settings-panel__intro { margin-bottom: var(--v2-space-6); }
+.v2-settings-panel__intro h2 { margin: 0; font-size: var(--v2-text-section); font-weight: 500; line-height: 1.2; letter-spacing: -.02em; scroll-margin-top: var(--v2-space-6); }
+.v2-settings-panel__intro p { margin: var(--v2-space-2) 0 0; color: var(--v2-text-secondary); line-height: 1.5; max-width: 70ch; }
+.v2-settings-row { display: grid; grid-template-columns: minmax(0, .6fr) minmax(0, 1fr); align-items: center; gap: var(--v2-space-6); margin-block: var(--v2-space-3); padding: var(--v2-space-6) var(--v2-space-4); border: 1px solid var(--v2-border); background: var(--v2-surface); }
+.v2-settings-row--elevated { transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease), background-color var(--v2-duration-fast) var(--v2-ease); }
+.v2-settings-row--elevated:hover { transform: translateY(-2px); box-shadow: var(--v2-shadow-interactive); background: var(--v2-surface); }
+.v2-settings-panel--compact .v2-settings-row { padding-block: var(--v2-space-4); }
+.v2-settings-row__description { min-width: 0; }
+.v2-settings-row__description strong { font-weight: 600; }
+.v2-settings-row__description p { margin: var(--v2-space-2) 0 0; font-size: var(--v2-text-meta); line-height: 1.5; color: var(--v2-text-secondary); max-width: 55ch; overflow-wrap: anywhere; }
+.v2-settings-row__control { min-width: 0; display: grid; gap: var(--v2-space-4); }
+.v2-settings-row[data-compact] .v2-settings-row__control { justify-items: end; }
+.v2-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--v2-space-2); }
+.v2-settings-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--v2-space-4); padding-top: var(--v2-space-6); border-top: 1px solid var(--v2-border); }
+.v2-settings-panel--compact .v2-settings-footer { padding-top: var(--v2-space-4); }
+.v2-settings-feedback { flex: 1 1 180px; margin: 0; font-size: var(--v2-text-meta); line-height: 1.5; color: var(--v2-text-secondary); overflow-wrap: anywhere; }
+.v2-settings-feedback[data-error] { color: var(--v2-danger); }
+@container settings-panel (max-width: 600px) {
+  .v2-settings-row { grid-template-columns: minmax(0, 1fr); gap: var(--v2-space-4); }
+  .v2-settings-row[data-compact] { grid-template-columns: minmax(0, 1fr) auto; }
+}
