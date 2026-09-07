@@ -8,6 +8,6 @@ export default function ApplicationDesignSystemPage() {
       <a href="/mvp"><ArrowLeft size={16} aria-hidden="true" />Back to Banner Studio</a>
       <span>Application UI reference</span>
     </header>
-    <main><DesignSystemScreen /></main>
+    <main><DesignSystemScreen overviewOnRoot /></main>
   </div>
 }

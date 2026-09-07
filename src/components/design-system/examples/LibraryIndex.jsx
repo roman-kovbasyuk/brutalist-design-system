@@ -25,7 +25,7 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
 
   return <aside className="ds-library-sidebar" id="ds-library-sidebar" aria-labelledby="ds-index-heading">
     <div className="ds-brand-row">
-      <a className="ds-brand" href="/mvp">
+      <a className="ds-brand" href="/design-system">
         <Shapes size={24} strokeWidth={1.7} aria-hidden="true" />
         <span>Design System</span>
       </a>
@@ -40,10 +40,6 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
     </div>
     <div className="ds-library-index">
       <h2 id="ds-index-heading" className="ds-visually-hidden">Library</h2>
-      <div className="ds-index-search">
-        <Search size={16} aria-hidden="true" />
-        <input id="ds-library-search" aria-label="Search components" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search components" />
-      </div>
       <nav className="ds-section-navigation" aria-label="Design system sections">
         {categories.map(({ name, key, icon: Icon }) => {
           const href = `/design-system?section=${key}`
@@ -63,17 +59,23 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
           </a>
         })}
       </nav>
-      <nav className="ds-library-tree" aria-label="Library components">
-        {categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
-          .flatMap(level => filtered.filter(entry => entry.level === level))
-        ).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
-          const href = `#${previewId(entry.name)}`
-          return <a key={entry.name} href={href} className="ds-tree-item"
-            aria-current={active === href ? 'location' : undefined}
-            onClick={() => setActive(href)}>{entry.name}</a>
-        })}
-        {!categories.some(group => activeCategory === 'all' || activeCategory === group.name) && <p className="ds-index-empty">No matching items.</p>}
-      </nav>
+      {activeCategory !== 'overview' && <>
+        <div className="ds-index-search">
+          <Search size={16} aria-hidden="true" />
+          <input id="ds-library-search" aria-label="Search components" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search components" />
+        </div>
+        <nav className="ds-library-tree" aria-label="Library components">
+          {categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
+            .flatMap(level => filtered.filter(entry => entry.level === level))
+          ).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
+            const href = `#${previewId(entry.name)}`
+            return <a key={entry.name} href={href} className="ds-tree-item"
+              aria-current={active === href ? 'location' : undefined}
+              onClick={() => setActive(href)}>{entry.name}</a>
+          })}
+          {!categories.some(group => activeCategory === 'all' || activeCategory === group.name) && <p className="ds-index-empty">No matching items.</p>}
+        </nav>
+      </>}
     </div>
   </aside>
 }

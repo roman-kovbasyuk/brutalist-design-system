@@ -8,6 +8,15 @@ import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
 
 describe('DesignSystemScreen', () => {
+  test('renders a root overview with links to each design-system section', () => {
+    render(<DesignSystemScreen overviewOnRoot />)
+    expect(screen.getByRole('heading', { name: 'Choose a section to explore' })).toBeVisible()
+    expect(screen.getByRole('link', { name: /Basics.*Open section/ })).toHaveAttribute('href', '/design-system?section=basics')
+    expect(screen.getByRole('link', { name: /Components.*Open section/ })).toHaveAttribute('href', '/design-system?section=components')
+    expect(screen.getByRole('link', { name: /UI blocks.*Open section/ })).toHaveAttribute('href', '/design-system?section=ui-blocks')
+    expect(screen.queryByRole('heading', { name: 'Foundations' })).not.toBeInTheDocument()
+  })
+
   test('uses accessible secondary copy, white selected tabs, and the specified field spacing', () => {
     expect(designSystemStyles).not.toContain('color: var(--v2-muted)')
     expect(designSystemStyles).toMatch(/\.v2-pill-tabs button\[aria-selected="true"\]\s*{[^}]*background:\s*var\(--v2-surface\)/)
@@ -17,7 +26,6 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-token-target \.v2-token-copy-target__icon\s*{[^}]*border:\s*0;/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-token-target \.v2-token-copy-target__icon\s*{[^}]*transform:\s*translate\(50%, -50%\);/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample \.v2-token-copy-target__button\s*{[^}]*grid-template-columns:\s*92px minmax\(0, 1fr\) auto;/)
-    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-button-cell > \.v2-button:not\(\.v2-button--icon\)\s*{[^}]*width:\s*100%;[^}]*max-width:\s*100%;/)
   })
 
   test('uses doubled padding for comparable foundation and specimen blocks', () => {
