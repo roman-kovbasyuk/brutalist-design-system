@@ -186,6 +186,10 @@
   border-radius: var(--v2-radius);
 }
 
+.system-screen--v2 .v2-color-swatch:nth-child(4) .v2-color-swatch__sample {
+  border-bottom: 0;
+}
+
 .system-screen--v2 .v2-color-swatch small {
   display: block;
   overflow: hidden;

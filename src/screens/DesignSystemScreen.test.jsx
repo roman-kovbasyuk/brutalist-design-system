@@ -26,6 +26,7 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-token-target \.v2-token-copy-target__icon\s*{[^}]*border:\s*0;/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-token-target \.v2-token-copy-target__icon\s*{[^}]*transform:\s*translate\(50%, -50%\);/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample \.v2-token-copy-target__button\s*{[^}]*grid-template-columns:\s*92px minmax\(0, 1fr\) auto;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-swatch:nth-child\(4\) \.v2-color-swatch__sample\s*{[^}]*border-bottom:\s*0;/)
   })
 
   test('uses doubled padding for comparable foundation and specimen blocks', () => {
