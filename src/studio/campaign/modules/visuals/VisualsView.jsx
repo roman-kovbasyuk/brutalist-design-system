@@ -64,7 +64,7 @@ export function VisualsView({ input, assets, pending, progress, feedback, readOn
         <ActionCard label="3 reusable visuals">
           <h3>Campaign-wide visuals</h3>
           <p>Three visual options based on your brief and all copy. Use them with any copy option.</p>
-          <AppButton variant="primary" disabled={disabled} onClick={() => onGenerate('campaign')}><Sparkles size={16} aria-hidden="true" />Generate 3 campaign visuals</AppButton>
+          <AppButton variant="primary" disabled={disabled} onClick={() => onGenerate('campaign')}><Sparkles size={16} aria-hidden="true" />Generate campaign-wide visuals</AppButton>
           <TextAction disabled={disabled} onClick={() => chooseFile({ mode: 'campaign' })}><Upload size={16} aria-hidden="true" />Upload visual</TextAction>
           {uploadFeedback?.target.mode === 'campaign' && <p role="alert">{uploadFeedback.error.message}</p>}
         </ActionCard>

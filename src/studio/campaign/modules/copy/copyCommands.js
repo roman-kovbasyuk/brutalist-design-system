@@ -12,11 +12,13 @@ export function createCopyCommands(runtime) {
     }, { expectedInputKey: runtime.getSnapshot('copy').inputKey, idempotent: true,
       // Server idempotency is already scoped to actor, campaign and step.
       idempotencyKey: initial ? 'initial-copy-v1' : undefined }),
-    approve: copyId => runtime.execute('copy', 'approve', async ({ api, workspace }) => {
+    approve: (copyId, { revoke = false } = {}) => runtime.execute('copy', 'approve', async ({ api, workspace }) => {
       assertCandidate(workspace, copyId)
-      await api.approveCopy(workspace.campaign.id, copyId, workspace.campaign.revision)
-    }, { expectedInputKey: runtime.getSnapshot('copy').inputKey, intent: { copyId },
+      if (revoke) await api.approveCopy(workspace.campaign.id, copyId, workspace.campaign.revision, true)
+      else await api.approveCopy(workspace.campaign.id, copyId, workspace.campaign.revision)
+    }, { expectedInputKey: runtime.getSnapshot('copy').inputKey, intent: { copyId, revoke },
       reconcile: ({ source, current }) => {
+        if (revoke) return current.copies.every(set => !set.approvedCandidateIds?.includes(copyId)) ? 'applied' : 'unknown'
         const restoresSelection = !source.campaign.selectedCopyId && source.copies.some(set => !set.stale && set.approvedCandidateIds?.includes(copyId))
         const applied = restoresSelection ? getSelectedCopy(current)?.id === copyId
           : current.copies.some(set => !set.stale && set.approvedCandidateIds?.includes(copyId))

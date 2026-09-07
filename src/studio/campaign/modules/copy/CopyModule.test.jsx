@@ -28,7 +28,7 @@ describe('Copy module boundaries', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Generate More Options' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Copy provider unavailable'))
     expect(screen.getAllByRole('article')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: 'Approve option 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Unapprove option 1' })).toHaveAttribute('aria-pressed', 'true')
   })
   test('unknown generation offers reconciliation, not a new batch', async () => {
     const generate = vi.fn()
@@ -58,7 +58,7 @@ describe('Copy module boundaries', () => {
     const view = render(<ModuleHost runtime={runtime} moduleId="copy" actions={coordinator.actions.copy} active />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve option 1' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve option 1' })).toHaveAttribute('aria-pressed', 'true'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Unapprove option 1' })).toHaveAttribute('aria-pressed', 'true'))
 
     expect(initialReads).toBe(1)
     expect(api.approveCopy).toHaveBeenCalledOnce()

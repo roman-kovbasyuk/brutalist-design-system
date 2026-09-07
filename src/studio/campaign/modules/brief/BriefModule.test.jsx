@@ -76,7 +76,7 @@ it('keeps the composer disabled for the entire analysis and copy sequence', asyn
   fireEvent.click(screen.getByRole('button', { name: /Analyze brief/ }))
   rerender(<BriefModule port={{ ...port, operation: { kind: 'idle' } }} />)
   expect(screen.getByRole('textbox')).toBeDisabled()
-  expect(screen.getByRole('button', { name: 'Working…' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Analyze brief' })).toBeDisabled()
   await act(async () => finish({ ok: true }))
   expect(screen.getByRole('textbox')).toBeEnabled()
 })

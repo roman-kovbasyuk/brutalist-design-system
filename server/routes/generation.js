@@ -50,9 +50,9 @@ export function registerGenerationRoutes(app, { requireRole, generationService }
 
   app.put('/api/v1/campaigns/:campaignId/copies/:copyId/approval', { preHandler: requireRole(...editors) }, async (request, reply) => {
     const { campaignId, copyId } = parse(campaignParamsSchema.extend({ copyId: z.string().trim().min(1) }), request.params)
-    parse(z.strictObject({}), request.body ?? {})
+    const body = parse(z.strictObject({ revoke: z.boolean().optional() }), request.body ?? {})
     const campaign = await generationService.approveCopy({ actor: request.actor, campaignId,
-      expectedRevision: parseIfMatch(request), input: { copyId } })
+      expectedRevision: parseIfMatch(request), input: { copyId, revoke: body.revoke } })
     return setRevisionEtag(reply, strictResponse(campaignResponseSchema, request, campaign))
   })
 

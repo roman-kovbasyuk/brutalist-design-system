@@ -48,18 +48,17 @@ export default function BriefModule({ port }) {
     <div className="bs-brief-results" aria-label="Analyzed brief" aria-busy={running || submitting || undefined}>
       <div className="bs-brief-results-summary">{edit('summary', 'Summary', { maxLength: 1000, multiline: true, required: true })}</div>
       <FactGrid label="Campaign details" items={[
-        { id: 'audience', label: 'Audience', emphasis: true, content: edit('audience', 'Audience') },
+        { id: 'audience', label: 'Audience', emphasis: true, heading: true, content: edit('audience', 'Audience') },
         { id: 'objective', label: 'Objective', content: edit('objective', 'Objective') },
         { id: 'channels', label: 'Channels', content: edit('channels', 'Channels', { list: true, maxLength: 2000 }) },
         { id: 'formats', label: 'Formats', content: edit('formats', 'Formats', { list: true, maxLength: 2000 }) },
       ]} />
       {analysis.warnings?.length > 0 && <ul className="bs-note">{analysis.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
-      <PromptComposer label="Refine brief" formLabel="Brief refinement" rows={3} maxLength={4000}
+      <PromptComposer label="Refine brief" formLabel="Brief refinement" rows={3} maxLength={4000} compact iconOnlySubmit
         value={chat} onChange={value => { if (!chat) source.current = port.inputKey; setChat(value); markDirty('chat', Boolean(value)) }}
         onSubmit={refine} canSubmit={Boolean(chat.trim()) && !locked} readOnly={!port.access.canEdit && !running}
         busy={submitting || (running && port.operation.actionId === 'analyze')} disabled={submitting || running}
-        submitLabel="Update brief" placeholder="Ask AI to refine the summary or campaign details…"
-        hint="Existing copy and visuals are kept. Review them again after changing the brief." />
+        submitLabel="Update brief" placeholder="Ask AI to refine the summary or campaign details…" />
       {chat && source.current !== port.inputKey && <p className="bs-note">The brief changed while you were writing. Your message is kept. Clear it to start from the updated brief.</p>}
       {(error || port.operation.error) && <p role="alert" className="bs-brief-error">{error || port.operation.error.message}</p>}
     </div>

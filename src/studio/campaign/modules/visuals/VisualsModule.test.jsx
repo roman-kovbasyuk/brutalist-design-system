@@ -37,7 +37,7 @@ test('replaces fallback progress with detailed generation progress', async () =>
   })
   const user = userEvent.setup()
   const rendered = render(<VisualsModule port={value} />)
-  await user.click(screen.getByRole('button', { name: 'Generate 3 campaign visuals' }))
+  await user.click(screen.getByRole('button', { name: 'Generate campaign-wide visuals' }))
   rendered.rerender(<VisualsModule port={{ ...value, operation: { kind: 'running', actionId: 'generate:campaign', error: null } }} />)
   expect(screen.getAllByRole('status')).toHaveLength(1)
   expect(screen.getByRole('status')).toHaveTextContent('Creating prompts for 3 visuals…')
@@ -110,7 +110,7 @@ test('ready methods expose selected count; campaign method works without selecti
   expect(screen.getByText('0 copy options selected')).toBeInTheDocument()
   expect(screen.getByText('Approve options in Copy to select them for visuals.')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Generate visuals for selected copy' })).toBeDisabled()
-  await user.click(screen.getByRole('button', { name: 'Generate 3 campaign visuals' }))
+  await user.click(screen.getByRole('button', { name: 'Generate campaign-wide visuals' }))
   expect(value.actions.generate).toHaveBeenCalledWith('campaign', expect.objectContaining({ onProgress: expect.any(Function) }))
 })
 

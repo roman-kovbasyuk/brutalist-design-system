@@ -55,7 +55,7 @@ export function createStudioApi({ getToken, getHeaders, fetchImpl = globalThis.f
     },
     getJob: (id, { signal } = {}) => request('GET', `/api/v1/generation-jobs/${segment(id)}`, { signal }),
     selectCopy: (id, input, revision) => request('PUT', `${campaignPath(id)}/copy-selection`, { body: input, revision }),
-    approveCopy: (id, copyId, revision) => request('PUT', `${campaignPath(id)}/copies/${segment(copyId)}/approval`, { body: {}, revision }),
+    approveCopy: (id, copyId, revision, revoke = false) => request('PUT', `${campaignPath(id)}/copies/${segment(copyId)}/approval`, { body: revoke ? { revoke: true } : {}, revision }),
     deleteCopy: (id, copyId, revision) => request('DELETE', `${campaignPath(id)}/copies/${segment(copyId)}`, { revision }),
     selectDirection: (id, input, revision) => request('PUT', `${campaignPath(id)}/direction-selection`, { body: input, revision }),
     uploadVisual: (id, input, revision, key) => request('POST', `${campaignPath(id)}/visual-uploads`, { body: input, revision, idempotencyKey: key }),

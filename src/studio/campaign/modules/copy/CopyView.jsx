@@ -63,23 +63,23 @@ export function CopyView({ input, access, operation, actions, assets, onNext,
         ? 'The brief has changed. Previous copy is kept in history. Generate updated options after analyzing the new brief.' : hasAnalysis
         ? 'No copy options yet. Generate a new batch below.' : 'Add a brief to generate banner copy.'}
     </EmptyState> : <div className="bs-copy-card-list">
-      {displayed.map(({ item: copy, exiting }) => <ActionCard key={copy.id} label={`Option ${copy.number}`} exiting={exiting}
+      {displayed.map(({ item: copy, exiting }) => <ActionCard key={copy.id} label="" aria-label={`Copy option ${copy.number}`} exiting={exiting}
         highlighted={copy.approved} dismissing={localAction?.kind === 'remove' && localAction.id === copy.id}
         status={copy.approved && <span className="bs-copy-card-status"><Check size={14} aria-hidden="true" />Approved</span>}
         actions={<div role="group" aria-label={`Actions for option ${copy.number}`}>
-          <AppButton iconOnly size="compact" aria-label={copy.approved && !currentSet ? `Use option ${copy.number} for banners` : `Approve option ${copy.number}`}
-            title={copy.approved ? currentSet ? 'Approved' : 'Use approved copy for banners' : 'Approve copy'}
-            aria-pressed={!!copy.approved} variant={copy.approved ? 'primary' : 'secondary'}
-            disabled={readOnly || pending || uncertain || (copy.approved && !!currentSet) || !actions.approve}
-            onClick={() => attempt('approve', actions.approve, copy.id)}><Check size={18} aria-hidden="true" /></AppButton>
           <AppButton iconOnly size="compact" aria-label={`Delete option ${copy.number}`} title="Delete copy"
             disabled={readOnly || pending || uncertain || !actions.remove}
             onClick={() => attempt('remove', actions.remove, copy.id)}><Trash2 size={18} aria-hidden="true" /></AppButton>
-        </div>}
-        persistentAction={<AppButton iconOnly size="compact" aria-label={`Preview option ${copy.number}`} title="Preview copy on a banner"
-          onClick={() => setPreviewId(copy.id)}><Eye size={18} aria-hidden="true" /></AppButton>}>
+          <AppButton iconOnly size="compact" aria-label={`Preview option ${copy.number}`} title="Preview copy on a banner"
+            onClick={() => setPreviewId(copy.id)}><Eye size={18} aria-hidden="true" /></AppButton>
+          <AppButton iconOnly size="compact" aria-label={copy.approved ? `Unapprove option ${copy.number}` : `Approve option ${copy.number}`}
+            title={copy.approved ? 'Remove approval' : 'Approve copy'}
+            aria-pressed={!!copy.approved} variant={copy.approved ? 'primary' : 'secondary'}
+            disabled={readOnly || pending || uncertain || !actions.approve}
+            onClick={() => attempt('approve', () => actions.approve(copy.id, { revoke: copy.approved }))}><Check size={18} aria-hidden="true" /></AppButton>
+        </div>}>
         <h3>{copy.headline}</h3><p>{copy.body}</p>
-        <div className="bs-copy-card-details"><div><span>CTA</span><strong>{copy.cta}</strong></div>
+        <div className="bs-copy-card-details"><div className="bs-copy-cta"><strong>{copy.cta}</strong></div>
           {copy.offer && <div><span>Tag</span><strong>{copy.offer}</strong></div>}</div>
       </ActionCard>)}
     </div>}

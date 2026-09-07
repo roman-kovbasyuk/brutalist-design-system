@@ -667,7 +667,7 @@ export const imageGenerationRequestSchema = z.strictObject({
   width: z.number().int().min(64).max(4_096),
   height: z.number().int().min(64).max(4_096),
 })
-export const copySelectionRequestSchema = z.strictObject({ copyId: nonEmptyString })
+export const copySelectionRequestSchema = z.strictObject({ copyId: nonEmptyString, revoke: z.boolean().optional() })
 export const directionSelectionRequestSchema = z.strictObject({ directionId: nonEmptyString })
 
 const historicalImageMetadataFields = {

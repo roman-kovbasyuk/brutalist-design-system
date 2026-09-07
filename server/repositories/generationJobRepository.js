@@ -1196,9 +1196,25 @@ export function createGenerationControlPlane({
         const copySet = result.rows[0]
         if (!copySet) conflict('copy_not_found', 'The requested copy candidate was not found', 404)
         const alreadyApproved = copySet.approved_candidate_ids.includes(input.copyId)
-        if (alreadyApproved && campaign.selectedCopyId) return campaign
         const copy = copySet.candidates.find(candidate => candidate.id === input.copyId)
         const updates = {}
+        if (alreadyApproved && campaign.selectedCopyId && !input.revoke) return campaign
+        if (alreadyApproved && input.revoke) {
+          await client.query('UPDATE copy_sets SET approved_candidate_ids = approved_candidate_ids - $2 WHERE id = $1', [copySet.id, input.copyId])
+          if (campaign.selectedCopyId === copySet.id && copySet.selected_candidate_id === input.copyId) {
+            updates.selectedCopyId = null
+            await client.query('UPDATE copy_sets SET selected_candidate_id = NULL WHERE id = $1', [copySet.id])
+          }
+          await client.query("UPDATE visual_directions SET stale = true WHERE campaign_id = $1 AND scope = 'legacy'", [campaignId])
+          await campaigns.markArtifactsStale(campaignId, { composition: true })
+          const updated = await campaigns.updateState(mapCampaignUpdate(campaign, expectedRevision, updates))
+          await createAuditRepository(client).append({
+            id: idGenerator(), actorId: actor.id, actorRole: actor.role, action: 'campaign.copy_unapproved',
+            entityType: 'campaign', entityId: campaignId, beforeStatus: campaign.status, afterStatus: updated.status,
+            payload: { copyId: copy.id, copySetId: copySet.id }, createdAt: clock(),
+          })
+          return updated
+        }
         // Until Banners supports choosing among approved cards, keep its existing
         // selection stable. Later approvals must not overwrite a user's design.
         if (!campaign.selectedCopyId) {

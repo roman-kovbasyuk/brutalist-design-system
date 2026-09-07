@@ -20,6 +20,8 @@ export function PromptComposer({
   formLabel = 'Campaign brief composer',
   rows = 7,
   maxLength,
+  compact = false,
+  iconOnlySubmit = false,
   hint,
   placeholder = 'Describe what you’re promoting, or drop your campaign brief here…',
 }) {
@@ -34,6 +36,7 @@ export function PromptComposer({
   return (
     <form
       className="v2-prompt-block bs-prompt"
+      data-compact={compact || undefined}
       aria-label={formLabel}
       aria-busy={busy || undefined}
       onSubmit={submit}
@@ -128,8 +131,10 @@ export function PromptComposer({
               className="bs-button bs-button--primary bs-prompt-send"
               disabled={locked || !canSubmit}
               busy={busy}
+              iconOnly={iconOnlySubmit}
+              aria-label={iconOnlySubmit ? submitLabel : undefined}
             >
-              {busy ? 'Working…' : submitLabel}
+              {!iconOnlySubmit && (busy ? 'Working…' : submitLabel)}
               <ArrowUp size={17} aria-hidden="true" />
             </AppButton>
           </div>

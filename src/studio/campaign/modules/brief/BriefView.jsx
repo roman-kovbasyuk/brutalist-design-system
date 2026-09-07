@@ -133,6 +133,8 @@ export function BriefView({
           markDirty()
         }}
         onSubmit={submit}
+        compact={analyzed}
+        iconOnlySubmit
         readOnly={readOnly}
         disabled={Boolean(pending) || submitting}
         busy={extracting || submitting || Boolean(pending)}

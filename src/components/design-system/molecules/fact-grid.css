@@ -5,3 +5,4 @@
 .v2-fact-grid > div[data-emphasis] { background: var(--v2-accent); }
 .v2-fact-grid dt { margin-bottom: var(--v2-space-2); font-size: var(--v2-text-meta); }
 .v2-fact-grid dd { margin: 0; font-size: var(--v2-text-body); overflow-wrap: anywhere; }
+.v2-fact-grid dd h2 { margin: 0; font-size: var(--v2-text-h2); line-height: var(--v2-line-h2); font-weight: var(--v2-weight-heading); }
