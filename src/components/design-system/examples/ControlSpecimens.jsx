@@ -3,9 +3,9 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  ChevronDown,
   ChevronRight,
   Circle,
+  Copy,
   FileUp,
   MoreHorizontal,
   Play,
@@ -17,6 +17,38 @@ import { WorkflowSteps } from '../molecules/WorkflowSteps.jsx'
 import { SpecimenCard } from './SpecimenCard.jsx'
 import { SpecimenSection } from './SpecimenSection.jsx'
 import { PillTabs } from '../molecules/PillTabs.jsx'
+import { SelectMenu } from '../molecules/SelectMenu.jsx'
+
+function ButtonCell({ copyValue, copyLabel = copyValue, className = '', children }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copyCellValue() {
+    try {
+      await navigator.clipboard.writeText(copyValue)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className={`v2-button-cell ${className}`.trim()}>
+      {children}
+      <button
+        className="v2-button-cell__copy"
+        type="button"
+        aria-label={`Copy ${copyLabel}`}
+        onClick={copyCellValue}
+      >
+        <Copy aria-hidden="true" size={14} />
+      </button>
+      <span className="v2-button-cell__feedback" role="status" aria-live="polite">
+        {copied ? 'Copied' : ''}
+      </span>
+    </div>
+  )
+}
 
 export function ControlSpecimens() {
   const [isLoading, setIsLoading] = useState(true)
@@ -24,6 +56,7 @@ export function ControlSpecimens() {
   const [format, setFormat] = useState('square')
   const [isAutoSaveOn, setIsAutoSaveOn] = useState(true)
   const [objective, setObjective] = useState('')
+  const [primaryChannel, setPrimaryChannel] = useState('Paid social')
   const [validationError, setValidationError] = useState('')
 
   function handleObjectiveChange(event) {
@@ -41,41 +74,50 @@ export function ControlSpecimens() {
       index={2}
       title="Actions and controls"
       description="Buttons, form controls, and their complete state language."
+      className="v2-section--unwrapped"
     >
       <SpecimenCard
         title="Buttons"
         description="Direct labels, unmistakable hierarchy, and physical interaction feedback."
       >
-        <div className="v2-button-row">
-          <AppButton variant="primary">
-            Create campaign
-            <ArrowRight aria-hidden="true" size={18} />
-          </AppButton>
-          <AppButton>
-            Review changes
-          </AppButton>
-          <AppButton variant="danger">
-            <Trash2 aria-hidden="true" size={18} />
-            Delete draft
-          </AppButton>
-          <AppButton iconOnly aria-label="More actions">
-            <MoreHorizontal aria-hidden="true" size={20} />
-          </AppButton>
-          <AppButton disabled>
-            Unavailable
-          </AppButton>
-        </div>
-        <div className="v2-loading-demo">
-          <AppButton variant="primary" busy={isLoading}>
-            {isLoading ? 'Generating…' : <><Play aria-hidden="true" size={18} />Generate preview</>}
-          </AppButton>
-          <button
-            className="v2-button v2-button--quiet"
-            type="button"
-            onClick={() => setIsLoading((current) => !current)}
-          >
-            {isLoading ? 'Show idle state' : 'Show loading state'}
-          </button>
+        <div className="v2-button-grid">
+          <ButtonCell copyValue="Create campaign">
+            <AppButton variant="primary">
+              Create campaign
+              <ArrowRight aria-hidden="true" size={18} />
+            </AppButton>
+          </ButtonCell>
+          <ButtonCell copyValue="Review changes">
+            <AppButton>Review changes</AppButton>
+          </ButtonCell>
+          <ButtonCell copyValue="Delete draft">
+            <AppButton variant="danger">
+              <Trash2 aria-hidden="true" size={18} />
+              Delete draft
+            </AppButton>
+          </ButtonCell>
+          <ButtonCell copyValue="More actions">
+            <AppButton iconOnly aria-label="More actions">
+              <MoreHorizontal aria-hidden="true" size={20} />
+            </AppButton>
+          </ButtonCell>
+          <ButtonCell copyValue="Unavailable">
+            <AppButton disabled>Unavailable</AppButton>
+          </ButtonCell>
+          <ButtonCell copyValue={isLoading ? 'Generating…' : 'Generate preview'}>
+            <AppButton variant="primary" busy={isLoading}>
+              {isLoading ? 'Generating…' : <><Play aria-hidden="true" size={18} />Generate preview</>}
+            </AppButton>
+          </ButtonCell>
+          <ButtonCell copyValue={isLoading ? 'Show idle state' : 'Show loading state'}>
+            <button
+              className="v2-button v2-button--quiet"
+              type="button"
+              onClick={() => setIsLoading((current) => !current)}
+            >
+              {isLoading ? 'Show idle state' : 'Show loading state'}
+            </button>
+          </ButtonCell>
         </div>
       </SpecimenCard>
 
@@ -107,14 +149,13 @@ export function ControlSpecimens() {
 
           <div className="v2-field">
             <label htmlFor="v2-channel">Primary channel</label>
-            <div className="v2-select-wrap">
-              <select id="v2-channel" defaultValue="social">
-                <option value="social">Paid social</option>
-                <option value="email">Email</option>
-                <option value="display">Display</option>
-              </select>
-              <ChevronDown aria-hidden="true" size={18} />
-            </div>
+            <SelectMenu
+              label="Primary channel"
+              value={primaryChannel}
+              options={['Paid social', 'Email', 'Display']}
+              onChange={setPrimaryChannel}
+              triggerId="v2-channel"
+            />
           </div>
 
           <div className="v2-field v2-field--wide">

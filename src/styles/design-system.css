@@ -84,6 +84,18 @@
   margin-top: var(--v2-space-8);
 }
 
+.system-screen--v2 .v2-section--unwrapped {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.system-screen--v2 .v2-section--unwrapped .v2-section__body {
+  margin-top: var(--v2-space-8);
+}
+
 .system-screen--v2 .v2-section__header {
   display: grid;
   grid-template-columns: var(--v2-space-8) minmax(0, 1fr);
@@ -2903,3 +2915,131 @@
     padding-block: var(--v2-space-2);
   }
 }
+
+/* Catalog presentation: one continuous surface; borders inside actual controls
+   and interaction previews remain part of the component being demonstrated. */
+.ds-workspace .system-screen--v2.ds-catalog {
+  max-width: 1120px;
+  background: var(--v2-surface);
+  padding: var(--v2-space-8) clamp(16px, 3vw, 48px) var(--v2-space-16);
+}
+.ds-catalog .v2-page-header { padding-bottom: var(--v2-space-8); }
+.ds-workspace .ds-catalog .v2-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-6);
+  margin: 0;
+  padding: var(--v2-space-8) 0;
+  border: 0;
+  border-bottom: 1px solid var(--v2-border);
+  border-radius: 0;
+  background: transparent;
+}
+.ds-catalog .v2-section:last-child { border-bottom: 0; }
+.ds-catalog .v2-section__header { display: block; }
+.ds-catalog .v2-section__header > span { display: none; }
+.ds-catalog .v2-section__body,
+.ds-catalog .v2-section--foundations .v2-section__body {
+  margin: 0;
+  gap: var(--v2-space-8);
+}
+.ds-catalog :is(.v2-specimen-card, .v2-foundation-group) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ds-catalog :is(.ds-preview-metadata, .v2-specimen-card__heading, .v2-foundation-group__heading) {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-3);
+  padding: 0 0 var(--v2-space-4);
+  border: 0;
+}
+.ds-catalog .v2-specimen-card__body {
+  display: grid;
+  gap: var(--v2-space-6);
+  padding: 0;
+}
+.ds-catalog .ds-preview-reference { font-size: var(--v2-text-meta); min-width: 0; }
+.ds-catalog .ds-preview-reference summary { cursor: pointer; color: var(--v2-text-secondary); }
+.ds-catalog .ds-reference-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.ds-catalog .ds-preview-reference__body { display: grid; gap: var(--v2-space-3); padding-block: var(--v2-space-3); }
+.ds-catalog .ds-preview-reference code { overflow-wrap: anywhere; font-size: 11px; }
+.ds-catalog .ds-preview-reference[open] { flex-basis: 100%; }
+.ds-catalog :is(.v2-control-form, .v2-control-catalog-grid, .v2-value-control-grid,
+  .v2-progress-catalog, .v2-navigation-grid, .v2-navigation-controls,
+  .v2-wayfinding-grid, .v2-feedback-grid, .v2-feedback-state-grid,
+  .v2-overlay-grid, .v2-motion-lab, .v2-metric-grid, .v2-object-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: start;
+  gap: var(--v2-space-6);
+}
+.ds-catalog :is(.v2-control-catalog-grid, .v2-value-control-grid, .v2-progress-catalog) > * {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.ds-catalog :is(.v2-control-block, .v2-progress-example, .v2-overlay-demo,
+  .v2-motion-sample, .v2-metric-block) {
+  padding: var(--v2-space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--v2-border);
+  border-radius: 0;
+  background: transparent;
+}
+.ds-catalog :is(.v2-responsive-preview, .v2-responsive-workspace, .v2-responsive-cards .v2-foundation-card) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.ds-catalog .v2-responsive-workspace { padding: 0; }
+.ds-catalog .v2-color-grid { border-top: 1px solid var(--v2-border); }
+.ds-catalog .v2-color-swatch { padding: var(--v2-space-6); }
+.ds-catalog .v2-type-grid { border-top: 1px solid var(--v2-border); }
+.ds-catalog .v2-spacing-grid { padding: var(--v2-space-6) 0; }
+.ds-catalog .v2-button-grid { grid-auto-rows: 1fr; }
+.ds-catalog .v2-button-cell { min-height: 128px; }
+.ds-catalog .ds-overview__card { background: transparent; }
+@media (max-width: 600px) {
+  .ds-workspace .ds-catalog .v2-section { padding-block: var(--v2-space-6); }
+  .ds-catalog .v2-color-swatch { padding: var(--v2-space-3); }
+  .ds-catalog .v2-type-sample { padding-inline: 0; }
+}
+
+/* Paired form fields align in two columns even on wide catalog pages. */
+.ds-catalog :is(.v2-control-form, .v2-control-catalog-grid,
+  .v2-value-control-grid, .v2-progress-catalog, .v2-disabled-fields) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v2-space-6);
+}
+.ds-catalog :is(.v2-disabled-fields, .v2-block, .v2-settings-panel) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ds-catalog .v2-disabled-fields { padding: var(--v2-space-4) 0; }
+.ds-catalog .v2-prompt-block { padding: 0; }
+@container (max-width: 600px) {
+  .ds-catalog :is(.v2-control-form, .v2-control-catalog-grid,
+    .v2-value-control-grid, .v2-progress-catalog, .v2-disabled-fields) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ds-catalog .v2-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.ds-catalog .v2-section__header > .ds-preview-metadata { padding: 0; }
+.ds-catalog .v2-button-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v2-space-4); }
