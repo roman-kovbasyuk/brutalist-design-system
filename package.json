@@ -55,8 +55,8 @@
     "type": "git",
     "url": "git+https://github.com/roman-kovbasyuk/banner-studio-design-system.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["design-system", "react", "ui-components", "creative-workflow"],
+  "author": "Roman Kovbasyuk",
   "bugs": {
     "url": "https://github.com/roman-kovbasyuk/banner-studio-design-system/issues"
   },
