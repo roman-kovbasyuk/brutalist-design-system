@@ -1,0 +1,50 @@
+.v2-token-copy {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+:is(.system-screen--v2, .ds-root) .v2-button.v2-token-chip {
+  max-width: 100%;
+  min-width: 0;
+  padding: var(--v2-space-1) var(--v2-space-3);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-canvas);
+  font-size: var(--v2-text-small);
+  font-weight: var(--v2-weight-text);
+  line-height: var(--v2-line-body);
+  text-align: left;
+}
+
+:is(.system-screen--v2, .ds-root) .v2-button.v2-token-chip code {
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+  overflow-wrap: anywhere;
+}
+
+.v2-token-chip svg { flex-shrink: 0; }
+
+:is(.system-screen--v2, .ds-root) .v2-button.v2-token-chip:not(:disabled):hover {
+  background: var(--v2-accent);
+  box-shadow: none;
+  transform: none;
+}
+
+.v2-token-copy__feedback {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + var(--v2-space-1));
+  left: 0;
+  max-width: 100%;
+  padding: var(--v2-space-2);
+  border-radius: var(--v2-radius);
+  background: var(--v2-ink);
+  color: var(--v2-surface);
+  font-size: var(--v2-text-small);
+  line-height: var(--v2-line-body);
+  overflow-wrap: anywhere;
+}
+
+.v2-token-copy__feedback:empty { display: none; }

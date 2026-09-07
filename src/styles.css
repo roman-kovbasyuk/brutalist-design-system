@@ -1,0 +1,47 @@
+@import './components/design-system/foundations/tokens.css';
+@import './styles/app-controls.css';
+@import './styles/ui-blocks.css';
+@import './components/design-system/action-card.css';
+@import './components/design-system/workflow-steps.css';
+@import './components/design-system/atoms/token-chip.css';
+@import './components/design-system/atoms/token-copy-target.css';
+@import './components/design-system/atoms/text-action.css';
+@import './components/design-system/atoms/updated-text.css';
+@import './components/design-system/molecules/async-status.css';
+@import './components/design-system/molecules/fact-grid.css';
+@import './components/design-system/molecules/inline-text.css';
+@import './components/design-system/molecules/pill-tabs.css';
+@import './components/design-system/molecules/select-menu.css';
+@import './components/design-system/molecules/selection-tile.css';
+@import './components/design-system/organisms/media-workflow-card.css';
+@import './components/design-system/organisms/workflow-module-frame.css';
+
+.ds-root {
+  min-height: 100%;
+  color: var(--v2-ink);
+  background: var(--v2-canvas);
+  font-family: var(--v2-font);
+  font-size: var(--v2-text-body);
+  line-height: var(--v2-line-body);
+}
+
+.ds-root *,
+.ds-root *::before,
+.ds-root *::after { box-sizing: border-box; }
+
+.ds-root :focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--v2-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-root *,
+  .ds-root *::before,
+  .ds-root *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 80ms !important;
+  }
+}
