@@ -3,9 +3,24 @@
 .system-screen--v2 .v2-ui-block-group { display: grid; gap: var(--v2-space-4); }
 .system-screen--v2 .v2-ui-block-group h3 { margin: 0; font-size: var(--v2-text-h4); font-weight: var(--v2-weight-heading); }
 .system-screen--v2 .v2-ui-block-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-8); align-items: start; }
-.system-screen--v2 .v2-ui-block-grid .v2-specimen-card { min-width: 0; }
+.system-screen--v2 .v2-ui-block-grid .v2-specimen-card {
+  min-width: 0;
+  border-radius: var(--v2-radius-large);
+  overflow: hidden;
+  transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease);
+}
+@media (hover: hover) {
+  .system-screen--v2 .v2-ui-block-grid .v2-specimen-card:hover {
+    transform: translate(calc(-1 * var(--v2-space-1)), calc(-1 * var(--v2-space-1)));
+    box-shadow: var(--v2-shadow-interactive);
+  }
+}
 @media (max-width: 760px) {
   .system-screen--v2 .v2-ui-block-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .system-screen--v2 .v2-ui-block-grid .v2-specimen-card { transition: none; }
+  .system-screen--v2 .v2-ui-block-grid .v2-specimen-card:hover { transform: none; }
 }
 .system-screen--v2 .v2-block { min-width: 0; color: var(--v2-ink); }
 .system-screen--v2 .v2-block h4 { margin: 0; font: 500 var(--v2-text-section)/1.2 var(--v2-font); letter-spacing: -.02em; }

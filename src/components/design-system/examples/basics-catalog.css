@@ -90,7 +90,6 @@
   justify-items: center;
   align-content: center;
 }
-.ds-basic-icon-tile .v2-token-copy-target__icon { width: 22px; height: 22px; right: var(--v2-space-2); bottom: var(--v2-space-2); }
 .ds-basic-layout { display: block; width: 100%; padding: var(--v2-space-3); min-height: 116px; background: var(--v2-canvas); border-radius: var(--v2-radius); }
 .ds-basic-layout__item { display: block; padding: var(--v2-space-2); background: var(--v2-accent); border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); text-align: center; }
 .ds-basic-layout .ds-inline > * { flex: 1; }
