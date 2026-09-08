@@ -3,7 +3,6 @@ import { PromptComposerExample } from '../components/design-system/examples/Prom
 import { LibraryIndex } from '../components/design-system/examples/LibraryIndex.jsx'
 import { LibraryComponentPreviews } from '../components/design-system/examples/LibraryComponentPreviews.jsx'
 import { TokenCopyTarget } from '../components/design-system/atoms/TokenCopyTarget.jsx'
-import { ResponsiveSpecimen } from '../components/design-system/examples/ResponsiveSpecimen.jsx'
 import { ControlSpecimens, NavigationSpecimens } from '../components/design-system/examples/ControlSpecimens.jsx'
 import {
   ContentObjectSpecimens,
@@ -174,14 +173,17 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
         <MotionSpecimens />
       </>}
       {!isOverview && (activeCategory === 'UI blocks' || activeCategory === 'all') && <>
-        <SpecimenSection index={9} title="Responsive behavior" description="Reference reflows for compact and mobile workspaces.">
+        {activeCategory === 'all' && <SpecimenSection index={9} title="Responsive behavior" description="Reference reflows for compact and mobile workspaces.">
           <ResponsiveSpecimen />
-        </SpecimenSection>
+        </SpecimenSection>}
         <UIBlocks />
-        <PromptComposerExample />
-        <LibraryComponentPreviews />
+        {activeCategory === 'all' && <>
+          <PromptComposerExample />
+          <LibraryComponentPreviews />
+        </>}
       </>}
       </div>
     </div>
   )
 }
+import { ResponsiveSpecimen } from '../components/design-system/examples/ResponsiveSpecimen.jsx'
