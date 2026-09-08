@@ -58,6 +58,22 @@ describe('DesignSystemScreen', () => {
     expect(within(buttons).getByText('Copied', { selector: '.v2-button-cell__feedback' })).toBeVisible()
   })
 
+  test('shows a pointer-following copy label and check confirmation without the old icon', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+    const target = screen.getByRole('button', { name: 'Copy Body typography token' })
+    const wrapper = target.closest('.v2-token-copy-target')
+
+    fireEvent.pointerMove(target, { clientX: 40, clientY: 24 })
+    expect(within(wrapper).getByText('Copy', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
+    expect(within(wrapper).getByText('Copy').style.getPropertyValue('--copy-x')).toBe('40px')
+    expect(wrapper.querySelector('.v2-token-copy-target__icon')).not.toBeInTheDocument()
+
+    await user.click(target)
+    expect(within(wrapper).getByText('Copied', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
+    expect(wrapper.querySelector('.lucide-check')).toBeInTheDocument()
+  })
+
   test('uses 500 weight for control copy and the requested type samples', () => {
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-field input,[\s\S]*font-weight:\s*var\(--v2-weight-heading\);/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-field input::placeholder,[\s\S]*font-weight:\s*var\(--v2-weight-heading\);/)
@@ -131,7 +147,6 @@ describe('DesignSystemScreen', () => {
 
   test('presents the complete UI v2 reference structure', () => {
     render(<DesignSystemScreen />)
-    expect(screen.getByRole('heading', { name: 'Application design system' })).toBeVisible()
     const library = screen.getByRole('complementary', { name: 'Library' })
     expect(within(library).getByRole('navigation', { name: 'Library components' })).toBeVisible()
     expect(within(library).getByRole('navigation', { name: 'Design system sections' })).toBeVisible()
@@ -166,17 +181,17 @@ describe('DesignSystemScreen', () => {
       expect(target).toHaveTextContent('src/')
       await user.click(target.querySelector('summary'))
     }
-    const buttonLink = within(library).getByRole('link', { name: 'AppButton', exact: true })
+    const buttonLink = within(library).getByRole('link', { name: 'App Button', exact: true })
     const preview = document.querySelector(buttonLink.getAttribute('href')).closest('.v2-specimen-card')
     expect(within(preview).getByRole('heading', { name: 'Buttons' })).toBeVisible()
     expect(within(preview).getByRole('button', { name: 'Create campaign' })).toBeVisible()
     expect(within(preview).queryByText('Constraints')).not.toBeInTheDocument()
     await user.click(buttonLink)
     expect(buttonLink).toHaveAttribute('aria-current', 'location')
-    const search = within(library).getByRole('searchbox')
+    const search = within(library).getByRole('searchbox', { hidden: true })
     await user.type(search, 'PromptComposer')
     expect(within(library).getAllByRole('link', { name: /./ })).toHaveLength(5)
-    expect(within(library).getByRole('link', { name: 'PromptComposer' })).toBeVisible()
+    expect(within(library).getByRole('link', { name: 'Prompt Composer' })).toBeVisible()
     await user.clear(search)
     await user.type(search, 'no-such-component')
     expect(within(library).queryAllByRole('link', { name: /./ })).toHaveLength(4)
@@ -185,7 +200,6 @@ describe('DesignSystemScreen', () => {
   })
 
   test('keeps the documented 48px page role at every breakpoint', () => {
-    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-page-header h1\s*{[^}]*font-size:\s*var\(--v2-text-page\);/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--h1 p\s*{[^}]*font-size:\s*var\(--v2-text-h1\);/)
     expect(designSystemStyles).not.toMatch(/\.system-screen--v2 \.(?:v2-page-header h1|v2-type-sample--h1 p)\s*{[^}]*font-size:\s*40px;/)
   })

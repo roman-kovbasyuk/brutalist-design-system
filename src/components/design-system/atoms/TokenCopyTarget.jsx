@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { AppButton } from './AppButton.jsx'
 import './token-copy-target.css'
 
@@ -21,8 +21,9 @@ async function copyText(value) {
 }
 
 /** A visual token sample that copies an exact value without showing the token name. */
-export function TokenCopyTarget({ copyValue, label, children, className = '' }) {
+export function TokenCopyTarget({ copyValue, label, children, className = '', inline = false }) {
   const [state, setState] = useState('idle')
+  const [pointer, setPointer] = useState({ active: false, x: 0, y: 0 })
   const timer = useRef(null)
   const request = useRef(0)
 
@@ -45,17 +46,20 @@ export function TokenCopyTarget({ copyValue, label, children, className = '' }) 
     }
   }
 
-  return <span className={`v2-token-copy-target ${className}`.trim()}>
+  function handlePointerMove(event) {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    setPointer({ active: true, x: event.clientX - bounds.left, y: event.clientY - bounds.top })
+  }
+
+  return <span className={`v2-token-copy-target${inline ? ' v2-token-copy-target--inline' : ''} ${className}`.trim()}>
     <AppButton variant="quiet" size="compact" className="v2-token-copy-target__button"
       aria-label={`Copy ${label}`} aria-busy={state === 'copying' || undefined} disabled={state === 'copying'}
-      onClick={copy}>
+      onClick={copy} onPointerMove={handlePointerMove} onPointerEnter={handlePointerMove} onPointerLeave={() => setPointer(current => ({ ...current, active: false }))}>
       {children}
-      <span className="v2-token-copy-target__icon" aria-hidden="true">
-        {state === 'copied' ? <Check size={16} /> : <Copy size={16} />}
-      </span>
     </AppButton>
-    <span className="v2-token-copy-target__feedback" role="status" aria-atomic="true">
-      {state === 'copied' ? 'Copied' : state === 'error' ? 'Could not copy. Try again.' : ''}
+    <span className={`v2-token-copy-target__feedback${pointer.active || state === 'copied' || state === 'error' ? ' v2-token-copy-target__feedback--visible' : ''}`.trim()}
+      role="status" aria-atomic="true" style={{ '--copy-x': `${pointer.x}px`, '--copy-y': `${pointer.y}px` }}>
+      {state === 'copied' ? <><Check size={14} aria-hidden="true" /> Copied</> : state === 'error' ? 'Could not copy. Try again.' : pointer.active ? 'Copy' : ''}
     </span>
   </span>
 }
