@@ -36,10 +36,15 @@
 .ds-section-navigation { display: grid; gap: 4px; margin-bottom: 0; }
 .ds-section-navigation a { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 10px; border: 1px solid transparent; border-radius: var(--v2-radius); color: inherit; font-size: var(--v2-text-meta); text-decoration: none; }
 .ds-section-navigation a:hover { background: var(--v2-canvas); }
+.ds-section-navigation a,
+.ds-tree-item { font-weight: 500; }
 .ds-section-navigation a[aria-current="page"] { border-color: var(--v2-ink); background: var(--v2-surface); font-weight: 600; }
 .ds-library-index { min-height: 0; display: flex; flex-direction: column; flex: 1; }
 .ds-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .ds-library-tree { display: flex; flex-direction: column; gap: var(--v2-space-1); margin-top: 8px; overflow-y: auto; }
+.ds-tree-group { display: flex; flex-direction: column; gap: var(--v2-space-1); }
+.ds-tree-group + .ds-tree-group { margin-top: var(--v2-space-4); }
+.ds-tree-group h3 { margin: 0 10px var(--v2-space-1); color: var(--v2-text-secondary); font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
 .ds-tree-item {
   display: flex;
   align-items: center;
@@ -54,7 +59,6 @@
   overflow-wrap: anywhere;
 }
 .ds-tree-item:hover, .ds-tree-item[aria-current] { background: var(--v2-surface); }
-.ds-tree-item[aria-current] { box-shadow: inset 3px 0 0 var(--v2-accent); }
 .ds-library-sidebar :focus-visible { outline: 2px solid var(--v2-ink); outline-offset: 2px; }
 .ds-index-count, .ds-index-empty { margin: 0; color: var(--v2-text-secondary); font-size: var(--v2-text-small); }
 .ds-preview-metadata { display: flex; flex-direction: column; gap: var(--v2-space-3); min-width: 0; padding: var(--v2-space-4); border-bottom: 1px solid var(--v2-border); scroll-margin-top: 24px; }

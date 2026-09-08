@@ -1,4 +1,12 @@
 .system-screen--v2 .v2-section--blocks { scroll-margin-top: 24px; }
+.system-screen--v2 .v2-ui-block-groups { display: grid; gap: var(--v2-space-12); }
+.system-screen--v2 .v2-ui-block-group { display: grid; gap: var(--v2-space-4); }
+.system-screen--v2 .v2-ui-block-group h3 { margin: 0; font-size: var(--v2-text-h4); font-weight: var(--v2-weight-heading); }
+.system-screen--v2 .v2-ui-block-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-8); align-items: start; }
+.system-screen--v2 .v2-ui-block-grid .v2-specimen-card { min-width: 0; }
+@media (max-width: 760px) {
+  .system-screen--v2 .v2-ui-block-grid { grid-template-columns: 1fr; }
+}
 .system-screen--v2 .v2-block { min-width: 0; color: var(--v2-ink); }
 .system-screen--v2 .v2-block h4 { margin: 0; font: 500 var(--v2-text-section)/1.2 var(--v2-font); letter-spacing: -.02em; }
 .system-screen--v2 .v2-block p { margin: 0; }

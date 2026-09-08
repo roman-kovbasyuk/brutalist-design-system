@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks, LayoutTemplate, Search, Shapes, SlidersHorizontal } from 'lucide-react'
 import { libraryCatalog } from './library-catalog.js'
 import { previewId } from './PreviewMetadata.jsx'
@@ -10,13 +10,28 @@ const categories = [
   { name: 'UI blocks', key: 'ui-blocks', levels: ['organisms', 'templates', 'examples'], icon: LayoutTemplate },
 ]
 
+function formatDisplayName(name) {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
-export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
+export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hideComponentTree = false, navigationItems = undefined, onQueryChange = undefined }) {
+  const searchRef = useRef(null)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [active, setActive] = useState(() => window.location.hash)
   const filtered = useMemo(() => libraryCatalog.filter(entry =>
     `${entry.name} ${entry.purpose}`.toLowerCase().includes(query.trim().toLowerCase())), [query])
+
+  function updateQuery(value) {
+    setQuery(value)
+    onQueryChange?.(value)
+  }
+
+  useEffect(() => { if (searchOpen) searchRef.current?.focus() }, [searchOpen])
 
   useEffect(() => {
     const syncHash = () => setActive(window.location.hash)
@@ -28,11 +43,11 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
     const onKeyDown = (event) => {
       if (event.key === 'Escape' && searchOpen) {
         setSearchOpen(false)
-        setQuery('')
+        updateQuery('')
       }
     }
     const onPointerDown = (event) => {
-      if (searchOpen && !event.target.closest?.('.ds-brand-row')) {
+      if (!onQueryChange && searchOpen && !event.target.closest?.('.ds-brand-row')) {
         setSearchOpen(false)
         setQuery('')
       }
@@ -63,7 +78,7 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
       <form className="ds-search" role="search" aria-hidden={!searchOpen} onSubmit={(event) => event.preventDefault()}>
         <label>
           <span className="ds-visually-hidden">Search components</span>
-          <input id="ds-library-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search components" tabIndex={searchOpen ? 0 : -1} />
+          <input ref={searchRef} id="ds-library-search" type="search" value={query} onChange={event => updateQuery(event.target.value)} placeholder={navigationItems ? 'Find a name or token' : 'Search components'} tabIndex={searchOpen ? 0 : -1} />
         </label>
       </form>
     </div>
@@ -88,15 +103,18 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
           </a>
         })}
       </nav>
-      {activeCategory !== 'overview' && <>
+      {!hideComponentTree && activeCategory !== 'overview' && <>
         <nav className="ds-library-tree" aria-label="Library components">
-          {categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
+          {navigationItems ? [...new Set(navigationItems.map(item => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b)).map(group => <div className="ds-tree-group" key={group}>
+            <h3>{group}</h3>
+            {navigationItems.filter(item => item.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)}
+          </div>) : categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
             .flatMap(level => filtered.filter(entry => entry.level === level))
           ).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
             const href = `#${previewId(entry.name)}`
             return <a key={entry.name} href={href} className="ds-tree-item"
               aria-current={active === href ? 'location' : undefined}
-              onClick={() => setActive(href)}>{entry.name}</a>
+              onClick={() => setActive(href)}>{formatDisplayName(entry.name)}</a>
           })}
           {!categories.some(group => activeCategory === 'all' || activeCategory === group.name) && <p className="ds-index-empty">No matching items.</p>}
         </nav>

@@ -126,10 +126,22 @@ export function SettingsBlock() {
   </SettingsPanel>
 }
 
+export const uiBlockCatalog = [
+  { id: 'prompt-input', name: 'Prompt input', group: 'AI', render: () => <PromptInputBlock /> },
+  { id: 'scheduling', name: 'Scheduling', group: 'Scheduling', render: () => <SchedulingBlock /> },
+  { id: 'settings-form', name: 'Settings form', group: 'Settings', render: () => <SettingsBlock /> },
+]
+
 export function UIBlocks() {
-  return <SpecimenSection index={10} title="UI blocks" description="Exploratory examples only. Command composition, booking, and preferences are not supported application workflows. Changes stay local." className="v2-section--blocks">
-    <SpecimenCard title="Prompt input" description="Command-composer experiment. The production brief composer is documented separately."><PromptInputBlock /></SpecimenCard>
-    <SpecimenCard title="Scheduling" description="Choose a day, select a time, and confirm."><SchedulingBlock /></SpecimenCard>
-    <SpecimenCard id="ds-settings-form" title="Settings form" description="Appearance, notifications, and an explicit save boundary."><SettingsBlock /></SpecimenCard>
+  const groups = [...new Set(uiBlockCatalog.map(block => block.group))].sort((a, b) => a.localeCompare(b))
+  return <SpecimenSection index={10} title="UI blocks" className="v2-section--blocks">
+    <div className="v2-ui-block-groups">
+      {groups.map(group => <section className="v2-ui-block-group" key={group} aria-labelledby={`ui-block-group-${group.toLowerCase()}`}>
+        <h3 id={`ui-block-group-${group.toLowerCase()}`}>{group}</h3>
+        <div className="v2-ui-block-grid">
+          {uiBlockCatalog.filter(block => block.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(block => <SpecimenCard id={`ds-${block.id}`} title={block.name} key={block.id}>{block.render()}</SpecimenCard>)}
+        </div>
+      </section>)}
+    </div>
   </SpecimenSection>
 }

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { PromptComposerExample } from '../components/design-system/examples/PromptComposerExample.jsx'
 import { LibraryIndex } from '../components/design-system/examples/LibraryIndex.jsx'
 import { LibraryComponentPreviews } from '../components/design-system/examples/LibraryComponentPreviews.jsx'
@@ -11,7 +12,9 @@ import {
 } from '../components/design-system/examples/DataSpecimens.jsx'
 import { MotionSpecimens } from '../components/design-system/examples/MotionSpecimens.jsx'
 import { SpecimenSection } from '../components/design-system/examples/SpecimenSection.jsx'
-import { UIBlocks } from '../components/design-system/examples/UIBlocks.jsx'
+import { UIBlocks, uiBlockCatalog } from '../components/design-system/examples/UIBlocks.jsx'
+import { BasicsCatalog } from '../components/design-system/examples/BasicsCatalog.jsx'
+import { basicGroups } from '../components/design-system/foundations/basics-catalog.js'
 import '../styles/design-system.css'
 
 const colors = [
@@ -47,6 +50,7 @@ const spacingSteps = [
   { value: 64, token: '--v2-space-16' },
 ]
 export function DesignSystemScreen({ overviewOnRoot = false }) {
+  const [basicsQuery, setBasicsQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState(() => new URLSearchParams(window.location.search).get('section') === 'components' ? 'Components' : new URLSearchParams(window.location.search).get('section') === 'ui-blocks' ? 'UI blocks' : new URLSearchParams(window.location.search).get('section') === 'basics' ? 'Basics' : 'all')
 
   useEffect(() => {
@@ -62,6 +66,9 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
     const section = category === 'Components' ? 'components' : category === 'UI blocks' ? 'ui-blocks' : 'basics'
     const url = new URL(window.location.href)
     url.searchParams.set('section', section)
+    url.searchParams.delete('mode')
+    url.searchParams.delete('family')
+    url.hash = ''
     window.history.pushState({}, '', url)
     setActiveCategory(category)
   }
@@ -70,17 +77,10 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
 
   return (
     <div className="ds-workspace">
-      <LibraryIndex activeCategory={isOverview ? 'overview' : activeCategory} onCategoryChange={selectCategory} />
+      <LibraryIndex activeCategory={isOverview ? 'overview' : activeCategory} onCategoryChange={selectCategory}
+        navigationItems={activeCategory === 'Basics' ? basicGroups.map(group => ({ ...group, href: `#basics-${group.id}` })) : activeCategory === 'UI blocks' ? uiBlockCatalog.map(block => ({ id: block.id, name: block.name, group: block.group, href: `#ds-${block.id}` })) : undefined}
+        onQueryChange={activeCategory === 'Basics' ? setBasicsQuery : undefined} />
       <div className="system-screen--v2 ds-catalog" id="ds-catalog">
-      {(!overviewOnRoot || isOverview) && <header className="v2-page-header">
-        <div>
-          <h1>Application design system</h1>
-        </div>
-        <p className="v2-page-header__intro">
-          Foundations, components, and interface patterns.
-        </p>
-      </header>}
-
       {isOverview && <section className="ds-overview" aria-labelledby="ds-overview-title">
         <div className="ds-overview__intro">
           <span className="ds-overview__eyebrow">Reference library</span>
@@ -98,7 +98,8 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
         </div>
       </section>}
 
-      {!isOverview && (activeCategory === 'Basics' || activeCategory === 'all') && <SpecimenSection
+      {activeCategory === 'Basics' && <BasicsCatalog query={basicsQuery} />}
+      {!isOverview && activeCategory === 'all' && <SpecimenSection
         index={1}
         title="Foundations"
         description="Shared visual values for every production surface."
@@ -115,7 +116,7 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
                 <TokenCopyTarget copyValue={color.token} label={`${color.name} token`} className="v2-color-token-target">
                   <span className="v2-color-swatch__sample" style={{ background: `var(${color.token})` }} aria-hidden="true" />
                 </TokenCopyTarget>
-                <strong>{color.name}</strong>
+                <TokenCopyTarget copyValue={color.token} label={`${color.name} name`} inline><strong>{color.name}</strong></TokenCopyTarget>
                 <small>{color.value}</small>
               </div>
             ))}
@@ -136,7 +137,7 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
                 className={`v2-type-sample v2-type-sample--${role.key}`}
               >
                 <span className="v2-type-sample__name">{role.name}</span>
-                <p className="v2-type-sample__copy">Make creative work clear.</p>
+                <p className="v2-type-sample__copy">Font text</p>
                 <small className="v2-type-sample__value">{role.size}px / {role.line}px · {role.weight}</small>
               </TokenCopyTarget>
             ))}
@@ -184,4 +185,3 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
     </div>
   )
 }
-import { useEffect, useState } from 'react'
