@@ -1,16 +1,16 @@
+.application-design-system:has(.v2-section--blocks) > .application-design-system__header { display: none; }
 .system-screen--v2 .v2-section--blocks { scroll-margin-top: 24px; }
 .system-screen--v2 .v2-ui-block-groups { display: grid; gap: var(--v2-space-12); }
-.system-screen--v2 .v2-ui-block-group { display: grid; gap: var(--v2-space-4); }
-.system-screen--v2 .v2-ui-block-group h3 { margin: 0; font-size: var(--v2-text-h4); font-weight: var(--v2-weight-heading); }
-.system-screen--v2 .v2-ui-block-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--v2-space-8); align-items: start; }
-.system-screen--v2 .v2-ui-block-grid .v2-specimen-card {
-  min-width: 0;
-  border-radius: var(--v2-radius-large);
-  overflow: hidden;
-  transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease);
-}
+.system-screen--v2 .v2-ui-block-group { scroll-margin-top: var(--v2-space-6); }
+.system-screen--v2 .v2-ui-block-group__panel { padding: var(--v2-space-8); border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius-large); background: var(--v2-surface); }
+.system-screen--v2 .v2-ui-block-group h3 { margin: 0 0 var(--v2-space-6); font-size: var(--v2-text-h3); font-weight: var(--v2-weight-heading); }
+.system-screen--v2 .v2-ui-block-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 0; align-items: stretch; border-top: var(--v2-border-width) solid var(--v2-border); border-left: var(--v2-border-width) solid var(--v2-border); }
+.system-screen--v2 .v2-ui-block-cell { min-width: 0; padding: var(--v2-space-6); border-right: var(--v2-border-width) solid var(--v2-border); border-bottom: var(--v2-border-width) solid var(--v2-border); }
+.system-screen--v2 .v2-ui-block-cell > .v2-token-copy-target { display: inline-block; margin-bottom: var(--v2-space-4); }
+.system-screen--v2 .v2-ui-block-cell > .v2-token-copy-target strong { font-weight: var(--v2-weight-heading); }
+.system-screen--v2 .v2-ui-block-cell__preview { min-width: 0; }
 @media (hover: hover) {
-  .system-screen--v2 .v2-ui-block-grid .v2-specimen-card:hover {
+  .system-screen--v2 .v2-ui-block-cell:hover {
     transform: translate(calc(-1 * var(--v2-space-1)), calc(-1 * var(--v2-space-1)));
     box-shadow: var(--v2-shadow-interactive);
   }
@@ -19,8 +19,11 @@
   .system-screen--v2 .v2-ui-block-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .system-screen--v2 .v2-ui-block-grid .v2-specimen-card { transition: none; }
-  .system-screen--v2 .v2-ui-block-grid .v2-specimen-card:hover { transform: none; }
+  .system-screen--v2 .v2-ui-block-cell:hover { transform: none; box-shadow: none; }
+}
+@media (max-width: 600px) {
+  .system-screen--v2 .v2-ui-block-group__panel { padding: var(--v2-space-4); }
+  .system-screen--v2 .v2-ui-block-cell { padding: var(--v2-space-3); }
 }
 .system-screen--v2 .v2-block { min-width: 0; color: var(--v2-ink); }
 .system-screen--v2 .v2-block h4 { margin: 0; font: 500 var(--v2-text-section)/1.2 var(--v2-font); letter-spacing: -.02em; }

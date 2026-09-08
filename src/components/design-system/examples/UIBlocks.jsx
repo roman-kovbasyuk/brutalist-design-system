@@ -1,11 +1,11 @@
 import { SettingsPanel, SettingsRow, SettingsFooter } from '../organisms/SettingsPanel.jsx'
 import { Switch } from '../atoms/Switch.jsx'
 import { AppButton } from '../atoms/AppButton.jsx'
+import { TokenCopyTarget } from '../atoms/TokenCopyTarget.jsx'
 import { SelectMenu } from '../molecules/SelectMenu.jsx'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ArrowUp, Check, Clock, Globe, Monitor, Moon, Paperclip, Square, Sun, Video, X } from 'lucide-react'
 import { SpecimenSection } from './SpecimenSection.jsx'
-import { SpecimenCard } from './SpecimenCard.jsx'
 import '../../../styles/ui-blocks.css'
 
 
@@ -137,9 +137,14 @@ export function UIBlocks() {
   return <SpecimenSection index={10} title="UI blocks" className="v2-section--blocks">
     <div className="v2-ui-block-groups">
       {groups.map(group => <section className="v2-ui-block-group" key={group} aria-labelledby={`ui-block-group-${group.toLowerCase()}`}>
-        <h3 id={`ui-block-group-${group.toLowerCase()}`}>{group}</h3>
-        <div className="v2-ui-block-grid">
-          {uiBlockCatalog.filter(block => block.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(block => <SpecimenCard id={`ds-${block.id}`} title={block.name} key={block.id}>{block.render()}</SpecimenCard>)}
+        <div className="v2-ui-block-group__panel">
+          <h3 id={`ui-block-group-${group.toLowerCase()}`}>{group}</h3>
+          <div className="v2-ui-block-grid">
+            {uiBlockCatalog.filter(block => block.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(block => <article className="v2-ui-block-cell" id={`ds-${block.id}`} key={block.id}>
+              <TokenCopyTarget copyValue={block.name} label={`${block.name} UI block`} inline><strong>{block.name}</strong></TokenCopyTarget>
+              <div className="v2-ui-block-cell__preview">{block.render()}</div>
+            </article>)}
+          </div>
         </div>
       </section>)}
     </div>

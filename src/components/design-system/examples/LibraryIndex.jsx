@@ -25,6 +25,7 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
   const [active, setActive] = useState(() => window.location.hash)
   const filtered = useMemo(() => libraryCatalog.filter(entry =>
     `${entry.name} ${entry.purpose}`.toLowerCase().includes(query.trim().toLowerCase())), [query])
+  const groupedNavigation = navigationItems?.some(item => item.group)
 
   function updateQuery(value) {
     setQuery(value)
@@ -105,10 +106,10 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
       </nav>
       {!hideComponentTree && activeCategory !== 'overview' && <>
         <nav className="ds-library-tree" aria-label="Library components">
-          {navigationItems ? [...new Set(navigationItems.map(item => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b)).map(group => <div className="ds-tree-group" key={group}>
+          {navigationItems ? (groupedNavigation ? [...new Set(navigationItems.map(item => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b)).map(group => <div className="ds-tree-group" key={group}>
             <h3>{group}</h3>
             {navigationItems.filter(item => item.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)}
-          </div>) : categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
+          </div>) : navigationItems.map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)) : categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
             .flatMap(level => filtered.filter(entry => entry.level === level))
           ).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
             const href = `#${previewId(entry.name)}`
