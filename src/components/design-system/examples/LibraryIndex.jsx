@@ -13,6 +13,7 @@ const categories = [
 
 export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
   const [query, setQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [active, setActive] = useState(() => window.location.hash)
   const filtered = useMemo(() => libraryCatalog.filter(entry =>
     `${entry.name} ${entry.purpose}`.toLowerCase().includes(query.trim().toLowerCase())), [query])
@@ -23,8 +24,29 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
     return () => window.removeEventListener('hashchange', syncHash)
   }, [])
 
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && searchOpen) {
+        setSearchOpen(false)
+        setQuery('')
+      }
+    }
+    const onPointerDown = (event) => {
+      if (searchOpen && !event.target.closest?.('.ds-brand-row')) {
+        setSearchOpen(false)
+        setQuery('')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [searchOpen])
+
   return <aside className="ds-library-sidebar" id="ds-library-sidebar" aria-labelledby="ds-index-heading">
-    <div className="ds-brand-row">
+    <div className={`ds-brand-row${searchOpen ? ' is-search-open' : ''}`}>
       <a className="ds-brand" href="/design-system">
         <Shapes size={24} strokeWidth={1.7} aria-hidden="true" />
         <span>Design System</span>
@@ -33,10 +55,17 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
         type="button"
         className="ds-search-trigger"
         aria-label="Search library"
-        onClick={() => document.getElementById('ds-library-search')?.focus()}
+        aria-expanded={searchOpen}
+        onClick={() => setSearchOpen(true)}
       >
         <Search size={18} aria-hidden="true" />
       </button>
+      <form className="ds-search" role="search" aria-hidden={!searchOpen} onSubmit={(event) => event.preventDefault()}>
+        <label>
+          <span className="ds-visually-hidden">Search components</span>
+          <input id="ds-library-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search components" tabIndex={searchOpen ? 0 : -1} />
+        </label>
+      </form>
     </div>
     <div className="ds-library-index">
       <h2 id="ds-index-heading" className="ds-visually-hidden">Library</h2>
@@ -60,10 +89,6 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange }) {
         })}
       </nav>
       {activeCategory !== 'overview' && <>
-        <div className="ds-index-search">
-          <Search size={16} aria-hidden="true" />
-          <input id="ds-library-search" aria-label="Search components" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search components" />
-        </div>
         <nav className="ds-library-tree" aria-label="Library components">
           {categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
             .flatMap(level => filtered.filter(entry => entry.level === level))

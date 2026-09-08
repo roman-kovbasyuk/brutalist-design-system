@@ -12,7 +12,8 @@ export function SelectMenu({ label, value, options, onChange, triggerLabel, trig
     if (!open) return
     const close = (event) => { if (!root.current?.contains(event.target)) setOpen(false) }
     document.addEventListener('pointerdown', close)
-    root.current?.querySelector('[aria-selected="true"]')?.focus()
+    const selected = root.current?.querySelector('[aria-selected="true"]') ?? root.current?.querySelector('[role="option"]')
+    selected?.focus()
     return () => document.removeEventListener('pointerdown', close)
   }, [open])
   return <div className="v2-menu-select" ref={root} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false) }}>

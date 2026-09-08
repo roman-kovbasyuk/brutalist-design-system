@@ -1215,6 +1215,20 @@
   cursor: pointer;
 }
 
+.system-screen--v2 .v2-color-input--swatch {
+  gap: var(--v2-space-3);
+}
+
+.system-screen--v2 .v2-color-input--swatch input[type="color"] {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid var(--v2-ink);
+  border-radius: 50%;
+  overflow: hidden;
+}
+
 .system-screen--v2 .v2-color-input span {
   font-variant-numeric: tabular-nums;
 }
@@ -3043,3 +3057,17 @@
 }
 .ds-catalog .v2-section__header > .ds-preview-metadata { padding: 0; }
 .ds-catalog .v2-button-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v2-space-4); }
+
+/* Metric specimens stay flat without inheriting the production panel dividers. */
+.system-screen--v2.ds-catalog .v2-metric-grid {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  gap: var(--v2-space-6);
+  align-items: stretch;
+}
+.system-screen--v2.ds-catalog .v2-metric-block {
+  border: 0;
+  border-top: 1px solid var(--v2-border);
+  padding: var(--v2-space-6);
+}

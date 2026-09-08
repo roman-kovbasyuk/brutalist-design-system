@@ -41,6 +41,7 @@ describe('UI blocks', () => {
   test('settings cancel restores the saved boundary and menus support keyboard selection', async () => {
     const user = userEvent.setup()
     render(<SettingsBlock />)
+    expect(screen.getByText('Appearance').closest('.v2-settings-row')).toHaveClass('v2-settings-row--elevated')
     const form = screen.getByRole('form', {name: 'Workspace preferences'})
     const save = within(form).getByRole('button', {name: 'Save preferences'})
     const mentions = within(form).getByRole('switch', {name: 'Mentions'})

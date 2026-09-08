@@ -1,0 +1,12 @@
+.v2-toggle-switch { display: inline-flex; width: 56px; min-height: 44px; align-items: center; padding: 0 var(--v2-space-1); border: 0; background: transparent; cursor: pointer; }
+.v2-toggle-switch > span { position: relative; display: block; width: 48px; height: 28px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-pill); background: var(--v2-canvas); transition: background-color var(--v2-duration-fast) var(--v2-ease); }
+.v2-toggle-switch > span::after { position: absolute; content: ''; top: 2px; left: 3px; width: 20px; height: 20px; border: 1px solid var(--v2-border); border-radius: 50%; background: var(--v2-surface); transition: transform var(--v2-duration-fast) var(--v2-ease); }
+.v2-toggle-switch[aria-checked="true"] > span { background: var(--v2-accent); }
+.v2-toggle-switch[aria-checked="true"] > span::after { transform: translateX(20px); }
+.v2-toggle-switch:not(:disabled):hover > span { box-shadow: 2px 2px 0 var(--v2-ink); }
+.v2-toggle-switch:not(:disabled):active > span { box-shadow: none; }
+.v2-toggle-switch:focus-visible { outline: 2px solid var(--v2-ink); outline-offset: 2px; }
+.v2-toggle-switch:disabled { cursor: not-allowed; }
+.v2-toggle-switch:disabled > span { border-color: var(--v2-text-secondary); }
+.v2-toggle-switch:disabled > span::after { border-color: var(--v2-text-secondary); }
+@media (prefers-reduced-motion: reduce) { .v2-toggle-switch > span, .v2-toggle-switch > span::after { transition: none; } }

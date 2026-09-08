@@ -9,6 +9,24 @@ export const atomicLevels = [
 ]
 
 export const libraryCatalog = [
+  { name: 'SettingsPanel', level: 'organisms', status: 'Shared', source: 'src/components/design-system/organisms/SettingsPanel.jsx',
+    purpose: 'Compose settings sections from divided description/control rows and a save footer.',
+    properties: 'title, description, titleId, as, children, footer. SettingsRow: label, description, compact. SettingsFooter: message, error, children.',
+    states: 'Responsive rows, status and error footer, consumer-supplied empty and deferred controls.',
+    usage: 'Settings UI block and production Account, AI providers, visual generation, and Notifications.',
+    constraints: 'Persistence belongs to the consumer. Rows stack below 600px container width; compact switch rows retain side-by-side layout.' },
+  { name: 'FormField', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/FormField.jsx',
+    purpose: 'Keep labels and validation adjacent to native fields or shared selection controls.',
+    properties: 'label, hint, error, id, native input props; optional children({id, describedBy}) control slot.',
+    states: 'Default, hover, focus, disabled, required, help and error.',
+    usage: 'Settings names, email, API keys and labelled SelectMenu controls.',
+    constraints: 'Caller owns value and validation. Associate custom controls with the supplied ID. Never prefill stored credentials.' },
+  { name: 'Switch', level: 'atoms', status: 'Shared', source: 'src/components/design-system/atoms/Switch.jsx',
+    purpose: 'Toggle a single boolean preference with canonical UI-control styling.',
+    properties: 'label, checked, onChange, disabled, native button props.',
+    states: 'On, off, hover, keyboard focus and disabled.',
+    usage: 'Settings UI block and deferred notification preferences.',
+    constraints: 'Use a visible label and native disabled semantics. Caller owns persistence; Enter and Space toggle.' },
   {
     name: 'SelectionTile', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/SelectionTile.jsx',
     purpose: 'Select or deselect one visual item through its entire surface.',
@@ -134,8 +152,8 @@ export const libraryCatalog = [
     purpose: 'Choose one value from a small list with consistent focus and dismissal.',
     properties: 'label, value, options: unique strings, onChange(value), triggerLabel?, triggerId?, disabled?.',
     states: 'Open/closed, selected, focus, disabled; arrows wrap, Home/End, Enter/Space, Escape, outside click and blur.',
-    usage: 'Used in campaign-status, prompt model/effort and language specimens. No active Studio call site yet.',
-    constraints: 'Prefer native select for forms. No hidden form value, typeahead, multiple selection or async search. Those are distinct patterns. Keep options stable while open.',
+    usage: 'Used in prompt model/effort and language specimens, and Settings provider/model fields.',
+    constraints: 'Controlled small-list selection; the consumer owns form persistence. No hidden form value, typeahead, multiple selection or async search. Keep options stable while open.',
   },
   {
     name: 'WorkflowSteps', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/WorkflowSteps.jsx', demo: 3,

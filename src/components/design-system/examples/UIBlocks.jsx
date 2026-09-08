@@ -1,3 +1,6 @@
+import { SettingsPanel, SettingsRow, SettingsFooter } from '../organisms/SettingsPanel.jsx'
+import { Switch } from '../atoms/Switch.jsx'
+import { AppButton } from '../atoms/AppButton.jsx'
 import { SelectMenu } from '../molecules/SelectMenu.jsx'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ArrowUp, Check, Clock, Globe, Monitor, Moon, Paperclip, Square, Sun, Video, X } from 'lucide-react'
@@ -105,23 +108,28 @@ export function SettingsBlock() {
   const [notice, setNotice] = useState('')
   const id = useId()
   const dirty = JSON.stringify(saved) !== JSON.stringify(draft)
-  function update(key, value) { setDraft((current) => ({...current, [key]: value})); setNotice('') }
-  return <form className="v2-block v2-settings-block" aria-label="Workspace preferences" onSubmit={(event) => { event.preventDefault(); setSaved({...draft}); setNotice('Preferences saved for this preview.') }}>
-    <div className="v2-block-intro"><h4>Workspace preferences</h4><p>Make room for the way you work.</p></div>
-    <div className="v2-preference-row"><div><strong>Appearance</strong><p>Preview your preferred workspace theme.</p></div><fieldset className="v2-theme-options"><legend className="v2-block-sr">Workspace theme</legend>{[[Monitor, 'System'], [Sun, 'Light'], [Moon, 'Dark']].map(([Icon, label]) => <label key={label}><input type="radio" name={`${id}-theme`} checked={draft.theme === label} onChange={() => update('theme', label)} /><span><Icon size={20} aria-hidden="true" />{label}</span></label>)}</fieldset></div>
-    <div className="v2-preference-row"><div><strong>Density</strong><p>Spacing for tables and panels.</p></div><div className="v2-segmented-control" role="group" aria-label="Workspace density">{['Comfortable', 'Compact'].map((value) => <button type="button" aria-pressed={draft.density === value} key={value} onClick={() => update('density', value)}>{value}</button>)}</div></div>
+  function update(key, value) { setDraft(current => ({ ...current, [key]: value })); setNotice('') }
+  return <SettingsPanel as="form" title="Workspace preferences" description="Make room for the way you work."
+    onSubmit={event => { event.preventDefault(); setSaved({ ...draft }); setNotice('Preferences saved for this preview.') }}
+    footer={<SettingsFooter message={dirty ? 'Unsaved preferences' : notice || 'Preferences up to date'}>
+      <AppButton disabled={!dirty} onClick={() => { setDraft({ ...saved }); setNotice('Changes discarded.') }}>Cancel</AppButton>
+      <AppButton variant="primary" type="submit" disabled={!dirty}>Save preferences</AppButton>
+    </SettingsFooter>}>
+    <SettingsRow label="Appearance" description="Preview your preferred workspace theme." className="v2-settings-row--elevated">
+      <fieldset className="v2-theme-options"><legend className="v2-block-sr">Workspace theme</legend>{[[Monitor, 'System'], [Sun, 'Light'], [Moon, 'Dark']].map(([Icon, label]) => <label key={label}><input type="radio" name={`${id}-theme`} checked={draft.theme === label} onChange={() => update('theme', label)} /><span><Icon size={20} aria-hidden="true" />{label}</span></label>)}</fieldset>
+    </SettingsRow>
+    <SettingsRow label="Density" description="Spacing for tables and panels."><div className="v2-segmented-control" role="group" aria-label="Workspace density">{['Comfortable', 'Compact'].map(value => <button type="button" aria-pressed={draft.density === value} key={value} onClick={() => update('density', value)}>{value}</button>)}</div></SettingsRow>
     <div className="v2-preference-preview" data-theme={draft.theme.toLowerCase()} data-density={draft.density.toLowerCase()} aria-label="Preferences preview"><span>Campaign</span><strong>Oslo launch</strong><span>Review</span><strong>Ready for feedback</strong></div>
-    <div className="v2-preference-row"><div><strong>Language</strong><p>Default language for your workspace.</p></div><SelectMenu label="Workspace language" value={draft.language} options={['English', 'Deutsch', 'Français', '日本語']} onChange={(value) => update('language', value)} /></div>
-    {[['summary', 'Weekly summary', 'A Monday digest of campaign activity.'], ['mentions', 'Mentions', 'When a teammate asks for your attention.'], ['replies', 'Comment replies', 'Follow the conversations you joined.']].map(([key, label, help]) => <div className="v2-preference-row" key={key}><div><strong id={`${id}-${key}`}>{label}</strong><p>{help}</p></div><button type="button" className="v2-switch" role="switch" aria-labelledby={`${id}-${key}`} aria-checked={draft[key]} onClick={() => update(key, !draft[key])}><span /></button></div>)}
-    <label className="v2-check-control"><input type="checkbox" checked={draft.sounds} onChange={(event) => update('sounds', event.target.checked)} />Play notification sounds</label>
-    <div className="v2-block-footer"><p role="status">{dirty ? 'Unsaved preferences' : notice || 'Preferences up to date'}</p><div className="v2-block-footer-actions"><button type="button" className="v2-button v2-button--secondary" disabled={!dirty} onClick={() => { setDraft({...saved}); setNotice('Changes discarded.') }}>Cancel</button><button className="v2-button v2-button--primary" type="submit" disabled={!dirty}>Save preferences</button></div></div>
-  </form>
+    <SettingsRow label="Language" description="Default language for your workspace."><SelectMenu label="Workspace language" value={draft.language} options={['English', 'Deutsch', 'Français', '日本語']} onChange={value => update('language', value)} /></SettingsRow>
+    {[['summary', 'Weekly summary', 'A Monday digest of campaign activity.'], ['mentions', 'Mentions', 'When a teammate asks for your attention.'], ['replies', 'Comment replies', 'Follow the conversations you joined.']].map(([key, label, help]) => <SettingsRow key={key} label={label} description={help} compact><Switch label={label} checked={draft[key]} onChange={value => update(key, value)} /></SettingsRow>)}
+    <SettingsRow label="Notification sounds" compact><label className="v2-check-control"><input type="checkbox" checked={draft.sounds} onChange={event => update('sounds', event.target.checked)} />Play notification sounds</label></SettingsRow>
+  </SettingsPanel>
 }
 
 export function UIBlocks() {
   return <SpecimenSection index={10} title="UI blocks" description="Exploratory examples only. Command composition, booking, and preferences are not supported application workflows. Changes stay local." className="v2-section--blocks">
     <SpecimenCard title="Prompt input" description="Command-composer experiment. The production brief composer is documented separately."><PromptInputBlock /></SpecimenCard>
     <SpecimenCard title="Scheduling" description="Choose a day, select a time, and confirm."><SchedulingBlock /></SpecimenCard>
-    <SpecimenCard title="Settings form" description="Appearance, notifications, and an explicit save boundary."><SettingsBlock /></SpecimenCard>
+    <SpecimenCard id="ds-settings-form" title="Settings form" description="Appearance, notifications, and an explicit save boundary."><SettingsBlock /></SpecimenCard>
   </SpecimenSection>
 }

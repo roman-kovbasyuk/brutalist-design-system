@@ -8,12 +8,14 @@
 :is(.system-screen--v2, .bs-root) .v2-button.v2-token-chip {
   max-width: 100%;
   min-width: 0;
-  padding: var(--v2-space-1) var(--v2-space-3);
+  min-height: calc(var(--v2-control-height-compact) / 2);
+  gap: var(--v2-space-1);
+  padding: calc(var(--v2-space-1) / 2) calc(var(--v2-space-3) / 2);
   border-radius: var(--v2-radius-pill);
   background: var(--v2-canvas);
-  font-size: var(--v2-text-small);
+  font-size: 11px;
   font-weight: var(--v2-weight-text);
-  line-height: var(--v2-line-body);
+  line-height: 1;
   text-align: left;
 }
 
@@ -24,7 +26,7 @@
   overflow-wrap: anywhere;
 }
 
-.v2-token-chip svg { flex-shrink: 0; }
+.v2-token-chip svg { width: 8px; height: 8px; flex-shrink: 0; }
 
 :is(.system-screen--v2, .bs-root) .v2-button.v2-token-chip:not(:disabled):hover {
   background: var(--v2-accent);

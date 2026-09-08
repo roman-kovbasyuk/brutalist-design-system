@@ -17,6 +17,7 @@
   background: var(--v2-surface);
   color: var(--v2-ink);
   font: inherit;
+  font-weight: var(--v2-weight-heading) !important;
   text-align: left;
   cursor: pointer;
 }
@@ -57,6 +58,7 @@
   background: transparent;
   color: var(--v2-ink);
   font: inherit;
+  font-weight: var(--v2-weight-heading) !important;
   text-align: left;
   cursor: pointer;
 }

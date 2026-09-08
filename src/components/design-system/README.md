@@ -58,3 +58,32 @@ Consumer: `src/studio/campaign/modules/copy/CopyView.jsx`. Copy content, approva
 - `atoms/UpdatedText.jsx`: `value` and stable `identity` acknowledge a saved text change for 200ms. The exported `useTextUpdate(value, identity)` supplies the same flag for an existing element. Initial values and identity changes do not animate; reduced motion disables the CSS animation. It is visual feedback, not a save operation or live announcement.
 
 Consumers: `src/studio/campaign/modules/brief/BriefModule.jsx` uses InlineText, FactGrid, AsyncStatus, and PromptComposer; `BriefView.jsx` also uses AsyncStatus. `src/studio/StudioApp.jsx` uses UpdatedText and useTextUpdate for campaign titles. Schema validation, permissions, source keys, and campaign mutation behavior remain in Studio. The [Brief surface record](../../../.impeccable/surfaces/src-studio-campaign-modules-brief-briefmodule-jsx.md) describes composition and review evidence.
+
+## Settings shared patterns
+
+Extracted from UI blocks → Settings form; the example and `SettingsScreen` now share these components.
+
+- `organisms/SettingsPanel.jsx`: `SettingsPanel` renders the section heading, description, content, and footer; `as="form"` accepts submit props. `titleId` preserves direct section links.
+- `SettingsRow` places `label` and `description` beside a control slot, with a divider and 24px spacing. Rows stack below 600px container width; `compact` keeps a switch beside its label. `SettingsFooter` pairs `message` (live status, or alert with `error`) with action children.
+- `molecules/FormField.jsx`: native input props, persistent `label`, optional `hint`/`error`, and generated IDs. A render-function child can compose `SelectMenu` using its `triggerId`. Password fields never receive stored secrets.
+- `atoms/Switch.jsx`: controlled `checked`, `onChange`, `label`, and `disabled`. Native button provides Enter/Space activation; `role="switch"` and `aria-checked` expose state. Disabled controls remain off and legible without hover effects.
+- `SelectMenu` owns provider/model selection and keyboard navigation; opening a list with no saved selection focuses its first option. `AppButton` owns all actions and busy/disabled states.
+
+Product CSS only sizes the single column and paired fields. Provider catalogs, credentials, saves, errors, permissions, and deferred-feature decisions stay in SettingsScreen. No product imports from examples; no backend changes in this alignment pass.
+
+### Specimen layout sizing
+
+Component example grids reflow using their available content width: 280px minimum columns, or 260px for button cells, each capped at 100% for narrow containers. Buttons retain natural widths; text may wrap only when space is insufficient. Keep focus rings and intentional overlay layers visible; do not hide overflow to mask sizing issues. Data tables retain their own scroll containers.
+
+### Catalog presentation
+
+The catalog uses one white content surface with flat sections and consistent 24px specimen gaps. Section and specimen wrappers have no card background or enclosing border. Input boundaries, interactive component previews, and raised popovers retain their own functional styling. Control grids use the available width with a 280px minimum column and stack when narrower. Source paths and relevant token chips are available in each heading's Reference disclosure; repeated descriptive prose is omitted. Sidebar anchors remain on the visible headings.
+
+
+## Brand parameters for banner templates
+
+Brand systems are separate from the application UI tokens. Each template version can reference one published brand; many template layouts can share that system. `shared/resolveTemplateBrand.js` maps semantic palette and typography roles into the existing geometry and saves an immutable resolved manifest. Primary logo graphics are verified raster snapshots with contained scaling and a white backing. Layouts retain their sizes, safe areas and motion.
+
+`AnimatedBanner`, standalone animation HTML and the PNG renderer consume these resolved parameters. Registered rendering families are Inter and OFL-licensed Arimo, at weights 400/600/700. Arimo is the Arial-compatible substitute for the supplied MSD reference; that publisher's typography is not presented as official MSD guidance. Logo teal is sampled from the supplied asset; the pale teal is a derived tint. Original source/license metadata remains in the MSD record.
+
+Admin-only `POST /api/v1/brand-design-systems/:brandId/templates` accepts `{ templateIds: [...] }` and publishes new versions into the shared catalog. Brand publication/restoration atomically refreshes assigned templates. Existing template and campaign snapshots remain unchanged. Returning to Templates reloads the catalog. No template creation UI is introduced. To reproduce the local demo fixture, run `node scripts/setup-msd-templates.mjs` with the demo API's database and asset-store configuration; the script is idempotent and blocked in production.

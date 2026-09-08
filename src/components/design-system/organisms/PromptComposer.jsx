@@ -22,8 +22,14 @@ export function PromptComposer({
   maxLength,
   compact = false,
   iconOnlySubmit = false,
+  showSubmit = true,
   hint,
   placeholder = 'Describe what you’re promoting, or drop your campaign brief here…',
+  accept = '.txt,.md,.markdown,.pdf,.docx',
+  formatLabel = 'TXT, MD, PDF, DOCX',
+  attachmentsLabel = 'Brief attachments',
+  fileInputLabel = 'Brief files',
+  attachLabel = 'Attach brief files',
 }) {
   const id = useId()
   const picker = useRef(null)
@@ -59,15 +65,15 @@ export function PromptComposer({
         }}
       >
         {files.length > 0 && (
-          <ul className="v2-block-attachments" aria-label="Brief attachments">
+          <ul className="v2-block-attachments" aria-label={attachmentsLabel}>
             {files.map((file) => (
               <li key={file.id}>
                 <Paperclip size={16} aria-hidden="true" />
-                <span>{file.name}</span>
+                <span>{file.name ?? file.label}</span>
                 <button
                   type="button"
                   className="v2-block-icon"
-                  aria-label={`Remove ${file.name}`}
+                  aria-label={`Remove ${file.name ?? file.label}`}
                   disabled={locked}
                   onClick={() => onRemove(file.id)}
                 >
@@ -105,9 +111,9 @@ export function PromptComposer({
               ref={picker}
               className="v2-block-sr"
               tabIndex={-1}
-              aria-label="Brief files"
+              aria-label={fileInputLabel}
               type="file"
-              accept=".txt,.md,.markdown,.pdf,.docx"
+              accept={accept}
               multiple
               disabled={locked}
               onChange={(event) => {
@@ -118,14 +124,14 @@ export function PromptComposer({
             <button
               type="button"
               className="v2-block-icon"
-              aria-label="Attach brief files"
+              aria-label={attachLabel}
               disabled={locked}
               onClick={() => picker.current?.click()}
             >
               <Paperclip size={20} aria-hidden="true" />
             </button>
-            <span className="bs-prompt-formats">TXT, MD, PDF, DOCX</span></>}
-            <AppButton
+            <span className="bs-prompt-formats">{formatLabel}</span></>}
+            {showSubmit && <AppButton
               type="submit"
               variant="primary"
               className="bs-button bs-button--primary bs-prompt-send"
@@ -136,7 +142,7 @@ export function PromptComposer({
             >
               {!iconOnlySubmit && (busy ? 'Working…' : submitLabel)}
               <ArrowUp size={17} aria-hidden="true" />
-            </AppButton>
+            </AppButton>}
           </div>
         )}
       </div>

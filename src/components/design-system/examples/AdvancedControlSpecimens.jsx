@@ -1,8 +1,10 @@
-import { SelectMenu } from '../molecules/SelectMenu.jsx'
 import { useRef, useState } from 'react'
 import {
   Check,
+  Calendar,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   EyeOff,
   Minus,
@@ -13,7 +15,6 @@ import {
 import { SpecimenCard } from './SpecimenCard.jsx'
 
 const markets = ['Bergen', 'Copenhagen', 'Oslo', 'Stockholm', 'Zurich']
-const campaignStatuses = ['Draft', 'In review', 'Ready', 'Published']
 const channels = ['Paid social', 'Email', 'Display', 'Organic social']
 
 function Field({ label, htmlFor, help, children, className = '' }) {
@@ -26,12 +27,31 @@ function Field({ label, htmlFor, help, children, className = '' }) {
   )
 }
 
+function DatePicker({ id, label, initialValue }) {
+  const [value, setValue] = useState(initialValue)
+  const [open, setOpen] = useState(false)
+  const [month, setMonth] = useState(() => new Date(`${initialValue}T12:00:00`))
+  const first = new Date(month.getFullYear(), month.getMonth(), 1)
+  const days = Array.from({ length: 42 }, (_, index) => new Date(month.getFullYear(), month.getMonth(), index + 1 - first.getDay()))
+  const formatted = new Date(`${value}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const monthLabel = month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  return <div className="v2-date-picker">
+    <button id={id} type="button" className="v2-date-picker__trigger v2-interactive-control" aria-label={label} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <span>{formatted}</span><Calendar aria-hidden="true" size={18} />
+    </button>
+    {open && <div className="v2-date-picker__popover" role="dialog" aria-label={`${label} calendar`}>
+      <div className="v2-date-picker__toolbar"><strong>{monthLabel}</strong><span><button type="button" aria-label="Previous month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={16} /></button><button type="button" aria-label="Next month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={16} /></button></span></div>
+      <div className="v2-date-picker__weekdays">{['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => <span key={day}>{day}</span>)}</div>
+      <div className="v2-date-picker__days">{days.map((day) => { const iso = day.toISOString().slice(0, 10); const currentMonth = day.getMonth() === month.getMonth(); return <button key={iso} type="button" className={currentMonth ? '' : 'is-muted'} aria-pressed={iso === value} onClick={() => { setValue(iso); setOpen(false) }}>{day.getDate()}</button> })}</div>
+    </div>}
+  </div>
+}
+
 export function AdvancedControlSpecimens() {
   const [isTokenVisible, setIsTokenVisible] = useState(false)
   const [marketQuery, setMarketQuery] = useState('')
   const [isMarketOpen, setIsMarketOpen] = useState(false)
   const [activeMarketIndex, setActiveMarketIndex] = useState(-1)
-  const [campaignStatus, setCampaignStatus] = useState('Draft')
   const [selectedChannels, setSelectedChannels] = useState(['Paid social'])
   const [isChannelOpen, setIsChannelOpen] = useState(false)
   const [campaignColor, setCampaignColor] = useState('#79d9ff')
@@ -141,9 +161,10 @@ export function AdvancedControlSpecimens() {
           </Field>
 
           <Field label="Campaign color" htmlFor="v2-campaign-color">
-            <div className="v2-color-input">
+            <div className="v2-color-input v2-color-input--swatch">
               <input
                 id="v2-campaign-color"
+                aria-label="Campaign color"
                 type="color"
                 value={campaignColor}
                 onChange={(event) => {
@@ -178,18 +199,7 @@ export function AdvancedControlSpecimens() {
       >
         <div className="v2-control-catalog-grid">
           <div className="v2-date-range">
-            <Field label="Campaign start" htmlFor="v2-campaign-start">
-              <input id="v2-campaign-start" type="date" defaultValue="2026-09-14" />
-            </Field>
-            <span aria-hidden="true">→</span>
-            <Field label="Campaign end" htmlFor="v2-campaign-end">
-              <input
-                id="v2-campaign-end"
-                type="date"
-                min="2026-09-14"
-                defaultValue="2026-09-21"
-              />
-            </Field>
+            <Field label="Campaign start" htmlFor="v2-campaign-start"><DatePicker id="v2-campaign-start" label="Campaign start" initialValue="2026-09-14" /></Field>
           </div>
 
           <Field
@@ -250,11 +260,6 @@ export function AdvancedControlSpecimens() {
                 </div>
               )}
             </div>
-          </Field>
-
-          <Field label="Campaign status" htmlFor="v2-campaign-status-trigger">
-            <SelectMenu label="Campaign status options" triggerLabel="Open campaign status options"
-              triggerId="v2-campaign-status-trigger" value={campaignStatus} options={campaignStatuses} onChange={setCampaignStatus} />
           </Field>
 
           <div className="v2-field">
