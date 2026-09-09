@@ -1,5 +1,20 @@
 # Validation and handoff
 
+## Current design-system-only validation — 9 September 2026
+
+The current public repository is design-system-only. This pass reviewed the foundations catalog, component workbench, UI-block workbench, registry metadata, semantic tokens, shared CSS, and the package consumer fixture.
+
+| Check | Result and evidence |
+| --- | --- |
+| Full frontend suite | `npm run test:run`: 41 files and 172 tests passed. |
+| TypeScript and production build | `npm run typecheck` and `npm run build` passed. Vite reports the existing non-blocking large design-system page chunk warning. |
+| Library and package contract | `npm run build:library`, `npm run verify:package`, and `npm run verify:consumer` passed; the clean consumer fixture installed the packed artifact without source aliases. |
+| Token harmonization | Legacy names in `src/styles/tokens.css` alias `--v2-*`; missing semantic roles are declared in `basics/tokens.css`; token and registry tests enforce the contract. |
+| Browser routes | Foundations and inputs workbench routes loaded in the local browser. At 390px, body and root client/scroll widths matched on both routes, so no horizontal overflow was observed. |
+| Impeccable detector | The final detector pass returned no findings for the design-system, screen, workbench, and shared-style source roots. |
+
+The consumer application still needs to adopt the package through its own repository. That migration is documented in `docs/design-system/full-application-review.md`; this checkout cannot claim external product-screen coverage after the legacy app was removed.
+
 Validated on 6 September 2026 in the existing `codex/integrated-mvp` worktree. Source root: `/Users/roman/Documents/Dev/crisp/lingu-agents/.worktrees/integrated-mvp`. Live catalog: http://127.0.0.1:5176/design-system. Figma was excluded.
 
 ## Completed checks

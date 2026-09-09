@@ -29,6 +29,8 @@ describe('design-system registry', () => {
       for (const exportedName of entry.exports) {
         expect(source).toMatch(new RegExp(`export\\s+(?:function|const|class)\\s+${exportedName}\\b`))
       }
+      expect(entry.tokens.length, `${entry.id} tokens`).toBeGreaterThan(0)
+      for (const token of entry.tokens) expect(token, `${entry.id} token`).toMatch(/^--v2-/)
     }
   })
 

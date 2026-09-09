@@ -470,7 +470,7 @@ export function AdvancedControlSpecimens() {
               aria-valuemax="100"
               aria-valuenow="68"
             >
-              <span style={{ width: '68%' }} />
+              <span style={{ '--v2-progress-scale': 0.68 }} />
             </div>
           </div>
 

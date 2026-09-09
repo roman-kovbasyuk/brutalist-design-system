@@ -16,7 +16,7 @@
 .ds-example-tile {
   align-content: start;
   min-width: 0;
-  padding: var(--v2-space-5);
+  padding: var(--v2-space-4);
   border: 1px solid var(--v2-border);
   background: var(--v2-surface);
 }

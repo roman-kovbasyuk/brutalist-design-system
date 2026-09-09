@@ -1576,10 +1576,13 @@
 
 .system-screen--v2 .v2-progress-bar > span {
   display: block;
+  width: 100%;
   height: 100%;
   border-right: 1px solid var(--v2-border);
   background: var(--v2-accent);
-  transition: width var(--v2-duration-disclosure) ease-out;
+  transform: scaleX(var(--v2-progress-scale, 0));
+  transform-origin: left center;
+  transition: transform var(--v2-duration-disclosure) ease-out;
 }
 
 .system-screen--v2 .v2-progress-bar--indeterminate > span {
@@ -1746,7 +1749,8 @@
 .system-screen--v2 .v2-tab-panel {
   min-height: 72px;
   padding: var(--v2-space-3);
-  border-left: 3px solid var(--v2-accent);
+  border: var(--v2-border-width) solid var(--v2-border);
+  border-radius: var(--v2-radius);
   background: var(--v2-canvas);
   color: var(--v2-text-secondary);
   font-size: var(--v2-text-meta);
@@ -2010,7 +2014,7 @@
 }
 
 .system-screen--v2 .v2-toast {
-  border-left: 6px solid var(--v2-success);
+  border-color: var(--v2-success);
 }
 
 .system-screen--v2 .v2-metric-grid {
@@ -2278,7 +2282,7 @@
 
 .system-screen--v2 #v2-object-campaign-card {
   font-size: 11px;
-  border-color: #8a8a8a;
+  border-color: var(--v2-text-secondary);
 }
 
 .system-screen--v2 .v2-object-card__title {
@@ -2422,7 +2426,7 @@
   display: grid;
   place-items: center;
   padding: var(--v2-space-6);
-  background: rgba(0, 0, 0, 0.62);
+  background: color-mix(in srgb, var(--v2-ink) 62%, transparent);
 }
 
 .system-screen--v2 .v2-modal {
@@ -2563,7 +2567,7 @@
   gap: var(--v2-space-1);
   margin-top: var(--v2-space-4);
   padding: var(--v2-space-4);
-  border-left: 6px solid var(--v2-success);
+  border-top: var(--v2-border-width) solid var(--v2-success);
   background: var(--v2-canvas);
 }
 
