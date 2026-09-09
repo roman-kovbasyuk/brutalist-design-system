@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+// The canonical implementation remains JavaScript for the legacy catalog; its runtime API is stable.
+// @ts-ignore no declaration file is emitted for this JSX-only module
 import { PillTabs } from '../../molecules/PillTabs.jsx'
 
 export type TabItem = { value: string; label: string; disabled?: boolean }

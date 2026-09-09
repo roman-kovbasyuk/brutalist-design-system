@@ -17,6 +17,7 @@ import { BasicsCatalog } from '../components/design-system/examples/BasicsCatalo
 import { componentGroups } from '../components/design-system/examples/component-groups.js'
 import { basicGroups } from '../components/design-system/foundations/basics-catalog.js'
 import '../styles/design-system.css'
+import { sitePath } from './site-path.js'
 
 const colors = [
   { name: 'Canvas', value: '#f4f4f0', token: '--v2-canvas' },
@@ -94,7 +95,7 @@ function DesignSystemContent({ overviewOnRoot = false }) {
         </div>
         <div className="ds-overview__cards">
           {[['Basics', 'Foundations, tokens, controls, and shared visual values.', 'basics'], ['Components', 'Reusable interaction patterns and component states.', 'components'], ['UI blocks', 'Responsive compositions and complete interface examples.', 'ui-blocks']].map(([title, description, section]) => (
-            <a key={section} href={`/design-system?section=${section}`} className="ds-overview__card">
+            <a key={section} href={sitePath(`/design-system?section=${section}`)} className="ds-overview__card">
               <span>{title}</span>
               <p>{description}</p>
               <small>Open section →</small>

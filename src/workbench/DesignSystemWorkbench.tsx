@@ -7,6 +7,7 @@ import { families } from './registry/families'
 import type { Family, Section } from './registry/types'
 import { formatRoute, parseRoute } from './navigation/route'
 import './workbench.css'
+import { sitePath } from '../screens/site-path.js'
 
 const sections: { id: Section; label: string }[] = [
   { id: 'basics', label: 'Basics' },
@@ -50,7 +51,7 @@ export function DesignSystemWorkbench() {
 
   function chooseSection(next: Section) {
     if (next === 'basics') {
-      window.location.assign('/design-system?section=basics')
+      window.location.assign(sitePath('/design-system?section=basics'))
       return
     }
     setSection(next)

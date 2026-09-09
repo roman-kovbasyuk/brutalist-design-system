@@ -1,5 +1,6 @@
 import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 import { DesignSystemWorkbench } from '../workbench/DesignSystemWorkbench'
+import { sitePath } from './site-path.js'
 import '../styles/application-design-system.css'
 import '../components/design-system/styles.css'
 
@@ -9,7 +10,7 @@ export default function ApplicationDesignSystemPage() {
   return <div className="application-design-system">
     <header className="application-design-system__header">
       <span>Reference library</span>
-      <a href="/design-system?mode=workbench">Open v2 workbench</a>
+      <a href={sitePath('/design-system?mode=workbench')}>Open v2 workbench</a>
     </header>
     <main><DesignSystemScreen overviewOnRoot /></main>
   </div>

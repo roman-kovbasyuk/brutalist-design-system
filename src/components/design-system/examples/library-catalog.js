@@ -92,7 +92,7 @@ export const libraryCatalog = [
     constraints: '--v2-muted is a palette sample, not body text. Use --v2-text-secondary. Legacy --accent/--ink remain compatibility tokens. Lucide icons are decorative unless given an accessible name.',
   },
   {
-    name: 'AppButton', level: 'atoms', status: 'Shared', source: 'src/components/design-system/atoms/AppButton.jsx', demo: 2,
+    name: 'AppButton', level: 'atoms', status: 'Shared', source: 'src/components/design-system/atoms/AppButton.jsx', demo: 2, previewHref: '#components-buttons',
     purpose: 'Trigger an application action, including a pending operation.',
     properties: 'variant: primary | secondary (default) | danger | quiet; size: default | compact; iconOnly, busy, disabled: booleans; native button props and ref.',
     states: 'Default, hover, focus-visible, pressed, disabled, busy. Native states are not separate variants.',
@@ -116,7 +116,7 @@ export const libraryCatalog = [
     constraints: 'The visual target remains a keyboard-operable 44px button. Copy feedback is exposed in a status region; the caller owns the displayed value and semantic token mapping.',
   },
   {
-    name: 'Native inputs and selection controls', level: 'atoms', status: 'Examples only', source: 'src/components/design-system/examples/ControlSpecimens.jsx', demo: 2,
+    name: 'Native inputs and selection controls', level: 'atoms', status: 'Examples only', source: 'src/components/design-system/examples/ControlSpecimens.jsx', demo: 2, previewHref: '#components-fields',
     purpose: 'Text input, textarea, native select, checkbox, radio, switch, file input, and disabled controls.',
     properties: 'Native value/defaultValue, checked, required, disabled, readOnly, min/max. These specimens do not export reusable control components.',
     states: 'Objective validation and disabled examples exist; full state coverage varies by control.',
@@ -140,7 +140,7 @@ export const libraryCatalog = [
     constraints: 'Do not replace automatically: asChild, Radix composition, and sidebar dependencies require explicit migration. Table is an unstyled structural primitive, not a data-table organism.',
   },
   {
-    name: 'PillTabs + PillTabPanel', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/PillTabs.jsx', demo: 3,
+    name: 'PillTabs + PillTabPanel', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/PillTabs.jsx', demo: 3, previewHref: '#components-tabs-and-view-controls',
     purpose: 'Choose one content panel with keyboard navigation and stable relationships.',
     properties: 'tabs: unique string labels; value; onChange(label); ariaLabel; idPrefix. Panel: tab, value, same idPrefix, children, className.',
     states: 'Selected/unselected, hover, focus; ArrowLeft/Right wrap; Home/End; automatic activation.',
@@ -148,7 +148,7 @@ export const libraryCatalog = [
     constraints: 'For local content with immediate updates. No disabled/vertical/dynamic-tab support yet. Do not use tabs for routes or table density; use links or a segmented control.',
   },
   {
-    name: 'SelectMenu', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/SelectMenu.jsx', demo: 2,
+    name: 'SelectMenu', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/SelectMenu.jsx', demo: 2, previewHref: '#components-dropdowns',
     purpose: 'Choose one value from a small list with consistent focus and dismissal.',
     properties: 'label, value, options: unique strings, onChange(value), triggerLabel?, triggerId?, disabled?.',
     states: 'Open/closed, selected, focus, disabled; arrows wrap, Home/End, Enter/Space, Escape, outside click and blur.',
@@ -156,7 +156,7 @@ export const libraryCatalog = [
     constraints: 'Controlled small-list selection; the consumer owns form persistence. No hidden form value, typeahead, multiple selection or async search. Keep options stable while open.',
   },
   {
-    name: 'WorkflowSteps', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/WorkflowSteps.jsx', demo: 3,
+    name: 'WorkflowSteps', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/WorkflowSteps.jsx', demo: 3, previewHref: '#components-workflow-steps',
     purpose: 'Expose an ordered workflow, its current step, and completion.',
     properties: 'items: label, context, complete, current, href?, disabled?; ariaLabel; onNavigate(index)?.',
     states: 'Complete/current/upcoming; optional disabled navigation; aria-current="step".',
@@ -164,7 +164,7 @@ export const libraryCatalog = [
     constraints: 'Classified as molecule because it owns only the ordered step interaction. The timeline with workflow rules is a feature organism. Disabled links prevent activation but remain discoverable.',
   },
   {
-    name: 'Search, pickers and value controls', level: 'molecules', status: 'Examples only', source: 'src/components/design-system/examples/AdvancedControlSpecimens.jsx', demo: 2,
+    name: 'Search, pickers and value controls', level: 'molecules', status: 'Examples only', source: 'src/components/design-system/examples/AdvancedControlSpecimens.jsx', demo: 2, previewHref: '#components-fields',
     purpose: 'Search, password visibility, currency, date range, combobox, single/multi-select, stepper, rating, and sliders.',
     properties: 'Local state and fixed example values; no reusable props contract. Native input constraints where shown.',
     states: 'Market filtering, no results, selected channels, bounded values, determinate/indeterminate progress.',
@@ -172,7 +172,7 @@ export const libraryCatalog = [
     constraints: 'Multi-select and searchable-combobox focus/dismissal still require extraction. Help text is not consistently associated. Do not treat every displayed control as production-ready.',
   },
   {
-    name: 'Overlays and feedback', level: 'molecules', status: 'Examples only', source: 'src/components/design-system/examples/MotionSpecimens.jsx', demo: 7,
+    name: 'Overlays and feedback', level: 'molecules', status: 'Examples only', source: 'src/components/design-system/examples/MotionSpecimens.jsx', demo: 7, previewHref: '#components-menu-and-supporting-information',
     purpose: 'Menu, tooltip, toast, inline confirmation and modal confirmation demonstrations.',
     properties: 'Internal open/closed state. Modal uses native dialog; local refs restore focus.',
     states: 'Open/closed; initial cancel focus, trapped modal focus, Escape and trigger restoration.',
@@ -180,7 +180,7 @@ export const libraryCatalog = [
     constraints: 'Specimen modal is not a reusable Dialog API. Menu uses a group of buttons, not menu roles. Toast is local-only; there is no global notification queue.',
   },
   {
-    name: 'PromptComposer', level: 'organisms', status: 'Shared', source: 'src/components/design-system/organisms/PromptComposer.jsx', demo: 11,
+    name: 'PromptComposer', level: 'organisms', status: 'Shared', source: 'src/components/design-system/organisms/PromptComposer.jsx', demo: 11, previewHref: '#ds-preview-promptcomposer',
     purpose: 'Write a campaign brief, attach documents, and submit one request.',
     properties: 'value, onChange, files [{id,name}], onAttach(FileList), onRemove(id), onSubmit, canSubmit, busy, disabled, readOnly, hint, placeholder, submitLabel.',
     states: 'Empty/ready, attachment list, drag-over, busy/disabled, readable read-only. Ctrl/⌘+Enter submits; plain Enter adds a line.',

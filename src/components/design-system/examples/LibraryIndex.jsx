@@ -4,6 +4,7 @@ import { libraryCatalog } from './library-catalog.js'
 import { previewId } from './PreviewMetadata.jsx'
 import { Switch } from '../atoms/Switch.jsx'
 import { useCopyMode } from '../atoms/CopyMode.jsx'
+import { sitePath } from '../../../screens/site-path.js'
 import './library-index.css'
 
 const categories = [
@@ -66,7 +67,7 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
 
   return <aside className="ds-library-sidebar" id="ds-library-sidebar" aria-labelledby="ds-index-heading">
     <div className={`ds-brand-row${searchOpen ? ' is-search-open' : ''}`}>
-      <a className="ds-brand" href="/design-system">
+      <a className="ds-brand" href={sitePath('/design-system')}>
         <Shapes size={24} strokeWidth={1.7} aria-hidden="true" />
         <span>Design System</span>
       </a>
@@ -90,7 +91,7 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
       <h2 id="ds-index-heading" className="ds-visually-hidden">Library</h2>
       <nav className="ds-section-navigation" aria-label="Design system sections">
         {categories.map(({ name, key, icon: Icon }) => {
-          const href = `/design-system?section=${key}`
+          const href = sitePath(`/design-system?section=${key}`)
           return <a
             key={name}
             href={href}
@@ -115,7 +116,7 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
           </div>) : navigationItems.map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)) : categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
             .flatMap(level => filtered.filter(entry => entry.level === level))
           ).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
-            const href = `#${previewId(entry.name)}`
+            const href = entry.previewHref || `#${previewId(entry.name)}`
             return <a key={entry.name} href={href} className="ds-tree-item"
               aria-current={active === href ? 'location' : undefined}
               onClick={() => setActive(href)}>{formatDisplayName(entry.name)}</a>

@@ -16,7 +16,7 @@ test('shows the complete Basics catalog through the existing shell, including ol
   history.replaceState({}, '', '/?mode=workbench&section=basics&family=elevation')
   render(<ApplicationDesignSystemPage />)
   expect(screen.getByRole('heading', { name: 'Basics' })).toBeVisible()
-  for (const name of ['Color', 'Typography', 'Spacing', 'Shape & sizing', 'Elevation', 'Motion', 'Layout', 'Icons']) {
+  for (const name of ['Color', 'Typography', 'Spacing', 'Shape & sizing', 'Elevation', 'Motion', 'Layout', 'Icons (Lucide Icons)']) {
     expect(screen.getByRole('heading', { name, exact: true })).toBeVisible()
   }
   expect(screen.getByRole('main').closest('.application-design-system')).toBeInTheDocument()
@@ -51,8 +51,8 @@ test('copies typography recipes and layout and icon IDs that resolve in the refe
   await user.click(screen.getByRole('button', { name: 'Copy Stack component ID' }))
   expect(basicsManifest.components.find(item => item.id === 'Stack').source).toContain('/Stack.tsx')
   expect(await navigator.clipboard.readText()).toBe('Stack')
-  await user.click(screen.getByRole('button', { name: 'Copy lucide:Search', exact: true }))
-  expect(await navigator.clipboard.readText()).toBe('lucide:Search')
+  await user.click(screen.getByRole('button', { name: 'Copy lucide:Search and --v2-icon-md', exact: true }))
+  expect(await navigator.clipboard.readText()).toBe('lucide:Search\n--v2-icon-md')
   expect(basicsManifest.icons.find(item => item.id === 'lucide:Search').import).toContain('lucide-react')
   expect(basicsManifest.tokens.find(item => item.id === '--v2-radius').resolved).toBe('4px')
 })
@@ -71,24 +71,25 @@ test('copies canonical tokens from both visible names and token labels', async (
 test('provides larger icon tokens and searches and copies icons outside the common set', async () => {
   const user = userEvent.setup()
   render(<ApplicationDesignSystemPage />)
-  for (const [size, value] of [['xl', '32px'], ['xxl', '48px']]) {
+  for (const [size, value, label] of [['xl', '32px', '32'], ['xxl', '48px', '48']]) {
     expect(basicsManifest.tokens.find(token => token.id === `--v2-icon-${size}`).resolved).toBe(value)
-    await user.click(screen.getByRole('button', { name: `Copy --v2-icon-${size}`, exact: true }))
-    expect(await navigator.clipboard.readText()).toBe(`--v2-icon-${size}`)
+    await user.click(screen.getByRole('radio', { name: label, exact: true }))
+    await user.click(screen.getByRole('button', { name: `Copy lucide:Search and --v2-icon-${size}`, exact: true }))
+    expect(await navigator.clipboard.readText()).toBe(`lucide:Search\n--v2-icon-${size}`)
   }
   const search = screen.getByRole('searchbox', { name: 'Search icons' })
-  expect(screen.queryByRole('button', { name: 'Copy lucide:AlarmClock', exact: true })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Copy lucide:AlarmClock and --v2-icon-xxl', exact: true })).not.toBeInTheDocument()
   await user.type(search, 'alarm clock')
-  await user.click(screen.getByRole('button', { name: 'Copy lucide:AlarmClock', exact: true }))
-  expect(await navigator.clipboard.readText()).toBe('lucide:AlarmClock')
+  await user.click(screen.getByRole('button', { name: 'Copy lucide:AlarmClock and --v2-icon-xxl', exact: true }))
+  expect(await navigator.clipboard.readText()).toBe('lucide:AlarmClock\n--v2-icon-xxl')
   expect(basicsManifest.icons.find(icon => icon.id === 'lucide:AlarmClock').import).toContain('AlarmClock')
   expect(screen.getByRole('heading', { name: 'Color', exact: true })).toBeVisible()
   await user.clear(search)
   await user.type(search, 'lucide:AlarmClock')
-  expect(screen.getByRole('button', { name: 'Copy lucide:AlarmClock', exact: true })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Copy lucide:AlarmClock and --v2-icon-xxl', exact: true })).toBeVisible()
   await user.clear(search)
   await user.type(search, 'no-such-icon-xyz')
   expect(screen.getByText('No icons found. Try another name.')).toBeVisible()
   await user.keyboard('{Escape}')
-  expect(screen.getByRole('button', { name: 'Copy lucide:Search', exact: true })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Copy lucide:Search and --v2-icon-xxl', exact: true })).toBeVisible()
 })
