@@ -1,0 +1,34 @@
+.ds-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  min-height: var(--v2-control-height);
+  align-items: center;
+  justify-content: center;
+  gap: var(--v2-space-2);
+  padding: 0 var(--v2-space-4);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-ink);
+  font: 600 var(--v2-text-body) / 1 var(--v2-font);
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease), background-color var(--v2-duration-fast) var(--v2-ease);
+}
+.ds-button--primary { background: var(--v2-action, var(--v2-accent)); }
+.ds-button--danger { border-color: var(--v2-danger); background: var(--v2-danger); color: var(--v2-on-danger, var(--v2-surface)); }
+.ds-button--quiet { border-color: transparent; background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+.ds-button--icon { width: var(--v2-control-height); padding: 0; }
+.ds-button[data-size='compact'] { min-height: var(--v2-control-height-compact); }
+.ds-button--icon[data-size='compact'] { width: var(--v2-control-height-compact); }
+.ds-button:not(:disabled):not([aria-disabled='true']):hover { box-shadow: var(--v2-shadow-interactive); transform: translate(-4px, -4px); }
+.ds-button:not(:disabled):not([aria-disabled='true']):active { box-shadow: none; transform: translate(0); }
+.ds-button:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: 0 0 0 2px var(--v2-ink); }
+.ds-button:disabled, .ds-button[aria-disabled='true'] { opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; }
+.ds-button__spinner { animation: ds-button-spin 1s linear infinite; }
+@keyframes ds-button-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ds-button { transition-property: background-color, color, border-color; }
+  .ds-button:not(:disabled):not([aria-disabled='true']):is(:hover, :active) { box-shadow: none; transform: none; }
+  .ds-button__spinner { animation: none; }
+}

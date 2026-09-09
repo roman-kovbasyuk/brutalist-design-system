@@ -6,6 +6,7 @@ import { SelectMenu } from '../molecules/SelectMenu.jsx'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ArrowUp, Check, Clock, Globe, Monitor, Moon, Paperclip, Square, Sun, Video, X } from 'lucide-react'
 import { SpecimenSection } from './SpecimenSection.jsx'
+import { chartBlockCatalog } from './ChartBlocks.jsx'
 import '../../../styles/ui-blocks.css'
 
 
@@ -50,11 +51,10 @@ export function PromptInputBlock() {
     timer.current = setTimeout(() => { setBusy(false); setStatus('Prompt prepared. Demo complete; no AI request was sent.') }, 1800)
   }
   return <form className="v2-block v2-prompt-block" aria-label="Prompt composer" onSubmit={send}>
-    <div className="v2-block-intro"><h4>What are we creating?</h4><p>Give your next campaign a starting point.</p></div>
     <div className="v2-block-composer" data-dragging={dragging} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false) }} onDrop={(event) => { event.preventDefault(); setDragging(false); attach(event.dataTransfer.files) }}>
       {files.length > 0 && <ul className="v2-block-attachments" aria-label="Prompt attachments">{files.map(({file, id: fileId}) => <li key={fileId}><Paperclip size={16} aria-hidden="true" /><span>{file.name}</span><small>{Math.max(1, Math.round(file.size / 1024))} KB</small><button type="button" className="v2-block-icon" aria-label={`Remove ${file.name}`} onClick={() => setFiles((current) => current.filter((item) => item.id !== fileId))}><X size={16} aria-hidden="true" /></button></li>)}</ul>}
       <label className="v2-block-sr" htmlFor={id}>Campaign prompt</label>
-      <textarea id={id} ref={textarea} value={message} placeholder="Describe your campaign, or type / for a command…" aria-describedby={`${id}-hint`} onChange={(event) => { setMessage(event.target.value); setDismissed(false); setActiveCommand(0) }} onKeyDown={(event) => {
+      <textarea id={id} ref={textarea} value={message} placeholder="Describe your campaign, or type / for a command…" onChange={(event) => { setMessage(event.target.value); setDismissed(false); setActiveCommand(0) }} onKeyDown={(event) => {
         if (matches.length && ['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); setActiveCommand((current) => (current + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length) }
         if (event.key === 'Escape') setDismissed(true)
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (matches.length) choose(matches[activeCommand]); else send() }
@@ -68,7 +68,6 @@ export function PromptInputBlock() {
         <button type="submit" className="v2-button v2-button--primary v2-block-send" disabled={!busy && !message.trim()} aria-label={busy ? 'Stop generation' : 'Send prompt'}>{busy ? <Square size={20} aria-hidden="true" /> : <ArrowUp size={20} aria-hidden="true" />}</button>
       </div>
     </div>
-    <p id={`${id}-hint`} className="v2-block-hint">Enter to send · Shift + Enter for a new line · Drop files up to 25 MB.</p>
     <p className="v2-block-status" role="status">{status}</p>
   </form>
 }
@@ -127,23 +126,33 @@ export function SettingsBlock() {
 }
 
 export const uiBlockCatalog = [
-  { id: 'prompt-input', name: 'Prompt input', group: 'AI', render: () => <PromptInputBlock /> },
-  { id: 'scheduling', name: 'Scheduling', group: 'Scheduling', render: () => <SchedulingBlock /> },
-  { id: 'settings-form', name: 'Settings form', group: 'Settings', render: () => <SettingsBlock /> },
+  { id: 'prompt-input', name: 'Prompt input', component: 'PromptInputBlock', group: 'AI', render: () => <PromptInputBlock /> },
+  { id: 'scheduling', name: 'Scheduling', component: 'SchedulingBlock', group: 'Scheduling', render: () => <SchedulingBlock /> },
+  { id: 'settings-form', name: 'Settings form', component: 'SettingsBlock', group: 'Settings', render: () => <SettingsBlock /> },
+  ...chartBlockCatalog,
 ]
 
 export function UIBlocks() {
   const groups = [...new Set(uiBlockCatalog.map(block => block.group))].sort((a, b) => a.localeCompare(b))
+  useEffect(() => {
+    // This catalog mounts after the route's lazy import; restore its deep link.
+    const frame = requestAnimationFrame(() => {
+      const id = window.location.hash.slice(1)
+      if (id.startsWith('ds-')) document.getElementById(id)?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [])
   return <SpecimenSection index={10} title="UI blocks" className="v2-section--blocks">
     <div className="v2-ui-block-groups">
-      {groups.map(group => <section className="v2-ui-block-group" key={group} aria-labelledby={`ui-block-group-${group.toLowerCase()}`}>
+      {groups.map(group => <section className="v2-ui-block-group" data-chart-group={chartBlockCatalog.some(block => block.group === group) || undefined} key={group} aria-labelledby={`ui-block-group-${group.toLowerCase().replaceAll(' ', '-')}`}>
         <div className="v2-ui-block-group__panel">
-          <h3 id={`ui-block-group-${group.toLowerCase()}`}>{group}</h3>
+          <h3 id={`ui-block-group-${group.toLowerCase().replaceAll(' ', '-')}`}>{group}</h3>
           <div className="v2-ui-block-grid">
-            {uiBlockCatalog.filter(block => block.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(block => <article className="v2-ui-block-cell" id={`ds-${block.id}`} key={block.id}>
-              <TokenCopyTarget copyValue={block.name} label={`${block.name} UI block`} inline><strong>{block.name}</strong></TokenCopyTarget>
-              <div className="v2-ui-block-cell__preview">{block.render()}</div>
-            </article>)}
+            {uiBlockCatalog.filter(block => block.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(block => <TokenCopyTarget className="v2-ui-block-cell" id={`ds-${block.id}`} key={block.id}
+              copyValue={block.component} label={`${block.name} UI block`}
+              preview={<div className="v2-ui-block-cell__preview">{block.render()}</div>}>
+              <strong>{block.name}</strong>
+            </TokenCopyTarget>)}
           </div>
         </div>
       </section>)}

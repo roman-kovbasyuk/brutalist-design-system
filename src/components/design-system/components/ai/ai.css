@@ -1,0 +1,23 @@
+.ds-ai-task-status, .ds-ai-result {
+  box-sizing: border-box;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-ink);
+  font-family: var(--v2-font);
+}
+.ds-ai-task-status { display: grid; gap: var(--v2-space-3); padding: var(--v2-space-3); }
+.ds-ai-task-status__summary { display: flex; align-items: center; gap: var(--v2-space-2); font-weight: 700; }
+.ds-ai-task-status__summary small { margin-inline-start: auto; color: var(--v2-text-secondary); font-size: var(--v2-text-meta); }
+.ds-ai-task-status[data-state='running'] { border-color: var(--v2-accent); }
+.ds-ai-task-status[data-state='succeeded'] { border-color: var(--v2-success); }
+.ds-ai-task-status[data-state='failed'] { border-color: var(--v2-danger); background: color-mix(in srgb, var(--v2-danger) 8%, var(--v2-surface)); }
+.ds-ai-result { display: flex; align-items: center; gap: var(--v2-space-3); padding: var(--v2-space-4); box-shadow: var(--v2-shadow-small); }
+.ds-ai-result__mark { display: grid; flex: 0 0 auto; inline-size: 2rem; block-size: 2rem; place-items: center; border: 1px solid var(--v2-border); border-radius: 50%; background: var(--v2-accent); }
+.ds-ai-result__content { display: grid; gap: var(--v2-space-1); min-inline-size: 0; }
+.ds-ai-result__content h3, .ds-ai-result__content div { margin: 0; }
+.ds-ai-result__action { min-block-size: var(--v2-control-height-compact); margin-inline-start: auto; padding: 0 var(--v2-space-3); border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-action); color: var(--v2-on-action); font: 700 var(--v2-text-small) / 1 var(--v2-font); cursor: pointer; }
+.ds-ai-result__action:hover { box-shadow: var(--v2-shadow-small); transform: translate(-2px, -2px); }
+.ds-ai-result__action:focus-visible { outline: 3px solid var(--v2-accent); outline-offset: 2px; }
+@media (max-width: 32rem) { .ds-ai-result { align-items: flex-start; flex-wrap: wrap; } .ds-ai-result__action { margin-inline-start: 2.75rem; } }
+@media (prefers-reduced-motion: reduce) { .ds-ai-result__action:hover { box-shadow: none; transform: none; } }

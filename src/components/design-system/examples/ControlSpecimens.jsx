@@ -11,41 +11,20 @@ import {
   Play,
   Trash2,
 } from 'lucide-react'
-import { AdvancedControlSpecimens } from './AdvancedControlSpecimens.jsx'
+import { AdvancedControlSpecimens, InputAnatomyFields, PickerFields, DropdownFields } from './AdvancedControlSpecimens.jsx'
 import { AppButton } from '../atoms/AppButton.jsx'
 import { WorkflowSteps } from '../molecules/WorkflowSteps.jsx'
 import { SpecimenCard } from './SpecimenCard.jsx'
+import { SpecimenGrid } from './SpecimenGrid.jsx'
 import { SpecimenSection } from './SpecimenSection.jsx'
-import { PillTabs } from '../molecules/PillTabs.jsx'
 import { SelectMenu } from '../molecules/SelectMenu.jsx'
+import { TokenCopyTarget } from '../atoms/TokenCopyTarget.jsx'
 
-function ButtonCell({ copyValue, copyLabel = copyValue, className = '', children }) {
-  const [copied, setCopied] = useState(false)
-
-  async function copyCellValue() {
-    try {
-      await navigator.clipboard.writeText(copyValue)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1800)
-    } catch {
-      setCopied(false)
-    }
-  }
-
+function ButtonCell({ copyValue, className = '', children }) {
   return (
-    <div className={`v2-button-cell ${className}`.trim()}>
+    <div className={`v2-button-cell ${className}`.trim()} data-component-reference={copyValue}>
       {children}
-      <button
-        className="v2-button-cell__copy"
-        type="button"
-        aria-label={`Copy ${copyLabel}`}
-        onClick={copyCellValue}
-      >
-        <Copy aria-hidden="true" size={14} />
-      </button>
-      <span className="v2-button-cell__feedback" role="status" aria-live="polite">
-        {copied ? 'Copied' : ''}
-      </span>
+      <TokenCopyTarget className="ds-component-copy" copyValue={copyValue} label={copyValue}><Copy aria-hidden="true" size={14} /></TokenCopyTarget>
     </div>
   )
 }
@@ -81,42 +60,42 @@ export function ControlSpecimens() {
         description="Direct labels, unmistakable hierarchy, and physical interaction feedback."
       >
         <div className="v2-button-grid">
-          <ButtonCell copyValue="Create campaign">
+          <ButtonCell copyValue={'AppButton variant="primary"'}>
             <AppButton variant="primary">
               Create campaign
               <ArrowRight aria-hidden="true" size={18} />
             </AppButton>
           </ButtonCell>
-          <ButtonCell copyValue="Review changes">
+          <ButtonCell copyValue={'AppButton variant="secondary"'}>
             <AppButton>Review changes</AppButton>
           </ButtonCell>
-          <ButtonCell copyValue="Delete draft">
+          <ButtonCell copyValue={'AppButton variant="danger"'}>
             <AppButton variant="danger">
               <Trash2 aria-hidden="true" size={18} />
               Delete draft
             </AppButton>
           </ButtonCell>
-          <ButtonCell copyValue="More actions">
+          <ButtonCell copyValue={'AppButton variant="secondary" iconOnly'}>
             <AppButton iconOnly aria-label="More actions">
               <MoreHorizontal aria-hidden="true" size={20} />
             </AppButton>
           </ButtonCell>
-          <ButtonCell copyValue="Unavailable">
+          <ButtonCell copyValue={'AppButton variant="secondary" disabled'}>
             <AppButton disabled>Unavailable</AppButton>
           </ButtonCell>
-          <ButtonCell copyValue={isLoading ? 'Generating…' : 'Generate preview'}>
+          <ButtonCell copyValue={`AppButton variant="primary"${isLoading ? ' busy' : ''}`}>
             <AppButton variant="primary" busy={isLoading}>
               {isLoading ? 'Generating…' : <><Play aria-hidden="true" size={18} />Generate preview</>}
             </AppButton>
           </ButtonCell>
-          <ButtonCell copyValue={isLoading ? 'Show idle state' : 'Show loading state'}>
-            <button
-              className="v2-button v2-button--quiet"
+          <ButtonCell copyValue={'AppButton variant="quiet"'}>
+            <AppButton
+              variant="quiet"
               type="button"
               onClick={() => setIsLoading((current) => !current)}
             >
               {isLoading ? 'Show idle state' : 'Show loading state'}
-            </button>
+            </AppButton>
           </ButtonCell>
         </div>
       </SpecimenCard>
@@ -125,8 +104,8 @@ export function ControlSpecimens() {
         title="Fields"
         description="Labels stay visible while helper and error text share a predictable position."
       >
-        <form className="v2-control-form" onSubmit={handleValidation} noValidate>
-          <div className="v2-field">
+        <SpecimenGrid as="form" onSubmit={handleValidation} noValidate append={<><InputAnatomyFields /><PickerFields /></>}>
+          <div className="v2-field" data-component-reference={`ControlSpecimens — Text input (.v2-field)${validationError ? ' aria-invalid="true"' : ''}`}>
             <label htmlFor="v2-objective">Campaign objective</label>
             <input
               id="v2-objective"
@@ -147,18 +126,7 @@ export function ControlSpecimens() {
             )}
           </div>
 
-          <div className="v2-field">
-            <label htmlFor="v2-channel">Primary channel</label>
-            <SelectMenu
-              label="Primary channel"
-              value={primaryChannel}
-              options={['Paid social', 'Email', 'Display']}
-              onChange={setPrimaryChannel}
-              triggerId="v2-channel"
-            />
-          </div>
-
-          <div className="v2-field v2-field--wide">
+          <div className="v2-field v2-field--wide" data-component-reference="ControlSpecimens — Textarea (.v2-field)">
             <label htmlFor="v2-notes">Creative notes</label>
             <textarea
               id="v2-notes"
@@ -167,7 +135,7 @@ export function ControlSpecimens() {
             />
           </div>
 
-          <fieldset className="v2-choice-group">
+          <fieldset className="v2-choice-group" data-component-reference="ControlSpecimens — Radio group (.v2-choice-group)">
             <legend>Export format</legend>
             <label>
               <input
@@ -191,8 +159,7 @@ export function ControlSpecimens() {
             </label>
           </fieldset>
 
-          <div className="v2-choice-stack">
-            <label className="v2-check-control">
+            <label className="v2-check-control" data-component-reference={`ControlSpecimens — Checkbox (.v2-check-control) checked={${includeAnimated}}`}>
               <input
                 type="checkbox"
                 checked={includeAnimated}
@@ -200,7 +167,7 @@ export function ControlSpecimens() {
               />
               <span>Include animated formats</span>
             </label>
-            <div className="v2-switch-row">
+            <div className="v2-switch-row" data-component-reference={`ControlSpecimens — Switch (.v2-switch) aria-checked="${isAutoSaveOn}"`}>
               <span id="v2-autosave-label">Autosave changes</span>
               <button
                 className="v2-switch"
@@ -213,41 +180,44 @@ export function ControlSpecimens() {
                 <span aria-hidden="true" />
               </button>
             </div>
-          </div>
 
-          <label className="v2-file-drop">
+          <label className="v2-file-drop" data-component-reference="ControlSpecimens — File upload (.v2-file-drop)">
             <FileUp aria-hidden="true" size={24} />
             <span><strong>Upload reference file</strong><small>PNG, JPG, or MP4 up to 25 MB</small></span>
             <input type="file" accept="image/png,image/jpeg,video/mp4" />
           </label>
 
-          <div className="v2-disabled-fields" aria-label="Disabled control examples">
-            <div className="v2-field">
+            <div className="v2-field" data-component-reference="ControlSpecimens — Text input (.v2-field) disabled readOnly">
               <label htmlFor="v2-owner">Campaign owner</label>
               <input id="v2-owner" value="Studio team" disabled readOnly />
             </div>
-            <label className="v2-check-control">
+            <label className="v2-check-control" data-component-reference="ControlSpecimens — Checkbox (.v2-check-control) disabled">
               <input type="checkbox" disabled />
               <span>Publish immediately</span>
             </label>
-          </div>
 
-          <div className="v2-form-actions">
-            <button className="v2-button v2-button--primary" type="submit">Validate brief</button>
+          <div className="v2-form-actions" data-component-reference={'AppButton variant="primary" type="submit"'}>
+            <AppButton variant="primary" type="submit">Validate brief</AppButton>
           </div>
-        </form>
+        </SpecimenGrid>
       </SpecimenCard>
 
+      <SpecimenCard title="Dropdowns">
+        <SpecimenGrid append={<DropdownFields>
+          <div className="v2-field" data-component-reference="SelectMenu">
+            <label htmlFor="v2-channel">Primary channel</label>
+            <SelectMenu label="Primary channel" value={primaryChannel} options={['Paid social', 'Email', 'Display']} onChange={setPrimaryChannel} triggerId="v2-channel" />
+          </div>
+        </DropdownFields>} />
+      </SpecimenCard>
       <AdvancedControlSpecimens />
     </SpecimenSection>
   )
 }
 
 export function NavigationSpecimens() {
-  const [selectedTab, setSelectedTab] = useState('preview')
   const [density, setDensity] = useState('comfortable')
   const [currentPage, setCurrentPage] = useState(2)
-  const tabs = ['preview', 'code']
 
   return (
     <SpecimenSection
@@ -257,7 +227,7 @@ export function NavigationSpecimens() {
     >
       <div className="v2-navigation-grid">
         <SpecimenCard title="Sidebar row" description="Current location is explicit without relying on color alone.">
-          <nav className="v2-sidebar-demo" aria-label="Sidebar specimen">
+          <nav className="v2-sidebar-demo" aria-label="Sidebar specimen" data-component-reference="NavigationSpecimens — Sidebar row (.v2-sidebar-demo)">
             <button type="button"><Circle aria-hidden="true" size={18} />Overview</button>
             <button type="button" aria-current="page"><Circle aria-hidden="true" size={18} />Campaigns<span>12</span></button>
             <button type="button"><Circle aria-hidden="true" size={18} />Assets<span>48</span></button>
@@ -265,54 +235,29 @@ export function NavigationSpecimens() {
         </SpecimenCard>
 
         <SpecimenCard title="Workflow steps" description="Connected stages show complete, current, and upcoming work.">
-          <WorkflowSteps items={[
+          <div data-component-reference="WorkflowSteps"><WorkflowSteps items={[
             { label: 'Brief', context: 'Complete', complete: true },
             { label: 'Copy', context: 'In progress', current: true },
             { label: 'Assets', context: 'Upcoming' },
-          ]} />
+          ]} /></div>
         </SpecimenCard>
       </div>
 
       <SpecimenCard title="Tabs and view controls" description="Pills mark tabs; segmented controls remain structural and compact.">
-        <div className="v2-navigation-controls">
-          <div>
-            <span className="v2-demo-label">Content view</span>
-            <PillTabs tabs={tabs.map((tab) => tab[0].toUpperCase() + tab.slice(1))} value={selectedTab[0].toUpperCase() + selectedTab.slice(1)} onChange={(tab) => setSelectedTab(tab.toLowerCase())} ariaLabel="Content view" idPrefix="v2" />
-            <div
-              className="v2-tab-panel"
-              id="v2-preview-panel"
-              role="tabpanel"
-              aria-labelledby="v2-preview-tab"
-              tabIndex="0"
-              hidden={selectedTab !== 'preview'}
-            >
-              A live rendering of the selected campaign asset.
-            </div>
-            <div
-              className="v2-tab-panel"
-              id="v2-code-panel"
-              role="tabpanel"
-              aria-labelledby="v2-code-tab"
-              tabIndex="0"
-              hidden={selectedTab !== 'code'}
-            >
-              Structured output for production handoff.
-            </div>
-          </div>
-
-          <div>
+        <SpecimenGrid>
+          <div data-component-reference="NavigationSpecimens — Segmented control (.v2-segmented-control)">
             <span className="v2-demo-label">Layout density</span>
             <div className="v2-segmented-control" role="group" aria-label="Layout density">
               <button type="button" aria-pressed={density === 'comfortable'} onClick={() => setDensity('comfortable')}>Comfortable</button>
               <button type="button" aria-pressed={density === 'compact'} onClick={() => setDensity('compact')}>Compact</button>
             </div>
           </div>
-        </div>
+        </SpecimenGrid>
       </SpecimenCard>
 
       <SpecimenCard title="Wayfinding" description="Breadcrumbs carry hierarchy while pagination keeps result movement local.">
-        <div className="v2-wayfinding-grid">
-          <nav className="v2-breadcrumbs" aria-label="Breadcrumb">
+        <SpecimenGrid>
+          <nav className="v2-breadcrumbs" aria-label="Breadcrumb" data-component-reference="NavigationSpecimens — Breadcrumbs (.v2-breadcrumbs)">
             <ol>
               <li><a href="#workspace" onClick={(event) => event.preventDefault()}>Workspace</a><ChevronRight aria-hidden="true" size={16} /></li>
               <li><a href="#campaigns" onClick={(event) => event.preventDefault()}>Campaigns</a><ChevronRight aria-hidden="true" size={16} /></li>
@@ -320,7 +265,7 @@ export function NavigationSpecimens() {
             </ol>
           </nav>
 
-          <nav className="v2-pagination" aria-label="Pagination">
+          <nav className="v2-pagination" aria-label="Pagination" data-component-reference="NavigationSpecimens — Pagination (.v2-pagination)">
             <button
               type="button"
               aria-label="Previous page"
@@ -349,7 +294,7 @@ export function NavigationSpecimens() {
               <ArrowRight aria-hidden="true" size={18} />
             </button>
           </nav>
-        </div>
+        </SpecimenGrid>
       </SpecimenCard>
     </SpecimenSection>
   )

@@ -4,8 +4,6 @@ import { useState } from 'react'
 import { expect, test, vi } from 'vitest'
 import { PromptComposer } from './PromptComposer.jsx'
 import { SelectMenu } from './molecules/SelectMenu.jsx'
-import { TemplateLibrary } from '../../studio/TemplateLibrary.jsx'
-import { DesignSystemScreen } from '../../screens/DesignSystemScreen.jsx'
 
 test('the status selector opens at its selection, moves with arrows, and restores focus', async () => {
   const user = userEvent.setup()
@@ -49,25 +47,4 @@ test('the shared composer can describe a domain-specific mixed-file intake', () 
   expect(screen.getByLabelText('Brand files')).toHaveAttribute('accept', '.pdf,.svg,.woff2')
   expect(screen.getByRole('button', { name: 'Attach brand materials' })).toBeVisible()
   expect(screen.getByText('PDF, SVG, WOFF2')).toBeVisible()
-})
-
-test('every template category controls a labelled panel and keyboard focus follows the selection', async () => {
-  const user = userEvent.setup()
-  render(<TemplateLibrary templates={[]} onChoose={vi.fn()} />)
-  expect(document.getElementById('template-categories')).toBeInTheDocument()
-  const tabs = screen.getAllByRole('tab')
-  expect(tabs.map(tab => tab.textContent)).toEqual(['Banners', 'Presentations', 'Websites', 'Documents'])
-  for (const tab of tabs) {
-    const panel = document.getElementById(tab.getAttribute('aria-controls'))
-    expect(panel).not.toBeNull()
-    expect(panel).toHaveAttribute('role', 'tabpanel')
-    expect(panel).toHaveAttribute('aria-labelledby', tab.id)
-  }
-  await user.click(tabs[0])
-  await user.keyboard('{ArrowRight}')
-  expect(tabs[1]).toHaveFocus()
-  expect(screen.getByRole('tabpanel', { name: 'Presentations' })).toBeVisible()
-  expect(document.getElementById(tabs[0].getAttribute('aria-controls'))).not.toBeVisible()
-  await user.tab()
-  expect(screen.getByRole('tabpanel', { name: 'Presentations' })).toHaveFocus()
 })

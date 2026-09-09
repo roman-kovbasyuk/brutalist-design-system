@@ -1,12 +1,15 @@
-import { ArrowLeft } from 'lucide-react'
 import { DesignSystemScreen } from './DesignSystemScreen.jsx'
+import { DesignSystemWorkbench } from '../workbench/DesignSystemWorkbench'
 import '../styles/application-design-system.css'
+import '../components/design-system/styles.css'
 
 export default function ApplicationDesignSystemPage() {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('mode') === 'workbench' && params.get('section') !== 'basics') return <DesignSystemWorkbench />
   return <div className="application-design-system">
     <header className="application-design-system__header">
-      <a href="/mvp"><ArrowLeft size={16} aria-hidden="true" />Back to Banner Studio</a>
-      <span>Application UI reference</span>
+      <span>Reference library</span>
+      <a href="/design-system?mode=workbench">Open v2 workbench</a>
     </header>
     <main><DesignSystemScreen overviewOnRoot /></main>
   </div>

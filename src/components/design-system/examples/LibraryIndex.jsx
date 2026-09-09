@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks, LayoutTemplate, Search, Shapes, SlidersHorizontal } from 'lucide-react'
 import { libraryCatalog } from './library-catalog.js'
 import { previewId } from './PreviewMetadata.jsx'
+import { Switch } from '../atoms/Switch.jsx'
+import { useCopyMode } from '../atoms/CopyMode.jsx'
 import './library-index.css'
 
 const categories = [
@@ -19,6 +21,7 @@ function formatDisplayName(name) {
 }
 
 export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hideComponentTree = false, navigationItems = undefined, onQueryChange = undefined }) {
+  const { enabled: copyEnabled, setEnabled: setCopyEnabled } = useCopyMode()
   const searchRef = useRef(null)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -121,5 +124,9 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
         </nav>
       </>}
     </div>
+    {setCopyEnabled && <div className="ds-copy-mode">
+      <span>Click to copy</span>
+      <Switch label="Click to copy" checked={copyEnabled} onChange={setCopyEnabled} />
+    </div>}
   </aside>
 }

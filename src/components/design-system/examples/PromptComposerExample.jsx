@@ -1,7 +1,43 @@
 import { useState } from 'react'
 import { PromptComposer } from '../organisms/PromptComposer.jsx'
-import { readBriefFile, MAX_BRIEF_CHARACTERS } from '../../../studio/briefInput.js'
 import { SpecimenSection } from './SpecimenSection.jsx'
+
+const MAX_BRIEF_FILE_BYTES = 5 * 1024 * 1024
+const MAX_BRIEF_CHARACTERS = 20000
+
+const ACCEPTED_BRIEF_TYPES = new Map([
+  ['txt', 'text/plain'],
+  ['md', 'text/markdown'],
+  ['markdown', 'text/markdown'],
+  ['pdf', 'application/pdf'],
+  ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+])
+
+function readBriefFile(file) {
+  const extension = file.name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()
+  const extensionMimeType = ACCEPTED_BRIEF_TYPES.get(extension)
+  if (!extensionMimeType) {
+    return Promise.reject(new Error('Use a TXT, Markdown, PDF, or DOCX brief.'))
+  }
+  if (!file.size || file.size > MAX_BRIEF_FILE_BYTES) {
+    return Promise.reject(new Error('Choose a non-empty brief file up to 5 MB.'))
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () =>
+      reject(new Error('The file could not be read. Try attaching it again.'))
+    reader.onload = () =>
+      resolve({
+        name: file.name,
+        mimeType:
+          !file.type || file.type.toLowerCase() === 'application/octet-stream'
+            ? extensionMimeType
+            : file.type,
+        data: String(reader.result).split(',')[1],
+      })
+    reader.readAsDataURL(file)
+  })
+}
 
 export function PromptComposerExample() {
   const [value, setValue] = useState('')

@@ -1,0 +1,7 @@
+.ds-settings-form { display: grid; gap: var(--v2-space-4); max-width: 640px; padding: var(--v2-space-6); border: 1px solid var(--v2-border); background: var(--v2-surface); }
+.ds-settings-form__field { display: grid; gap: var(--v2-space-2); }
+.ds-settings-form input:not([type='checkbox']), .ds-settings-form select { min-height: var(--v2-control-height); border: 1px solid var(--v2-border); border-radius: var(--v2-radius); padding: 0 var(--v2-space-3); font: inherit; }
+.ds-settings-form__check { display: flex; align-items: center; gap: var(--v2-space-2); }
+.ds-settings-form footer { display: flex; gap: var(--v2-space-2); justify-content: flex-end; }
+.ds-settings-form button { min-height: var(--v2-control-height); border: 1px solid var(--v2-border); padding: 0 var(--v2-space-3); background: var(--v2-surface); font: inherit; cursor: pointer; }
+.ds-settings-form button[type='submit'] { background: var(--v2-action); }

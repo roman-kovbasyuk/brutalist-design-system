@@ -14,3 +14,9 @@
 - Step-specific functional changes will be defined by the user later. This structural decision does not authorize inventing functionality or changing review permissions, approval requirements, or delivery behavior.
 - The live campaign page uses `src/studio/campaign/CampaignPage.jsx`, six lazy module hosts, and an actor/campaign-scoped runtime. See `src/studio/campaign/README.md` for contracts and independent test entry points. Legacy Stage exports are compatibility adapters, not the live workflow controller.
 - Never key a module by campaign revision or replace the module tree during a mutation refresh. Preserve local drafts and send their captured input key through named commands. Keep backend authorization and artifact integrity authoritative.
+
+<!-- task-observatory:start -->
+## Task Observatory
+
+Before acting on project requests, read and follow [observatory/AGENT-INSTRUCTIONS.md](observatory/AGENT-INSTRUCTIONS.md). Use its CLI to pull existing tasks, record new requests, report progress, and verify completion. Keep credentials and sensitive application data out of task records.
+<!-- task-observatory:end -->

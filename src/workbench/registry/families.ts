@@ -1,0 +1,26 @@
+import type { Family } from './types'
+
+export const families: Family[] = [
+  { id: 'color', section: 'basics', title: 'Color', layout: 'swatches', groups: ['Palette'] },
+  { id: 'typography', section: 'basics', title: 'Typography', layout: 'rows', groups: ['Text roles'] },
+  { id: 'spacing', section: 'basics', title: 'Spacing', layout: 'rows', groups: ['Scale'] },
+  { id: 'elevation', section: 'basics', title: 'Elevation', layout: 'rows', groups: ['Levels'] },
+  { id: 'motion', section: 'basics', title: 'Motion', layout: 'rows', groups: ['Feedback'] },
+  { id: 'layout', section: 'basics', title: 'Layout', layout: 'grid', groups: ['Arrangement'] },
+  { id: 'icons', section: 'basics', title: 'Icons', layout: 'grid', groups: ['Icon set'] },
+  { id: 'buttons', section: 'components', title: 'Buttons', layout: 'grid', groups: ['Emphasis', 'Sizes', 'With icons', 'States'] },
+  { id: 'inputs', section: 'components', title: 'Inputs', layout: 'grid', groups: ['Text inputs', 'Choices'] },
+  { id: 'selection', section: 'components', title: 'Selection', layout: 'grid', groups: ['Search and select'] },
+  { id: 'navigation', section: 'components', title: 'Navigation', layout: 'grid', groups: ['Wayfinding', 'Views and progress'] },
+  { id: 'overlays', section: 'components', title: 'Overlays', layout: 'grid', groups: ['Dialogs and drawers', 'Contextual help'] },
+  { id: 'feedback', section: 'components', title: 'Feedback', layout: 'grid', groups: ['Status', 'Loading and recovery'] },
+  { id: 'data', section: 'components', title: 'Data', layout: 'grid', groups: ['Tables and filters'] },
+  { id: 'files', section: 'components', title: 'Files', layout: 'grid', groups: ['Upload and file lists'] },
+  { id: 'ai', section: 'components', title: 'AI', layout: 'grid', groups: ['Task state and results'] },
+  { id: 'content', section: 'components', title: 'Content', layout: 'grid', groups: ['Cards and facts', 'Editing and choice'] },
+  { id: 'settings', section: 'ui-blocks', title: 'Settings', layout: 'blocks', groups: ['Settings form'] },
+  { id: 'app-layout', section: 'ui-blocks', title: 'App layout', layout: 'blocks', groups: ['Application frame'] },
+  { id: 'item-browser', section: 'ui-blocks', title: 'Item browser', layout: 'blocks', groups: ['Browse and select'] },
+  { id: 'item-detail', section: 'ui-blocks', title: 'Item detail', layout: 'blocks', groups: ['Detail and editing'] },
+  { id: 'ai-workspace', section: 'ui-blocks', title: 'AI workspace', layout: 'blocks', groups: ['Prompt and result'] },
+]

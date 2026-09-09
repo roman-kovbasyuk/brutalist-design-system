@@ -1,4 +1,5 @@
 import { SpecimenCard } from './SpecimenCard.jsx'
+import { SpecimenGrid } from './SpecimenGrid.jsx'
 import { useEffect, useRef, useState } from 'react'
 import {
   Bell,
@@ -91,8 +92,8 @@ export function MotionSpecimens() {
           title="Menu and supporting information"
           description="Labels and actions remain visible without pointer hover."
         >
-          <div className="v2-overlay-grid">
-            <div className="v2-overlay-demo">
+          <SpecimenGrid>
+            <div className="v2-overlay-demo" data-component-reference="MotionSpecimens — Action dropdown (.v2-dropdown)">
               <span className="v2-demo-label">Dropdown</span>
               <div className="v2-dropdown">
                 <button
@@ -121,7 +122,7 @@ export function MotionSpecimens() {
               </div>
             </div>
 
-            <div className="v2-overlay-demo">
+            <div className="v2-overlay-demo" data-component-reference="MotionSpecimens — Tooltip (.v2-tooltip)">
               <span className="v2-demo-label">Tooltip</span>
               <button
                 className="v2-button v2-button--secondary"
@@ -136,7 +137,7 @@ export function MotionSpecimens() {
               </span>
             </div>
 
-            <div className="v2-overlay-demo">
+            <div className="v2-overlay-demo" data-component-reference="MotionSpecimens — Toast (.v2-overlay-toast)">
               <span className="v2-demo-label">Toast</span>
               <button
                 className="v2-button v2-button--primary"
@@ -160,11 +161,12 @@ export function MotionSpecimens() {
                 </div>
               )}
             </div>
-          </div>
+          </SpecimenGrid>
         </SpecimenCard>
 
         <SpecimenCard
           title="Inline confirmation"
+          copyValue="MotionSpecimens — Inline confirmation (.v2-confirmation-panel)"
           description="A lightweight destructive choice stays beside its initiating action."
         >
           {isInlineConfirmationOpen ? (
@@ -203,6 +205,7 @@ export function MotionSpecimens() {
 
         <SpecimenCard
           title="Modal confirmation"
+          copyValue="MotionSpecimens — Modal confirmation (.v2-modal)"
           description="The initiating control regains focus when the modal closes."
         >
           <button
@@ -263,7 +266,7 @@ export function MotionSpecimens() {
           description="The same 150ms feedback contract serves actions and interactive cards."
         >
           <div className="v2-motion-lab">
-            <div className="v2-motion-sample">
+            <div className="v2-motion-sample" data-component-reference={'AppButton variant="primary"'}>
               <span className="v2-demo-label">Button lift · 150ms</span>
               <button className="v2-button v2-button--primary" type="button">
                 Preview button lift
@@ -271,7 +274,7 @@ export function MotionSpecimens() {
               <small>Hover lifts; keyboard focus adds an outline; press returns to the surface.</small>
             </div>
 
-            <div className="v2-motion-sample">
+            <div className="v2-motion-sample" data-component-reference="MotionSpecimens — Interactive card (.v2-motion-card)">
               <span className="v2-demo-label">Card shadow · 150ms</span>
               <button className="v2-motion-card" type="button" aria-label="Preview card shadow">
                 <span>Generated asset</span>
@@ -287,14 +290,14 @@ export function MotionSpecimens() {
           title="Disclosure"
           description="Content appears in place without fading essential information."
         >
-          <details className="v2-disclosure">
+          <details className="v2-disclosure" data-component-reference="MotionSpecimens — Disclosure (.v2-disclosure)">
             <summary>
               <ChevronRight className="v2-disclosure__chevron" aria-hidden="true" size={20} />
               Disclosure behavior
             </summary>
             <p>The chevron rotates over 200ms.</p>
           </details>
-          <div className="v2-reduced-motion-note">
+          <div className="v2-reduced-motion-note" data-component-reference="MotionSpecimens — Reduced motion note (.v2-reduced-motion-note)">
             <strong>Reduced motion</strong>
             <p>Spatial movement, shadow transitions, rotation, and smooth scrolling become immediate.</p>
           </div>

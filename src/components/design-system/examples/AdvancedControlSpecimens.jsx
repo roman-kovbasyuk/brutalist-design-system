@@ -13,6 +13,7 @@ import {
   Star,
 } from 'lucide-react'
 import { SpecimenCard } from './SpecimenCard.jsx'
+import { SpecimenGrid, SpecimenGridCells } from './SpecimenGrid.jsx'
 
 const markets = ['Bergen', 'Copenhagen', 'Oslo', 'Stockholm', 'Zurich']
 const channels = ['Paid social', 'Email', 'Display', 'Organic social']
@@ -47,20 +48,104 @@ function DatePicker({ id, label, initialValue }) {
   </div>
 }
 
-export function AdvancedControlSpecimens() {
+export function InputAnatomyFields() {
   const [isTokenVisible, setIsTokenVisible] = useState(false)
+  const [campaignColor, setCampaignColor] = useState('#79d9ff')
+  const [campaignColorText, setCampaignColorText] = useState('#79D9FF')
+  return (
+    <SpecimenGridCells>
+          <Field label="Search campaigns" htmlFor="v2-campaign-search" data-component-reference="InputAnatomyFields — Search input (.v2-input-shell)">
+            <div className="v2-input-shell">
+              <Search aria-hidden="true" size={18} />
+              <input
+                id="v2-campaign-search"
+                type="search"
+                placeholder="Search by name or owner"
+              />
+              <kbd>⌘ K</kbd>
+            </div>
+          </Field>
+
+          <Field
+            label="API token"
+            data-component-reference={`InputAnatomyFields — Password input (.v2-input-shell) type="${isTokenVisible ? 'text' : 'password'}"`}
+            htmlFor="v2-api-token"
+            help="Visibility controls never change the saved value."
+          >
+            <div className="v2-input-shell">
+              <input
+                id="v2-api-token"
+                type={isTokenVisible ? 'text' : 'password'}
+                defaultValue="studio-demo-token"
+              />
+              <button
+                className="v2-inline-action v2-interactive-control"
+                type="button"
+                aria-label={isTokenVisible ? 'Hide API token' : 'Show API token'}
+                onClick={() => setIsTokenVisible((current) => !current)}
+              >
+                {isTokenVisible ? <EyeOff aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}
+              </button>
+            </div>
+          </Field>
+
+          <Field label="Daily budget" htmlFor="v2-daily-budget" data-component-reference="InputAnatomyFields — Currency input (.v2-input-shell)">
+            <div className="v2-input-shell">
+              <span aria-hidden="true">$</span>
+              <input id="v2-daily-budget" type="number" min="0" defaultValue="240" />
+              <span className="v2-input-suffix">USD</span>
+            </div>
+          </Field>
+
+          <Field label="Publish time" htmlFor="v2-publish-time" data-component-reference={'InputAnatomyFields — Time input type="time"'}>
+            <input id="v2-publish-time" type="time" defaultValue="09:30" />
+          </Field>
+
+          <Field label="Campaign color" htmlFor="v2-campaign-color" data-component-reference="InputAnatomyFields — Color input (.v2-color-input)">
+            <div className="v2-color-input v2-color-input--swatch">
+              <input
+                id="v2-campaign-color"
+                aria-label="Campaign color"
+                type="color"
+                value={campaignColor}
+                onChange={(event) => {
+                  setCampaignColor(event.target.value)
+                  setCampaignColorText(event.target.value.toUpperCase())
+                }}
+              />
+              <input
+                className="v2-color-input__hex"
+                aria-label="Campaign color hex"
+                inputMode="text"
+                pattern="#[0-9a-fA-F]{6}"
+                value={campaignColorText}
+                onChange={(event) => {
+                  const next = event.target.value.trim()
+                  setCampaignColorText(next.toUpperCase())
+                  if (/^#[0-9a-fA-F]{6}$/.test(next)) setCampaignColor(next.toLowerCase())
+                }}
+              />
+            </div>
+          </Field>
+
+          <Field label="Read-only identifier" htmlFor="v2-campaign-id" data-component-reference="InputAnatomyFields — Text input readOnly">
+            <input id="v2-campaign-id" value="cmp_oslo_2409" readOnly />
+          </Field>
+    </SpecimenGridCells>
+
+  )
+}
+
+export function PickerFields() {
+  return <SpecimenGridCells><Field label="Campaign start" htmlFor="v2-campaign-start" data-component-reference="PickerFields — DatePicker (.v2-date-picker)"><DatePicker id="v2-campaign-start" label="Campaign start" initialValue="2026-09-14" /></Field></SpecimenGridCells>
+}
+
+export function DropdownFields({ children }) {
   const [marketQuery, setMarketQuery] = useState('')
   const [isMarketOpen, setIsMarketOpen] = useState(false)
   const [activeMarketIndex, setActiveMarketIndex] = useState(-1)
   const [selectedChannels, setSelectedChannels] = useState(['Paid social'])
   const [isChannelOpen, setIsChannelOpen] = useState(false)
-  const [campaignColor, setCampaignColor] = useState('#79d9ff')
-  const [campaignColorText, setCampaignColorText] = useState('#79D9FF')
-  const [variationCount, setVariationCount] = useState(3)
-  const [rating, setRating] = useState(3)
-  const [intensity, setIntensity] = useState(60)
-  const [rangeStart, setRangeStart] = useState(25)
-  const [rangeEnd, setRangeEnd] = useState(55)
   const channelTriggerRef = useRef(null)
 
   const filteredMarkets = markets.filter((market) =>
@@ -108,104 +193,13 @@ export function AdvancedControlSpecimens() {
   }
 
   return (
-    <>
-      <SpecimenCard
-        title="Input anatomy"
-        description="Purpose-built inputs keep labels persistent and actions inside the control boundary."
-      >
-        <div className="v2-control-catalog-grid">
-          <Field label="Search campaigns" htmlFor="v2-campaign-search">
-            <div className="v2-input-shell">
-              <Search aria-hidden="true" size={18} />
-              <input
-                id="v2-campaign-search"
-                type="search"
-                placeholder="Search by name or owner"
-              />
-              <kbd>⌘ K</kbd>
-            </div>
-          </Field>
-
-          <Field
-            label="API token"
-            htmlFor="v2-api-token"
-            help="Visibility controls never change the saved value."
-          >
-            <div className="v2-input-shell">
-              <input
-                id="v2-api-token"
-                type={isTokenVisible ? 'text' : 'password'}
-                defaultValue="studio-demo-token"
-              />
-              <button
-                className="v2-inline-action v2-interactive-control"
-                type="button"
-                aria-label={isTokenVisible ? 'Hide API token' : 'Show API token'}
-                onClick={() => setIsTokenVisible((current) => !current)}
-              >
-                {isTokenVisible ? <EyeOff aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}
-              </button>
-            </div>
-          </Field>
-
-          <Field label="Daily budget" htmlFor="v2-daily-budget">
-            <div className="v2-input-shell">
-              <span aria-hidden="true">$</span>
-              <input id="v2-daily-budget" type="number" min="0" defaultValue="240" />
-              <span className="v2-input-suffix">USD</span>
-            </div>
-          </Field>
-
-          <Field label="Publish time" htmlFor="v2-publish-time">
-            <input id="v2-publish-time" type="time" defaultValue="09:30" />
-          </Field>
-
-          <Field label="Campaign color" htmlFor="v2-campaign-color">
-            <div className="v2-color-input v2-color-input--swatch">
-              <input
-                id="v2-campaign-color"
-                aria-label="Campaign color"
-                type="color"
-                value={campaignColor}
-                onChange={(event) => {
-                  setCampaignColor(event.target.value)
-                  setCampaignColorText(event.target.value.toUpperCase())
-                }}
-              />
-              <input
-                className="v2-color-input__hex"
-                aria-label="Campaign color hex"
-                inputMode="text"
-                pattern="#[0-9a-fA-F]{6}"
-                value={campaignColorText}
-                onChange={(event) => {
-                  const next = event.target.value.trim()
-                  setCampaignColorText(next.toUpperCase())
-                  if (/^#[0-9a-fA-F]{6}$/.test(next)) setCampaignColor(next.toLowerCase())
-                }}
-              />
-            </div>
-          </Field>
-
-          <Field label="Read-only identifier" htmlFor="v2-campaign-id">
-            <input id="v2-campaign-id" value="cmp_oslo_2409" readOnly />
-          </Field>
-        </div>
-      </SpecimenCard>
-
-      <SpecimenCard
-        title="Pickers and selection"
-        description="Native date inputs and keyboard-operable popovers cover simple and filtered choices."
-      >
-        <div className="v2-control-catalog-grid">
-          <div className="v2-date-range">
-            <Field label="Campaign start" htmlFor="v2-campaign-start"><DatePicker id="v2-campaign-start" label="Campaign start" initialValue="2026-09-14" /></Field>
-          </div>
+    <SpecimenGridCells>
+          {children}
 
           <Field
             label="Find a market"
+            data-component-reference="DropdownFields — Autocomplete (.v2-combobox)"
             htmlFor="v2-market"
-            help="Type to filter; use arrows and Enter to select."
           >
             <div className="v2-combobox">
               <div className="v2-input-shell">
@@ -262,7 +256,7 @@ export function AdvancedControlSpecimens() {
             </div>
           </Field>
 
-          <div className="v2-field">
+          <div className="v2-field" data-component-reference="DropdownFields — Multi-select (.v2-menu-select)">
             <span className="v2-control-label">Channels</span>
             <div className="v2-menu-select">
               <button
@@ -329,15 +323,26 @@ export function AdvancedControlSpecimens() {
               ))}
             </div>
           </div>
-        </div>
-      </SpecimenCard>
+    </SpecimenGridCells>
 
+  )
+}
+
+export function AdvancedControlSpecimens() {
+  const [variationCount, setVariationCount] = useState(3)
+  const [rating, setRating] = useState(3)
+  const [intensity, setIntensity] = useState(60)
+  const [rangeStart, setRangeStart] = useState(25)
+  const [rangeEnd, setRangeEnd] = useState(55)
+
+  return (
+    <>
       <SpecimenCard
         title="Value controls"
         description="Fine and coarse controls expose their value before, during, and after adjustment."
       >
-        <div className="v2-value-control-grid">
-          <div className="v2-control-block">
+        <SpecimenGrid>
+          <div className="v2-control-block" data-component-reference="AdvancedControlSpecimens — Number stepper (.v2-stepper)">
             <div className="v2-control-block__heading">
               <label htmlFor="v2-variation-count">Variation count</label>
               <small>1–12</small>
@@ -376,7 +381,7 @@ export function AdvancedControlSpecimens() {
             </div>
           </div>
 
-          <fieldset className="v2-control-block v2-rating">
+          <fieldset className="v2-control-block v2-rating" data-component-reference="AdvancedControlSpecimens — Star rating (.v2-rating)">
             <legend>Creative quality</legend>
             <div role="radiogroup" aria-label="Creative quality rating">
               {[1, 2, 3, 4, 5].map((value) => (
@@ -396,7 +401,7 @@ export function AdvancedControlSpecimens() {
             <output>{rating} of 5</output>
           </fieldset>
 
-          <div className="v2-control-block v2-slider-control">
+          <div className="v2-control-block v2-slider-control" data-component-reference="AdvancedControlSpecimens — Slider (.v2-slider-control)">
             <div className="v2-control-block__heading">
               <label htmlFor="v2-intensity">Campaign intensity</label>
               <output htmlFor="v2-intensity">{intensity}%</output>
@@ -413,7 +418,7 @@ export function AdvancedControlSpecimens() {
             <div className="v2-slider-scale"><span>Quiet</span><span>Bold</span></div>
           </div>
 
-          <fieldset className="v2-control-block v2-range-control">
+          <fieldset className="v2-control-block v2-range-control" data-component-reference="AdvancedControlSpecimens — Range slider (.v2-range-control)">
             <legend>Audience age range</legend>
             <label htmlFor="v2-age-min">
               <span>Minimum</span>
@@ -444,15 +449,15 @@ export function AdvancedControlSpecimens() {
               onChange={(event) => setRangeEnd(Math.max(Number(event.target.value), rangeStart + 1))}
             />
           </fieldset>
-        </div>
+        </SpecimenGrid>
       </SpecimenCard>
 
       <SpecimenCard
         title="Progress and activity"
         description="Use determinate progress for known work and indeterminate motion only when duration is unknown."
       >
-        <div className="v2-progress-catalog">
-          <div className="v2-progress-example">
+        <SpecimenGrid>
+          <div className="v2-progress-example" data-component-reference="AdvancedControlSpecimens — Determinate progress (.v2-progress-bar)">
             <div className="v2-progress-example__heading">
               <strong>Generating assets</strong>
               <span>68%</span>
@@ -469,7 +474,7 @@ export function AdvancedControlSpecimens() {
             </div>
           </div>
 
-          <div className="v2-progress-example">
+          <div className="v2-progress-example" data-component-reference="AdvancedControlSpecimens — Indeterminate progress (.v2-progress-bar--indeterminate)">
             <div className="v2-progress-example__heading">
               <strong>Preparing export</strong>
               <span>Working…</span>
@@ -483,7 +488,7 @@ export function AdvancedControlSpecimens() {
             </div>
           </div>
 
-          <div className="v2-progress-example">
+          <div className="v2-progress-example" data-component-reference="AdvancedControlSpecimens — Stepped progress (.v2-stepped-progress)">
             <div className="v2-progress-example__heading">
               <strong>Campaign setup</strong>
               <span>Step 3 of 5</span>
@@ -501,7 +506,7 @@ export function AdvancedControlSpecimens() {
             </ol>
           </div>
 
-          <div className="v2-progress-example v2-progress-example--compact">
+          <div className="v2-progress-example v2-progress-example--compact" data-component-reference="AdvancedControlSpecimens — Progress ring (.v2-progress-ring)">
             <div
               className="v2-progress-ring"
               role="progressbar"
@@ -515,7 +520,7 @@ export function AdvancedControlSpecimens() {
             </div>
             <p><strong>Review readiness</strong><small>4 checks remain</small></p>
           </div>
-        </div>
+        </SpecimenGrid>
       </SpecimenCard>
     </>
   )

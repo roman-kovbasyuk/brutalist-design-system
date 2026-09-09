@@ -59,8 +59,6 @@
 .ds-basic-reference__name { font-weight: 600; }
 .ds-basic-demo { display: grid; place-items: center; width: 100%; min-height: 116px; background: var(--v2-canvas); border-radius: var(--v2-radius); margin-bottom: var(--v2-space-2); }
 .ds-basic-object { display: grid; place-items: center; width: 80px; height: 48px; border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
-.ds-basic-object--motion { transition: transform var(--v2-duration-disclosure) var(--v2-ease), box-shadow var(--v2-duration-disclosure) var(--v2-ease); }
-.ds-basic-reference .v2-token-copy-target__button:is(:hover, :focus-visible) .ds-basic-object--motion { transform: translate(calc(-1 * var(--v2-space-1)), calc(-1 * var(--v2-space-1))); box-shadow: var(--v2-shadow-interactive); }
 .ds-basic-aliases { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .ds-basics .ds-basic-alias .v2-token-copy-target__button { display: flex; flex-direction: column; align-items: flex-start; gap: var(--v2-space-1); padding: var(--v2-space-2) 0; border-radius: var(--v2-radius); text-align: left; }
 .ds-basic-note { margin-bottom: var(--v2-space-4); font-size: var(--v2-text-small); }
@@ -94,7 +92,6 @@
 .ds-basic-layout__item { display: block; padding: var(--v2-space-2); background: var(--v2-accent); border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); text-align: center; }
 .ds-basic-layout .ds-inline > * { flex: 1; }
 .ds-basic-layout .ds-divider { margin-top: var(--v2-space-8); }
-@media (prefers-reduced-motion: reduce) { .ds-basic-reference .v2-token-copy-target__button:is(:hover, :focus-visible) .ds-basic-object--motion { transform: none; box-shadow: none; } }
 @media (max-width: 600px) {
   .system-screen--v2 .ds-basics .ds-basic-group { padding: var(--v2-space-4); }
   .system-screen--v2 .ds-basics :is(.v2-color-grid, .v2-spacing-grid, .ds-basic-grid, .ds-basic-aliases, .ds-basic-icons) > :nth-child(n) { padding: var(--v2-space-3); }

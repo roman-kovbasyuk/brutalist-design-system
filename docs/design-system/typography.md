@@ -1,6 +1,6 @@
 # Typography roles
 
-The application uses Avenir Next / Avenir with the existing fallback stack. The [live typography reference](http://127.0.0.1:5176/design-system#ds-typography) presents the following roles in one column. Values are font size / line height at the default scale; line-height tokens are unitless so they follow text scaling.
+The application uses Avenir Next / Avenir with the existing fallback stack through the overridable `--v2-font` token. Font availability differs by operating system, so the stack preserves the intended style rather than identical glyphs. The [live typography reference](http://127.0.0.1:5176/design-system#ds-typography) presents the following roles in one column. Values are font size / line height at the default scale; line-height tokens are unitless so they follow text scaling.
 
 | Role | Size / line height | Weight | Purpose | Tokens |
 | --- | --- | --- | --- | --- |
@@ -20,6 +20,6 @@ Headings use `--v2-weight-heading`; leads and reading text use `--v2-weight-text
 
 Choose HTML heading levels by document hierarchy. Lead text is a paragraph. The catalog uses paragraph samples to demonstrate appearance without introducing extra page headings. A visual role does not justify skipping heading levels.
 
-Canonical tokens live in [foundations/tokens.css](../../src/components/design-system/foundations/tokens.css). Existing size tokens remain aliases: page → H1, display → H2, section → H3, component → H4, meta → Small text. This reorganization adds H5 and lead roles and updates the reference; existing application consumers keep their current size values. Adopt the new line-height roles deliberately when changing a consuming component.
+Canonical tokens live in [basics/tokens.css](../../src/components/design-system/basics/tokens.css); [foundations/tokens.css](../../src/components/design-system/foundations/tokens.css) remains a compatibility import. Existing size tokens remain aliases: page → H1, display → H2, section → H3, component → H4, meta → Small text. This reorganization adds H5 and lead roles and updates the reference; existing application consumers keep their current size values. Adopt the new line-height roles deliberately when changing a consuming component.
 
 Validated 6 September 2026: all nine rendered sizes, line heights and weights match this table; desktop and 320px samples wrap without horizontal overflow. The 35 existing catalog/token tests and production build pass. Pre-change files for this typography update are backed up in `/tmp/banner-studio-typography-before`.

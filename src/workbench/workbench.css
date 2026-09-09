@@ -1,0 +1,6 @@
+.ds-workbench { min-height: 100dvh; }
+.ds-workbench__main { min-width: 0; }
+.ds-workbench__families { display: flex; flex-wrap: wrap; gap: var(--v2-space-2); margin-top: var(--v2-space-8); }
+.ds-workbench__families .ds-tree-item { width: auto; }
+.ds-workbench__empty { display: grid; gap: var(--v2-space-3); max-width: 560px; padding: var(--v2-space-8); border: 1px solid var(--v2-border); background: var(--v2-surface); }
+.ds-workbench__empty :is(h1, p) { margin: 0; }

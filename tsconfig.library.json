@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": false, "declaration": true, "emitDeclarationOnly": true, "declarationDir": "dist-library", "rootDir": "src/components/design-system", "allowJs": false },
+  "include": ["src/components/design-system/**/*.ts", "src/components/design-system/**/*.tsx"],
+  "exclude": ["**/*.test.*", "**/*.examples.*", "node_modules", "dist", "dist-library"]
+}

@@ -1,0 +1,32 @@
+.ds-action-card { position: relative; min-width: 0; padding: var(--v2-space-6); border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-ink); }
+.ds-action-card[data-highlighted] { background: color-mix(in srgb, var(--v2-accent) 14%, var(--v2-surface)); }
+.ds-action-card__header, .ds-action-card__meta, .ds-action-card__controls, .ds-action-card__actions { display: flex; align-items: center; gap: var(--v2-space-2); }
+.ds-action-card__meta { min-width: 0; flex: 1; flex-wrap: wrap; color: var(--v2-text-secondary); font-size: var(--v2-text-small); }
+.ds-action-card__controls { margin-inline-start: auto; }
+.ds-action-card__actions { opacity: 0; pointer-events: none; transition: opacity var(--v2-duration-fast) var(--v2-ease); }
+.ds-action-card:is(:hover, :focus-within) .ds-action-card__actions, .ds-action-card[data-highlighted] .ds-action-card__actions { opacity: 1; pointer-events: auto; }
+.ds-action-card__content { display: grid; gap: var(--v2-space-4); padding-top: var(--v2-space-4); overflow-wrap: anywhere; }
+.ds-fact-grid-container { container-type: inline-size; }
+.ds-fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0; border: 1px solid var(--v2-border); background: var(--v2-border); }
+.ds-fact-grid > div { min-width: 0; padding: var(--v2-space-4); background: var(--v2-surface); }
+.ds-fact-grid > div[data-emphasis] { background: var(--v2-accent); }
+.ds-fact-grid dt { margin-bottom: var(--v2-space-2); color: var(--v2-text-secondary); font-size: var(--v2-text-small); }
+.ds-fact-grid dd { margin: 0; overflow-wrap: anywhere; }
+.ds-selection-tile { position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0; padding: 0; overflow: hidden; border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-ink); font: inherit; text-align: start; cursor: pointer; transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease), background-color var(--v2-duration-fast) var(--v2-ease); }
+.ds-selection-tile__content { display: block; width: 100%; min-width: 0; }
+.ds-selection-tile__caption { display: block; padding: var(--v2-space-3); overflow-wrap: anywhere; }
+.ds-selection-tile__action { position: absolute; inset-block-start: var(--v2-space-3); inset-inline-end: var(--v2-space-3); display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-pill); background: var(--v2-surface); opacity: 0; transition: opacity var(--v2-duration-fast) var(--v2-ease); }
+.ds-selection-tile:is(:hover, :focus-visible, [aria-pressed='true']) .ds-selection-tile__action { opacity: 1; }
+.ds-selection-tile[aria-pressed='true'] { background: var(--v2-accent); }
+.ds-selection-tile:not(:disabled):hover { box-shadow: var(--v2-shadow-interactive); transform: translate(-4px, -4px); }
+.ds-selection-tile:focus-visible, .ds-inline-text-value:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
+.ds-selection-tile:disabled { cursor: not-allowed; opacity: .55; }
+.ds-inline-text-value { display: block; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; white-space: pre-wrap; overflow-wrap: anywhere; }
+button.ds-inline-text-value { min-height: var(--v2-control-height-compact); cursor: text; }
+.ds-inline-text-editor textarea { box-sizing: border-box; display: block; width: 100%; padding: var(--v2-space-2); border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-ink); font: inherit; resize: vertical; }
+.ds-inline-text-editor__actions { display: flex; flex-wrap: wrap; gap: var(--v2-space-2); margin-top: var(--v2-space-2); }
+.ds-inline-text-editor__error { margin: var(--v2-space-2) 0 0; color: var(--v2-danger); font-size: var(--v2-text-small); }
+@container (max-width: 480px) { .ds-fact-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (hover: none), (pointer: coarse) { .ds-action-card__actions, .ds-selection-tile__action { opacity: 1; pointer-events: auto; } }
+@media (max-width: 600px) { .ds-action-card { padding: var(--v2-space-4); } }
+@media (prefers-reduced-motion: reduce) { .ds-action-card__actions, .ds-selection-tile, .ds-selection-tile__action { transition: none; } .ds-selection-tile:not(:disabled):hover { box-shadow: none; transform: none; } }

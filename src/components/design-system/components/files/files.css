@@ -1,0 +1,36 @@
+.ds-file-dropzone {
+  box-sizing: border-box;
+  display: grid;
+  min-block-size: 12rem;
+  place-items: center;
+  border: 2px dashed var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-ink);
+  font: 400 var(--v2-text-body) / 1.4 var(--v2-font);
+}
+.ds-file-dropzone[data-disabled] { opacity: .55; }
+.ds-file-dropzone__input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.ds-file-dropzone__body { display: grid; justify-items: center; gap: var(--v2-space-2); max-inline-size: 28rem; padding: var(--v2-space-6); text-align: center; }
+.ds-file-dropzone__label { font-size: var(--v2-text-component); }
+.ds-file-dropzone__description { margin: 0; color: var(--v2-text-secondary); }
+.ds-file-dropzone__choose, .ds-file-list__remove {
+  min-block-size: var(--v2-control-height-compact);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-action);
+  color: var(--v2-on-action);
+  font: 700 var(--v2-text-small) / 1 var(--v2-font);
+  cursor: pointer;
+}
+.ds-file-dropzone__choose { padding: 0 var(--v2-space-4); }
+.ds-file-list { display: grid; gap: var(--v2-space-2); margin: 0; padding: 0; list-style: none; color: var(--v2-ink); font: 400 var(--v2-text-body) / 1.3 var(--v2-font); }
+.ds-file-list__item { display: flex; align-items: center; justify-content: space-between; gap: var(--v2-space-3); padding: var(--v2-space-3); border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
+.ds-file-list__details { display: grid; gap: var(--v2-space-1); min-inline-size: 0; }
+.ds-file-list__details strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-file-list__details span, .ds-file-list__empty { color: var(--v2-text-secondary); font: 400 var(--v2-text-small) / 1.3 var(--v2-font); }
+.ds-file-list__remove { padding: 0 var(--v2-space-3); background: var(--v2-surface); color: var(--v2-ink); }
+.ds-file-dropzone__choose:hover, .ds-file-list__remove:hover { box-shadow: var(--v2-shadow-small); transform: translate(-2px, -2px); }
+.ds-file-dropzone__choose:focus-visible, .ds-file-list__remove:focus-visible { outline: 3px solid var(--v2-accent); outline-offset: 2px; }
+.ds-file-dropzone__choose:disabled { cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .ds-file-dropzone__choose:hover, .ds-file-list__remove:hover { box-shadow: none; transform: none; } }

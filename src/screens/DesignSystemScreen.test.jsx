@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 
-const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
+const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/charts/charts.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
 
 describe('DesignSystemScreen', () => {
   test('renders a root overview with links to each design-system section', () => {
@@ -54,8 +54,9 @@ describe('DesignSystemScreen', () => {
     expect(buttons.querySelector('.v2-button-grid')).toBeInTheDocument()
     expect(buttons.querySelectorAll('.v2-button-cell')).toHaveLength(7)
 
-    await user.click(within(buttons).getByRole('button', { name: 'Copy Create campaign' }))
-    expect(within(buttons).getByText('Copied', { selector: '.v2-button-cell__feedback' })).toBeVisible()
+    await user.click(within(buttons).getByRole('button', { name: 'Copy AppButton variant="primary"' }))
+    expect(await navigator.clipboard.readText()).toBe('AppButton variant="primary"')
+    expect(screen.getByText('Copied', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
   })
 
   test('shows a pointer-following copy label and check confirmation without the old icon', async () => {
@@ -65,13 +66,14 @@ describe('DesignSystemScreen', () => {
     const wrapper = target.closest('.v2-token-copy-target')
 
     fireEvent.pointerMove(target, { clientX: 40, clientY: 24 })
-    expect(within(wrapper).getByText('Copy', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
-    expect(within(wrapper).getByText('Copy').style.getPropertyValue('--copy-x')).toBe('40px')
+    const feedback = document.querySelector('.v2-token-copy-target__feedback--visible')
+    expect(feedback).toHaveTextContent('var(--v2-text-body)')
+    expect(feedback.style.getPropertyValue('--copy-x')).toBe('40px')
     expect(wrapper.querySelector('.v2-token-copy-target__icon')).not.toBeInTheDocument()
 
     await user.click(target)
-    expect(within(wrapper).getByText('Copied', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
-    expect(wrapper.querySelector('.lucide-check')).toBeInTheDocument()
+    expect(screen.getByText('Copied', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
+    expect(screen.getByText('Copied').querySelector('.lucide-check')).toBeInTheDocument()
   })
 
   test('uses 500 weight for control copy and the requested type samples', () => {
@@ -159,6 +161,17 @@ describe('DesignSystemScreen', () => {
     expect(screen.queryByText('--v2-text-body')).not.toBeInTheDocument()
     expect(screen.queryByText('--v2-line-body')).not.toBeInTheDocument()
     expect(screen.getByText('4px base unit')).toBeVisible()
+  })
+
+  test('moves the complete chart collection to UI blocks', () => {
+    render(<DesignSystemScreen />)
+    expect(document.querySelector('#components-metrics')).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Pie chart' })).toBeVisible()
+    expect(screen.getByRole('img', { name: 'Donut chart' })).toBeVisible()
+    expect(screen.getByRole('img', { name: 'Polar area chart' })).toBeVisible()
+    expect(screen.getByRole('img', { name: 'Grouped bar chart' })).toBeVisible()
+    expect(screen.getByRole('img', { name: 'Area chart' })).toBeVisible()
+    expect(screen.getByRole('img', { name: 'Token burn by model' })).toBeVisible()
   })
 
   test('links the separate sidebar to preview metadata and filters across all groups', async () => {

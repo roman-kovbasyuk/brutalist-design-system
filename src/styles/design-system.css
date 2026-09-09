@@ -592,7 +592,9 @@
   border: 1px solid var(--v2-border);
   border-radius: 0;
   background: var(--v2-surface);
+  transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease);
 }
+
 
 .system-screen--v2 .v2-specimen-card__heading {
   display: flex;
@@ -672,8 +674,8 @@
   background: var(--v2-surface);
   color: var(--v2-text-secondary);
   opacity: 0;
-  cursor: pointer;
-  transition: opacity var(--v2-duration-fast) var(--v2-ease), background-color var(--v2-duration-fast) var(--v2-ease), color var(--v2-duration-fast) var(--v2-ease);
+  cursor: copy;
+  transition: opacity var(--v2-duration-fast) var(--v2-ease), background-color var(--v2-duration-fast) var(--v2-ease), color var(--v2-duration-fast) var(--v2-ease), transform var(--v2-duration-fast) var(--v2-ease);
 }
 
 .system-screen--v2 .v2-button-cell:hover .v2-button-cell__copy,
@@ -683,8 +685,9 @@
 }
 
 .system-screen--v2 .v2-button-cell__copy:hover {
-  background: var(--v2-accent);
-  color: var(--v2-ink);
+  background: var(--v2-ink);
+  color: var(--v2-accent);
+  transform: scale(1.2);
 }
 
 .system-screen--v2 .v2-button-cell__feedback {
@@ -1198,7 +1201,7 @@
 .system-screen--v2 .v2-date-picker__weekdays,
 .system-screen--v2 .v2-date-picker__days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: var(--v2-space-3); text-align: center; }
 .system-screen--v2 .v2-date-picker__weekdays { color: var(--v2-text-secondary); font-size: var(--v2-text-meta); font-weight: 500; }
-.system-screen--v2 .v2-date-picker__days button { min-height: 30px; border: 1px solid transparent; background: transparent; color: var(--v2-ink); }
+.system-screen--v2 .v2-date-picker__days button { min-height: 30px; padding: 0; border: 1px solid transparent; background: transparent; color: var(--v2-ink); white-space: nowrap; }
 .system-screen--v2 .v2-date-picker__days button:hover,
 .system-screen--v2 .v2-date-picker__days button[aria-pressed="true"] { border-color: var(--v2-border); background: var(--v2-accent); }
 .system-screen--v2 .v2-date-picker__days button.is-muted { color: var(--v2-text-secondary); }
@@ -2273,6 +2276,11 @@
   letter-spacing: 0.04em;
 }
 
+.system-screen--v2 #v2-object-campaign-card {
+  font-size: 11px;
+  border-color: #8a8a8a;
+}
+
 .system-screen--v2 .v2-object-card__title {
   min-height: 44px;
   font-size: 20px;
@@ -2934,7 +2942,7 @@
    and interaction previews remain part of the component being demonstrated. */
 .ds-workspace .system-screen--v2.ds-catalog {
   max-width: 1120px;
-  background: var(--v2-surface);
+  background: transparent;
   padding: var(--v2-space-8) clamp(16px, 3vw, 48px) var(--v2-space-16);
 }
 .ds-catalog .v2-page-header { padding-bottom: var(--v2-space-8); }
@@ -3015,6 +3023,50 @@
 }
 .ds-catalog .v2-responsive-workspace { padding: 0; }
 .ds-catalog .v2-color-grid { border-top: 1px solid var(--v2-border); }
+
+/* Component families use the same surface, spacing and elevation as Basics. */
+.ds-catalog .ds-components {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-12);
+  reading-flow: flex-visual;
+}
+.ds-workspace .ds-catalog .ds-components :is(.v2-section, .v2-section__body, .v2-navigation-grid) {
+  display: contents;
+}
+.ds-catalog .ds-components .v2-section__header { display: none; }
+.ds-catalog .ds-components .v2-feedback-state-grid { grid-template-columns: minmax(0, 1fr); }
+.system-screen--v2.ds-catalog .ds-components .v2-specimen-card {
+  scroll-margin-top: var(--v2-space-6);
+  padding: var(--v2-space-8);
+  border: var(--v2-border-width) solid var(--v2-border);
+  border-radius: var(--v2-radius-large);
+  background: var(--v2-surface);
+}
+.system-screen--v2.ds-catalog .ds-components .v2-specimen-card:focus-within {
+  transform: translate(calc(-1 * var(--v2-space-1)), calc(-1 * var(--v2-space-1)));
+  box-shadow: var(--v2-shadow-interactive);
+}
+.system-screen--v2.ds-catalog .ds-components .v2-specimen-card:has(:is(.v2-floating-listbox, .v2-date-picker__popover)) {
+  z-index: 20;
+  position: relative;
+}
+@media (hover: hover) {
+  .system-screen--v2.ds-catalog .ds-components .v2-specimen-card:hover {
+    transform: translate(calc(-1 * var(--v2-space-1)), calc(-1 * var(--v2-space-1)));
+    box-shadow: var(--v2-shadow-interactive);
+  }
+}
+.ds-components .ds-component-copy { position: absolute; right: var(--v2-space-2); bottom: var(--v2-space-2); }
+.system-screen--v2 .ds-components .ds-component-copy .v2-token-copy-target__button {
+  display: grid; place-items: center; width: 44px; cursor: copy;
+}
+@media (max-width: 600px) {
+  .system-screen--v2.ds-catalog .ds-components .v2-specimen-card { padding: var(--v2-space-4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .system-screen--v2.ds-catalog .ds-components .v2-specimen-card:is(:hover, :focus-within) { transform: none; }
+}
 .ds-catalog .v2-color-swatch { padding: var(--v2-space-6); }
 .ds-catalog .v2-type-grid { border-top: 1px solid var(--v2-border); }
 .ds-catalog .v2-spacing-grid { padding: var(--v2-space-6) 0; }

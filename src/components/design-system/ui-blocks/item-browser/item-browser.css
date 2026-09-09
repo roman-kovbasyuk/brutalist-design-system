@@ -1,0 +1,11 @@
+.ds-item-browser { display: grid; gap: 1rem; }
+.ds-item-browser__toolbar { display: flex; gap: 1rem; align-items: end; justify-content: space-between; flex-wrap: wrap; }
+.ds-item-browser__toolbar .ds-field { min-width: min(100%, 18rem); flex: 1; }
+.ds-item-browser__message { margin: 0; padding: 2rem; border: var(--v2-border-width, 2px) dashed var(--v2-ink, #171717); text-align: center; background: var(--v2-surface, #fff); }
+.ds-item-browser__description { display: block; margin-top: .25rem; font-size: .875rem; }
+.ds-item-browser__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }
+.ds-item-browser__grid-item { display: grid; gap: .5rem; align-content: start; }
+.ds-item-browser__grid-item .ds-selection-tile { min-height: 9rem; text-align: left; }
+.ds-item-browser__grid-item .ds-selection-tile__content { display: grid; gap: .5rem; }
+.ds-item-browser__footer { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: .875rem; }
+@media (max-width: 480px) { .ds-item-browser__toolbar { align-items: stretch; } .ds-item-browser__toolbar .ds-field { min-width: 100%; } }

@@ -1,5 +1,16 @@
 # Metrics chart library design
 
+## Corrected scope after user review
+
+The full collection belongs in UI Blocks. Remove Metrics from Components. Each option has its own preview and copy reference; a smaller rendering of the same pie does not count as a distinct option.
+
+- Four pie variants: filled, donut, semicircle, polar area.
+- Six charts: column, horizontal bar, grouped bar, stacked bar, line, area.
+- Two horizontal token burn views: hourly strip and model-by-hour matrix.
+- Four widgets: KPI with trend, sparkline metric, capacity gauge, segmented token budget.
+
+These replace the earlier placement and limited variant scope below. All previews use shared chart components and Basics colors, spacing, borders, and typography.
+
 ## Goal
 
 Add a small internal SVG chart library that extends the Metrics catalog with reusable visual widgets while matching the existing Basics tokens. The first catalog pass demonstrates several pie-chart variants, a bar chart, a line chart, a horizontal token-burn heat map, and compact metric widgets. Once the specimens are stable, the same chart components can be composed into UI blocks.

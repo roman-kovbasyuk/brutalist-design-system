@@ -1,0 +1,18 @@
+.ds-root {
+  box-sizing: border-box;
+  color: var(--v2-ink);
+  font-family: var(--v2-font);
+  font-size: var(--v2-text-body);
+  font-weight: var(--v2-weight-text);
+  line-height: var(--v2-line-body);
+}
+
+.ds-root *,
+.ds-root *::before,
+.ds-root *::after {
+  box-sizing: inherit;
+}
+
+.ds-root :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: var(--v2-weight-heading);
+}

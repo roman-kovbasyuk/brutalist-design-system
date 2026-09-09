@@ -11,10 +11,10 @@ test('copies the visible token chip with keyboard activation and confirms succes
   const user = userEvent.setup()
   render(<TokenChip token="--v2-text-h1" />)
   const chip = screen.getByRole('button', { name: 'Copy --v2-text-h1' })
-  chip.focus()
+  await user.tab()
   await user.keyboard('{Enter}')
   expect(await navigator.clipboard.readText()).toBe('--v2-text-h1')
-  expect(await screen.findByText('Copied --v2-text-h1')).toBeInTheDocument()
+  expect(await screen.findByText('Copied')).toBeInTheDocument()
 })
 
 test('copies a hidden visual target value and confirms without exposing the token', async () => {

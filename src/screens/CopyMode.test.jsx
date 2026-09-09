@@ -1,0 +1,41 @@
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, expect, it } from 'vitest'
+import { DesignSystemScreen } from './DesignSystemScreen.jsx'
+
+afterEach(() => localStorage.removeItem('ds-click-to-copy'))
+
+it('turns copying and feedback off across tabs while keeping previews interactive', async () => {
+  history.replaceState({}, '', '/?section=components')
+  const user = userEvent.setup()
+  const view = render(<DesignSystemScreen />)
+  const toggle = screen.getByRole('switch', { name: 'Click to copy' })
+  expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await user.click(toggle)
+  const copy = screen.getByRole('button', { name: 'Copy AppButton variant="danger"' })
+  await navigator.clipboard.writeText('unchanged')
+  await user.hover(copy)
+  await user.click(copy)
+  await user.click(copy.closest('.v2-button-cell'))
+  expect(await navigator.clipboard.readText()).toBe('unchanged')
+  expect(document.querySelector('.v2-token-copy-target__feedback--visible')).toBeNull()
+  await user.click(screen.getByRole('button', { name: 'Show idle state' }))
+  expect(screen.getByRole('button', { name: 'Generate preview' })).toBeEnabled()
+  await user.click(screen.getByRole('link', { name: 'UI blocks', exact: true }))
+  const block = screen.getByRole('button', { name: 'Copy Prompt input UI block' })
+  await user.click(block)
+  expect(await navigator.clipboard.readText()).toBe('unchanged')
+  await user.type(screen.getByRole('textbox', { name: 'Campaign prompt' }), 'Test prompt')
+  expect(screen.getByRole('textbox', { name: 'Campaign prompt' })).toHaveValue('Test prompt')
+  await user.click(screen.getByRole('link', { name: 'Basics', exact: true }))
+  await user.click(screen.getByRole('button', { name: 'Copy Stack component ID' }))
+  expect(await navigator.clipboard.readText()).toBe('unchanged')
+  expect(document.querySelector('.v2-token-copy-target__feedback--visible')).toBeNull()
+  await user.click(screen.getByRole('link', { name: 'UI blocks', exact: true }))
+  view.unmount()
+  render(<DesignSystemScreen />)
+  expect(screen.getByRole('switch', { name: 'Click to copy' })).toHaveAttribute('aria-checked', 'false')
+  await user.click(screen.getByRole('switch', { name: 'Click to copy' }))
+  await user.click(screen.getByRole('button', { name: 'Copy Prompt input UI block' }))
+  expect(await navigator.clipboard.readText()).toBe('PromptInputBlock')
+})

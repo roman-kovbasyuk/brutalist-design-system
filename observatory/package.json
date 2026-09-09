@@ -1,0 +1,18 @@
+{
+  "name": "project-observatory",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "sh start.sh",
+    "test": "node --test test/*.test.mjs",
+    "tasks": "node cli.mjs",
+    "harness": "node --test test/*.test.mjs && node harness.mjs check"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.2.8",
+    "lucide": "1.42.0"
+  }
+}

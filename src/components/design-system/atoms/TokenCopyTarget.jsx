@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check } from 'lucide-react'
 import { AppButton } from './AppButton.jsx'
+import { useCopyMode } from './CopyMode.jsx'
 import './token-copy-target.css'
 
 async function copyText(value) {
@@ -21,24 +23,43 @@ async function copyText(value) {
 }
 
 /** A visual token sample that copies an exact value without showing the token name. */
-export function TokenCopyTarget({ copyValue, label, children, className = '', inline = false }) {
+export function TokenCopyTarget({ copyValue, label, children, className = '', inline = false, preview = undefined, id = undefined, surface = false, style = undefined, chip = false }) {
+  const { enabled } = useCopyMode()
   const [state, setState] = useState('idle')
   const [pointer, setPointer] = useState({ active: false, x: 0, y: 0 })
   const timer = useRef(null)
   const request = useRef(0)
+  const [copiedValue, setCopiedValue] = useState(null)
+
+  useEffect(() => {
+    if (enabled) return
+    request.current += 1
+    clearTimeout(timer.current)
+    setState('idle')
+    setPointer(current => ({ ...current, active: false }))
+  }, [enabled])
+
+  function referenceAt(target) {
+    if (!surface) return copyValue
+    const sample = target.closest('[data-component-reference]')
+    return sample?.dataset.componentReference || copyValue
+  }
 
   useEffect(() => () => {
     request.current += 1
     clearTimeout(timer.current)
   }, [])
 
-  async function copy() {
+  async function copy(event) {
+    if (!enabled) return
     const attempt = ++request.current
     clearTimeout(timer.current)
     setState('copying')
     try {
-      await copyText(copyValue)
+      const value = referenceAt(event.target)
+      await copyText(value)
       if (request.current !== attempt) return
+      setCopiedValue(value)
       setState('copied')
       timer.current = setTimeout(() => setState('idle'), 1800)
     } catch {
@@ -46,20 +67,41 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
     }
   }
 
-  function handlePointerMove(event) {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    setPointer({ active: true, x: event.clientX - bounds.left, y: event.clientY - bounds.top })
+  function isPreviewControl(target) {
+    return (preview || surface) && target.closest('button, input, textarea, select, a, label, summary, [role="button"], [role="radio"], [role="switch"], [contenteditable="true"]') && !target.closest('.v2-token-copy-target__button')
   }
 
-  return <span className={`v2-token-copy-target${inline ? ' v2-token-copy-target--inline' : ''} ${className}`.trim()}>
-    <AppButton variant="quiet" size="compact" className="v2-token-copy-target__button"
+  function handlePointerMove(event) {
+    if (!enabled) return
+    if (surface && event.target.closest('.v2-token-copy-target') !== event.currentTarget) {
+      setPointer(current => ({ ...current, active: false }))
+      return
+    }
+    setPointer({ active: event.pointerType !== 'touch', x: event.clientX, y: event.clientY, value: referenceAt(event.target), interactive: Boolean(isPreviewControl(event.target)) })
+  }
+
+  const Wrapper = surface ? 'div' : preview ? 'article' : 'span'
+
+
+  return <Wrapper id={id} style={style} data-copy-enabled={enabled} className={`v2-token-copy-target${inline ? ' v2-token-copy-target--inline' : ''} ${className}`.trim()}
+    onClick={preview || surface ? (event) => { if (surface && event.target.closest('.v2-token-copy-target') !== event.currentTarget) return; if (!isPreviewControl(event.target) && !event.target.closest('.v2-token-copy-target__button')) copy(event) } : undefined}
+    onPointerMove={handlePointerMove} onPointerEnter={handlePointerMove} onPointerLeave={() => setPointer(current => ({ ...current, active: false }))}>
+    {surface ? children : <AppButton variant={chip ? 'secondary' : 'quiet'} size="compact" className={chip ? 'v2-token-chip' : 'v2-token-copy-target__button'}
       aria-label={`Copy ${label}`} aria-busy={state === 'copying' || undefined} disabled={state === 'copying'}
-      onClick={copy} onPointerMove={handlePointerMove} onPointerEnter={handlePointerMove} onPointerLeave={() => setPointer(current => ({ ...current, active: false }))}>
+      aria-disabled={!enabled || undefined} tabIndex={enabled ? undefined : -1}
+      onFocus={event => {
+        if (!enabled || pointer.active) return
+        const rect = event.currentTarget.getBoundingClientRect()
+        setPointer({ active: true, keyboard: true, x: rect.left + rect.width / 2, y: rect.bottom, value: copyValue })
+      }}
+      onBlur={() => setPointer(current => current.keyboard ? { ...current, active: false } : current)}
+      onClick={copy}>
       {children}
-    </AppButton>
-    <span className={`v2-token-copy-target__feedback${pointer.active || state === 'copied' || state === 'error' ? ' v2-token-copy-target__feedback--visible' : ''}`.trim()}
+    </AppButton>}
+    {preview}
+    {createPortal(<span className={`v2-token-copy-target__feedback${enabled && pointer.active ? ' v2-token-copy-target__feedback--visible' : ''}`.trim()}
       role="status" aria-atomic="true" style={{ '--copy-x': `${pointer.x}px`, '--copy-y': `${pointer.y}px` }}>
-      {state === 'copied' ? <><Check size={14} aria-hidden="true" /> Copied</> : state === 'error' ? 'Could not copy. Try again.' : pointer.active ? 'Copy' : ''}
-    </span>
-  </span>
+      {enabled && pointer.active && (state === 'copied' && copiedValue === pointer.value && !pointer.interactive ? <><Check size={14} aria-hidden="true" /> Copied</> : state === 'error' ? 'Could not copy. Try again.' : pointer.value)}
+    </span>, document.body)}
+  </Wrapper>
 }

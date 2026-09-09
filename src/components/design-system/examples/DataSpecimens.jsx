@@ -15,7 +15,7 @@ import { SpecimenSection } from './SpecimenSection.jsx'
 
 function StatusLabel({ tone = 'neutral', icon: Icon, children }) {
   return (
-    <span className={`v2-status-label v2-status-label--${tone}`}>
+    <span className={`v2-status-label v2-status-label--${tone}`} data-component-reference={`DataSpecimens.jsx — StatusLabel tone="${tone}"`}>
       {Icon ? <Icon aria-hidden="true" size={15} /> : <span aria-hidden="true" />}
       {children}
     </span>
@@ -44,7 +44,7 @@ export function FeedbackSpecimens() {
             </ul>
           </div>
 
-          <div className="v2-processing-stack">
+          <div className="v2-processing-stack" data-component-reference="FeedbackSpecimens — Processing status (.v2-processing-stack)">
             <div className="v2-processing-status" role="status" aria-label="Campaign processing">
               <LoaderCircle aria-hidden="true" size={20} />
               <span><strong>Generating campaign</strong><small>Building 16 production assets</small></span>
@@ -65,22 +65,22 @@ export function FeedbackSpecimens() {
         </div>
       </SpecimenCard>
 
-      <div className="v2-feedback-state-grid">
-        <div className="v2-alert" role="alert">
+      <SpecimenCard title="Feedback states"><div className="v2-feedback-state-grid">
+        <div className="v2-alert" role="alert" data-component-reference="FeedbackSpecimens — Error alert (.v2-alert)">
           <CircleAlert aria-hidden="true" size={20} />
           <span><strong>Source copy needs attention</strong><small>Add a Norwegian CTA before export.</small></span>
         </div>
 
-        <div className="v2-empty-state">
+        <div className="v2-empty-state" data-component-reference="FeedbackSpecimens — Empty state (.v2-empty-state)">
           <Inbox aria-hidden="true" size={24} />
           <span><strong>No approvals waiting</strong><small>Reviewed assets will appear here.</small></span>
         </div>
 
-        <div className="v2-toast" role="status" aria-label="Campaign saved">
+        <div className="v2-toast" role="status" aria-label="Campaign saved" data-component-reference="FeedbackSpecimens — Success toast (.v2-toast)">
           <Bell aria-hidden="true" size={20} />
           <span><strong>Campaign saved</strong><small>Nordic spring launch · just now</small></span>
         </div>
-      </div>
+      </div></SpecimenCard>
     </SpecimenSection>
   )
 }
@@ -98,35 +98,11 @@ export function DataSpecimens() {
       title="Data display"
       description="Structured information for scanning, comparing, and editing."
     >
-      <div className="v2-metric-grid">
-        <dl className="v2-metric-block">
-          <dt>Active campaigns</dt>
-          <dd className="v2-metric-block__value">12</dd>
-          <dd className="v2-metric-block__meta">3 awaiting review</dd>
-        </dl>
-        <dl className="v2-metric-block">
-          <dt>Assets generated</dt>
-          <dd className="v2-metric-block__value">148</dd>
-          <dd className="v2-metric-block__meta">+24 this week</dd>
-        </dl>
-        <dl className="v2-metric-block">
-          <dt>Approval rate</dt>
-          <dd className="v2-metric-block__value">92%</dd>
-          <dd className="v2-metric-block__meta">First review pass</dd>
-        </dl>
-      </div>
-
       <SpecimenCard
-        title="Campaign performance"
+        title="Table"
         description="Regular-weight values and bold labels keep dense information scannable."
       >
-        <dl className="v2-summary-rows">
-          <div><dt>Reporting window</dt><dd>29 Aug – 4 Sep</dd></div>
-          <div><dt>Highest-output channel</dt><dd>Paid social · 72 assets</dd></div>
-          <div><dt>Average review time</dt><dd>3h 18m</dd></div>
-        </dl>
-
-        <div className="v2-table-overflow" tabIndex="0" aria-label="Scrollable campaign performance table">
+        <div className="v2-table-overflow" tabIndex="0" aria-label="Scrollable campaign performance table" data-component-reference="DataSpecimens — Table (.v2-data-table)">
           <table className="v2-data-table" aria-label="Campaign performance">
             <thead>
               <tr>
@@ -260,11 +236,11 @@ export function ContentObjectSpecimens() {
       title="Content objects"
       description="Production objects that carry creative work through the system."
     >
-      <div className="v2-object-grid">
+      <SpecimenCard title="Content objects"><div className="v2-object-grid">
         {productionObjects.map((object) => {
           const labelId = `v2-object-${object.id}`
           return (
-            <article className="v2-object-card" aria-labelledby={labelId} key={object.type}>
+            <article className="v2-object-card" aria-labelledby={labelId} key={object.type} data-component-reference={`ContentObjectSpecimens — ${object.type} (productionObjects id="${object.id}")`}>
               <ObjectPreview object={object} />
               <span className="v2-object-card__content">
                 <strong className="v2-object-card__type" id={labelId}>{object.type}</strong>
@@ -275,7 +251,7 @@ export function ContentObjectSpecimens() {
             </article>
           )
         })}
-      </div>
+      </div></SpecimenCard>
     </SpecimenSection>
   )
 }

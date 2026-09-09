@@ -3,6 +3,7 @@ import { PromptComposerExample } from '../components/design-system/examples/Prom
 import { LibraryIndex } from '../components/design-system/examples/LibraryIndex.jsx'
 import { LibraryComponentPreviews } from '../components/design-system/examples/LibraryComponentPreviews.jsx'
 import { TokenCopyTarget } from '../components/design-system/atoms/TokenCopyTarget.jsx'
+import { CopyModeProvider } from '../components/design-system/atoms/CopyMode.jsx'
 import { ControlSpecimens, NavigationSpecimens } from '../components/design-system/examples/ControlSpecimens.jsx'
 import {
   ContentObjectSpecimens,
@@ -13,6 +14,7 @@ import { MotionSpecimens } from '../components/design-system/examples/MotionSpec
 import { SpecimenSection } from '../components/design-system/examples/SpecimenSection.jsx'
 import { UIBlocks, uiBlockCatalog } from '../components/design-system/examples/UIBlocks.jsx'
 import { BasicsCatalog } from '../components/design-system/examples/BasicsCatalog.jsx'
+import { componentGroups } from '../components/design-system/examples/component-groups.js'
 import { basicGroups } from '../components/design-system/foundations/basics-catalog.js'
 import '../styles/design-system.css'
 
@@ -49,6 +51,10 @@ const spacingSteps = [
   { value: 64, token: '--v2-space-16' },
 ]
 export function DesignSystemScreen({ overviewOnRoot = false }) {
+  return <CopyModeProvider><DesignSystemContent overviewOnRoot={overviewOnRoot} /></CopyModeProvider>
+}
+
+function DesignSystemContent({ overviewOnRoot = false }) {
   const [basicsQuery, setBasicsQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState(() => new URLSearchParams(window.location.search).get('section') === 'components' ? 'Components' : new URLSearchParams(window.location.search).get('section') === 'ui-blocks' ? 'UI blocks' : new URLSearchParams(window.location.search).get('section') === 'basics' ? 'Basics' : 'all')
 
@@ -77,7 +83,7 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
   return (
     <div className="ds-workspace">
       <LibraryIndex activeCategory={isOverview ? 'overview' : activeCategory} onCategoryChange={selectCategory}
-        navigationItems={activeCategory === 'Basics' ? basicGroups.map(group => ({ ...group, href: `#basics-${group.id}` })) : activeCategory === 'UI blocks' ? uiBlockCatalog.map(block => ({ id: block.id, name: block.name, group: block.group, href: `#ds-${block.id}` })) : undefined}
+        navigationItems={activeCategory === 'Basics' ? basicGroups.map(group => ({ ...group, href: `#basics-${group.id}` })) : activeCategory === 'Components' ? componentGroups : activeCategory === 'UI blocks' ? uiBlockCatalog.map(block => ({ id: block.id, name: block.name, group: block.group, href: `#ds-${block.id}` })) : undefined}
         onQueryChange={activeCategory === 'Basics' ? setBasicsQuery : undefined} />
       <div className="system-screen--v2 ds-catalog" id="ds-catalog">
       {isOverview && <section className="ds-overview" aria-labelledby="ds-overview-title">
@@ -164,14 +170,14 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
 
       </SpecimenSection>}
 
-      {!isOverview && (activeCategory === 'Components' || activeCategory === 'all') && <>
+      {!isOverview && (activeCategory === 'Components' || activeCategory === 'all') && <div className="ds-components">
         <ControlSpecimens />
         <NavigationSpecimens />
         <FeedbackSpecimens />
         <DataSpecimens />
         <ContentObjectSpecimens />
         <MotionSpecimens />
-      </>}
+      </div>}
       {!isOverview && (activeCategory === 'UI blocks' || activeCategory === 'all') && <>
         {activeCategory === 'all' && <SpecimenSection index={9} title="Responsive behavior" description="Reference reflows for compact and mobile workspaces.">
           <ResponsiveSpecimen />

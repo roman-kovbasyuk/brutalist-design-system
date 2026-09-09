@@ -32,7 +32,7 @@
 
 :is(.system-screen--v2, .bs-root) .v2-floating-listbox {
   position: absolute;
-  z-index: 10;
+  z-index: 100;
   inset: calc(100% + var(--v2-space-2)) 0 auto;
   display: grid;
   overflow: hidden;

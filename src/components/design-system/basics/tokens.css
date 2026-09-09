@@ -1,0 +1,87 @@
+/* Raw palette. Public components consume the semantic v2 roles below. */
+:root {
+  --primitive-color-neutral-canvas: #f4f4f0;
+  --primitive-color-white: #ffffff;
+  --primitive-color-black: #000000;
+  --primitive-color-cyan: #79d9ff;
+  --primitive-color-teal: #23a094;
+  --primitive-color-red: #dc341e;
+  --primitive-color-gray: #595959;
+}
+
+/* Semantic roles. Light is the only supported application mode. */
+:root {
+  --v2-canvas: var(--primitive-color-neutral-canvas);
+  --v2-surface: var(--primitive-color-white);
+  --v2-ink: var(--primitive-color-black);
+  --v2-muted: rgba(0, 0, 0, 0.5);
+  --v2-text-secondary: var(--primitive-color-gray);
+  --v2-border: var(--primitive-color-black);
+  --v2-accent: var(--primitive-color-cyan);
+  --v2-success: var(--primitive-color-teal);
+  --v2-danger: var(--primitive-color-red);
+  --v2-error-text: var(--v2-ink);
+  --v2-action: var(--v2-accent);
+  --v2-on-action: var(--v2-ink);
+  --v2-on-danger: var(--v2-surface);
+  --v2-on-success: var(--v2-ink);
+  --v2-warning-text: var(--v2-ink);
+  --v2-warning-surface: var(--v2-canvas);
+  --v2-warning-border: var(--v2-ink);
+  --v2-font: "Avenir Next", Avenir, Montserrat, Corbel, "URW Gothic", source-sans-pro, sans-serif;
+
+  --v2-text-h1: 48px;
+  --v2-line-h1: 1.08333333;
+  --v2-text-h2: 32px;
+  --v2-line-h2: 1.12500000;
+  --v2-text-h3: 24px;
+  --v2-line-h3: 1.16666667;
+  --v2-text-h4: 20px;
+  --v2-line-h4: 1.20000000;
+  --v2-text-h5: 18px;
+  --v2-line-h5: 1.33333333;
+  --v2-text-lead-large: 24px;
+  --v2-line-lead-large: 1.50000000;
+  --v2-text-lead-medium: 20px;
+  --v2-line-lead-medium: 1.40000000;
+  --v2-text-body: 16px;
+  --v2-line-body: 1.37500000;
+  --v2-text-small: 14px;
+  --v2-line-small: 1.42857143;
+  --v2-weight-heading: 500;
+  --v2-weight-text: 400;
+
+  --v2-text-page: var(--v2-text-h1);
+  --v2-text-display: var(--v2-text-h2);
+  --v2-text-section: var(--v2-text-h3);
+  --v2-text-component: var(--v2-text-h4);
+  --v2-text-meta: var(--v2-text-small);
+  --v2-space-1: 4px;
+  --v2-space-2: 8px;
+  --v2-space-3: 12px;
+  --v2-space-4: 16px;
+  --v2-space-6: 24px;
+  --v2-space-8: 32px;
+  --v2-space-12: 48px;
+  --v2-space-16: 64px;
+  --v2-control-height: 48px;
+  --v2-control-height-compact: 44px;
+  --v2-icon-sm: 16px;
+  --v2-icon-md: 20px;
+  --v2-icon-lg: 24px;
+  --v2-icon-xl: 32px;
+  --v2-icon-xxl: 48px;
+  --v2-border-width: 1px;
+  --v2-radius: 4px;
+  --v2-radius-large: 30px;
+  --v2-radius-pill: 999px;
+  --v2-shadow-small: 2px 2px 0 var(--v2-ink);
+  --v2-shadow-interactive: 4px 4px 0 var(--v2-ink);
+  --v2-shadow-floating: 8px 8px 0 var(--v2-ink);
+  --v2-z-popover: 20;
+  --v2-z-modal: 40;
+  --v2-z-toast: 60;
+  --v2-duration-fast: 150ms;
+  --v2-duration-disclosure: 200ms;
+  --v2-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
