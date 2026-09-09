@@ -5,7 +5,6 @@ import { createElement } from 'react'
 import { DesignSystemRoot } from './DesignSystemRoot'
 
 const tokens = readFileSync('src/components/design-system/basics/tokens.css', 'utf8')
-const compatibilityTokens = readFileSync('src/styles/tokens.css', 'utf8')
 
 function resolveToken(name: string): string {
   const declaration = new RegExp(`^\\s*${name}:\\s*([^;]+);`, 'm').exec(tokens)?.[1].trim()
@@ -53,31 +52,6 @@ describe('design-system token contract', () => {
       '--v2-shadow-small', '--v2-shadow-interactive', '--v2-shadow-floating',
       '--v2-z-popover', '--v2-z-modal', '--v2-z-toast',
     ]) {
-      expect(tokens).toContain(role)
-    }
-  })
-
-  test('keeps compatibility aliases on the semantic v2 contract', () => {
-    const aliases = [
-      ['--canvas', '--v2-canvas'],
-      ['--surface', '--v2-surface'],
-      ['--ink', '--v2-ink'],
-      ['--secondary', '--v2-text-secondary'],
-      ['--accent', '--v2-accent'],
-      ['--success', '--v2-success'],
-      ['--error', '--v2-danger'],
-      ['--font-ui', '--v2-font'],
-      ['--text-body', '--v2-text-body'],
-      ['--line-body', '--v2-line-body'],
-    ] as const
-
-    for (const [legacy, semantic] of aliases) {
-      expect(compatibilityTokens).toMatch(new RegExp(`${legacy}:\\s*var\\(${semantic}\\)`))
-    }
-  })
-
-  test('declares semantic roles consumed by shared component CSS', () => {
-    for (const role of ['--v2-focus', '--v2-surface-muted', '--v2-warning', '--v2-muted-ink', '--v2-shadow']) {
       expect(tokens).toContain(role)
     }
   })

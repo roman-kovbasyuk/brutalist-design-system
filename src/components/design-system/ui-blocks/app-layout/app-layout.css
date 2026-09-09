@@ -1,8 +1,8 @@
-.ds-app-layout { display: grid; grid-template-columns: minmax(12rem, 17rem) minmax(0, 1fr) auto; min-height: 100%; background: var(--v2-canvas); color: var(--v2-ink); }
-.ds-app-layout__navigation { border-right: var(--v2-border-width) solid var(--v2-ink); background: var(--v2-surface); }
+.ds-app-layout { display: grid; grid-template-columns: minmax(12rem, 17rem) minmax(0, 1fr) auto; min-height: 100%; background: var(--v2-canvas, #fffaf0); color: var(--v2-ink, #171717); }
+.ds-app-layout__navigation { border-right: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); background: var(--v2-surface, #fff); }
 .ds-app-layout__main { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.ds-app-layout__header { min-height: 4rem; padding: 1rem 1.25rem; border-bottom: var(--v2-border-width) solid var(--v2-ink); background: var(--v2-surface); }
+.ds-app-layout__header { min-height: 4rem; padding: 1rem 1.25rem; border-bottom: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); background: var(--v2-surface, #fff); }
 .ds-app-layout__content { min-width: 0; padding: clamp(1rem, 3vw, 2rem); }
-.ds-app-layout__inspector { width: min(25rem, 30vw); border-left: var(--v2-border-width) solid var(--v2-ink); background: var(--v2-surface); }
+.ds-app-layout__inspector { width: min(25rem, 30vw); border-left: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); background: var(--v2-surface, #fff); }
 .ds-app-layout__feedback { position: fixed; z-index: 10; right: 1rem; bottom: 1rem; max-width: min(24rem, calc(100vw - 2rem)); }
-@media (max-width: 700px) { .ds-app-layout { display: block; } .ds-app-layout__navigation { border-right: 0; border-bottom: var(--v2-border-width) solid var(--v2-ink); } .ds-app-layout__inspector { width: auto; border-left: 0; border-top: var(--v2-border-width) solid var(--v2-ink); } }
+@media (max-width: 700px) { .ds-app-layout { display: block; } .ds-app-layout__navigation { border-right: 0; border-bottom: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); } .ds-app-layout__inspector { width: auto; border-left: 0; border-top: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); } }

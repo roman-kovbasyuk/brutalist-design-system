@@ -26,7 +26,7 @@
 .v2-empty-state { display: grid; justify-items: center; text-align: center; gap: var(--v2-space-4); padding: var(--v2-space-12) var(--v2-space-4); color: var(--v2-text-secondary); }
 .v2-empty-state p { margin: 0; font-size: var(--v2-text-body); line-height: var(--v2-line-body); }
 .v2-preview-dialog { width: min(640px, calc(100% - var(--v2-space-8))); max-height: calc(100dvh - var(--v2-space-8)); box-sizing: border-box; padding: var(--v2-space-6); border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-canvas); color: var(--v2-ink); font-family: var(--v2-font); }
-.v2-preview-dialog::backdrop { background: color-mix(in srgb, var(--v2-ink) 40%, transparent); }
+.v2-preview-dialog::backdrop { background: rgba(0, 0, 0, .4); }
 .v2-preview-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: var(--v2-space-4); margin-bottom: var(--v2-space-6); }
 .v2-preview-dialog > header h2 { margin: 0; font-size: var(--v2-text-h3); font-weight: var(--v2-weight-heading); }
 @media (hover: none), (pointer: coarse) { .v2-action-card__hover-actions { opacity: 1; pointer-events: auto; } }

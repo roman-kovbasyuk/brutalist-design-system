@@ -1,5 +1,5 @@
 .ds-item-detail { display: grid; gap: 1.5rem; max-width: 72rem; }
-.ds-item-detail__header { display: flex; justify-content: space-between; align-items: start; gap: 1rem; padding-bottom: 1rem; border-bottom: var(--v2-border-width) solid var(--v2-ink); }
+.ds-item-detail__header { display: flex; justify-content: space-between; align-items: start; gap: 1rem; padding-bottom: 1rem; border-bottom: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); }
 .ds-item-detail__header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.5rem); }
 .ds-item-detail__eyebrow { margin: 0 0 .25rem; font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .ds-item-detail__actions { display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -7,7 +7,7 @@
 .ds-item-detail__copy { display: grid; align-content: start; gap: 1rem; }
 .ds-item-detail__copy .ds-inline-text-value { font: inherit; text-align: left; border: 0; padding: 0; background: transparent; }
 .ds-item-detail__copy .ds-inline-text-value:first-child { font-size: 1.25rem; font-weight: 800; }
-.ds-item-detail__preview { min-height: 12rem; padding: 1rem; border: var(--v2-border-width) solid var(--v2-ink); background: var(--v2-surface); }
-.ds-item-detail__metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; padding-top: 1rem; border-top: var(--v2-border-width) solid var(--v2-ink); }
-.ds-item-detail--empty, .ds-item-detail--loading { min-height: 12rem; padding: 2rem; border: var(--v2-border-width) dashed var(--v2-ink); background: var(--v2-surface); }
+.ds-item-detail__preview { min-height: 12rem; padding: 1rem; border: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); background: var(--v2-surface, #fff); }
+.ds-item-detail__metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; padding-top: 1rem; border-top: var(--v2-border-width, 2px) solid var(--v2-ink, #171717); }
+.ds-item-detail--empty, .ds-item-detail--loading { min-height: 12rem; padding: 2rem; border: var(--v2-border-width, 2px) dashed var(--v2-ink, #171717); background: var(--v2-surface, #fff); }
 @media (max-width: 640px) { .ds-item-detail__header { display: grid; } .ds-item-detail__body { grid-template-columns: 1fr; } }

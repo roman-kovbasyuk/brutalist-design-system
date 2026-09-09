@@ -14,11 +14,11 @@ export const layouts = ['Stack', 'Inline', 'Grid', 'Container', 'Divider', 'Scro
 const labels = { canvas: 'Canvas', surface: 'Surface', ink: 'Ink', accent: 'Accent', success: 'Success', danger: 'Danger', muted: 'Muted · decorative only', 'text-secondary': 'Secondary text', radius: 'Standard corners', 'radius-large': 'Large corners', 'radius-pill': 'Pill', 'border-width': 'Structural border', 'shadow-small': 'Small', 'shadow-interactive': 'Interactive', 'shadow-floating': 'Floating', 'duration-fast': 'Feedback', 'duration-disclosure': 'Disclosure', ease: 'Easing', font: 'Font family' }
 function groupFor(key) {
   if (/^space-/.test(key)) return 'spacing'
-  if (/^(shadow(?:-|$)|z-)/.test(key)) return 'elevation'
+  if (/^(shadow-|z-)/.test(key)) return 'elevation'
   if (/^(duration-|ease$)/.test(key)) return 'motion'
   if (/^icon-/.test(key)) return 'icons'
   if (/^(radius|border-width|control-height)/.test(key)) return 'shape'
-  if (/^(font(?:-|$)|text-(h\d|lead|body|small|page|display|section|component|meta)|line-|weight-)/.test(key) || /^text-lead-/.test(key)) return 'typography'
+  if (/^(font$|text-(h\d|lead|body|small|page|display|section|component|meta)$|line-|weight-)/.test(key) || /^text-lead-/.test(key)) return 'typography'
   return 'color'
 }
 

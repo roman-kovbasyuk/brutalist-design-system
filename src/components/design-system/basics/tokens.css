@@ -7,8 +7,6 @@
   --primitive-color-teal: #23a094;
   --primitive-color-red: #dc341e;
   --primitive-color-gray: #595959;
-  --primitive-color-muted-surface: #efefed;
-  --primitive-color-focus: #005fcc;
 }
 
 /* Semantic roles. Light is the only supported application mode. */
@@ -18,11 +16,7 @@
   --v2-ink: var(--primitive-color-black);
   --v2-muted: rgba(0, 0, 0, 0.5);
   --v2-text-secondary: var(--primitive-color-gray);
-  --v2-muted-ink: var(--v2-text-secondary);
-  --v2-ink-muted: var(--v2-text-secondary);
-  --v2-surface-muted: var(--primitive-color-muted-surface);
   --v2-border: var(--primitive-color-black);
-  --v2-focus: var(--primitive-color-focus);
   --v2-accent: var(--primitive-color-cyan);
   --v2-success: var(--primitive-color-teal);
   --v2-danger: var(--primitive-color-red);
@@ -34,9 +28,7 @@
   --v2-warning-text: var(--v2-ink);
   --v2-warning-surface: var(--v2-canvas);
   --v2-warning-border: var(--v2-ink);
-  --v2-warning: var(--v2-accent);
   --v2-font: "Avenir Next", Avenir, Montserrat, Corbel, "URW Gothic", source-sans-pro, sans-serif;
-  --v2-font-display: 500 var(--v2-text-h4)/1.2 var(--v2-font);
 
   --v2-text-h1: 48px;
   --v2-line-h1: 1.08333333;
@@ -86,9 +78,6 @@
   --v2-shadow-small: 2px 2px 0 var(--v2-ink);
   --v2-shadow-interactive: 4px 4px 0 var(--v2-ink);
   --v2-shadow-floating: 8px 8px 0 var(--v2-ink);
-  --v2-shadow: var(--v2-shadow-interactive);
-  --v2-shadow-float: var(--v2-shadow-floating);
-  --v2-shadow-raised: var(--v2-shadow-interactive);
   --v2-z-popover: 20;
   --v2-z-modal: 40;
   --v2-z-toast: 60;

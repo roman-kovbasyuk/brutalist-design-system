@@ -7,26 +7,9 @@ export function Example() {
 }
 `
 
-const tokensFor = (familyId: string) => ({
-  inputs: ['--v2-surface', '--v2-border', '--v2-control-height', '--v2-text-secondary', '--v2-danger'],
-  selection: ['--v2-surface', '--v2-border', '--v2-accent', '--v2-control-height', '--v2-z-popover'],
-  navigation: ['--v2-surface', '--v2-border', '--v2-accent', '--v2-radius', '--v2-space-2'],
-  overlays: ['--v2-surface', '--v2-border', '--v2-shadow', '--v2-z-popover', '--v2-z-modal'],
-  feedback: ['--v2-success', '--v2-warning', '--v2-danger', '--v2-surface-muted', '--v2-duration-fast'],
-  data: ['--v2-surface', '--v2-border', '--v2-accent', '--v2-space-3', '--v2-control-height-compact'],
-  files: ['--v2-surface', '--v2-border', '--v2-accent', '--v2-radius'],
-  ai: ['--v2-accent', '--v2-success', '--v2-danger', '--v2-text-secondary', '--v2-duration-disclosure'],
-  content: ['--v2-surface', '--v2-border', '--v2-accent', '--v2-shadow-small', '--v2-radius'],
-  settings: ['--v2-surface', '--v2-border', '--v2-text-secondary', '--v2-space-4'],
-  'app-layout': ['--v2-canvas', '--v2-surface', '--v2-border', '--v2-z-popover'],
-  'item-browser': ['--v2-surface', '--v2-border', '--v2-accent', '--v2-space-4'],
-  'item-detail': ['--v2-surface', '--v2-border', '--v2-text-secondary', '--v2-space-4'],
-  'ai-workspace': ['--v2-surface', '--v2-border', '--v2-accent', '--v2-shadow-interactive', '--v2-space-4'],
-} as Record<string, string[]>)[familyId] ?? ['--v2-accent', '--v2-control-height', '--v2-radius']
-
 const entry = (id: string, familyId: string, name: string, path: string, group: string, defaults: Values = {}, controls: EntryMetadata['examples'][number]['controls'] = []): EntryMetadata => ({
   id, familyId, name, purpose: `A portable ${name} specimen for application interfaces.`, maturity: 'beta', source: path,
-  exports: [name], dependencies: [], tokens: tokensFor(familyId),
+  exports: [name], dependencies: [], tokens: ['--v2-accent', '--v2-control-height', '--v2-radius'],
   usage: `Use ${name} when this interaction or presentation is needed.`, keyboard: 'Uses native semantics and keyboard behavior.', constraints: ['Keep data and mutations owned by the application.'],
   examples: [{ id: `${id}-default`, title: `Default ${name}`, group, defaults, initialDraft: {}, controls, getSource: source(name) }],
 })

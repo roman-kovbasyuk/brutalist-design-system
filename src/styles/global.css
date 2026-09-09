@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 
 html {
-  background: var(--v2-canvas);
+  background: var(--canvas);
   scroll-behavior: smooth;
 }
 
@@ -9,11 +9,11 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background: var(--v2-canvas);
-  color: var(--v2-ink);
-  font-family: var(--v2-font);
-  font-size: var(--v2-text-body);
-  line-height: var(--v2-line-body);
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -33,23 +33,23 @@ a {
   text-underline-offset: 3px;
 }
 
-::selection { background: var(--v2-accent); color: var(--v2-on-action); }
+::selection { background: var(--accent); color: #ffffff; }
 input,
-textarea { caret-color: var(--v2-accent); }
+textarea { caret-color: var(--accent); }
 
 :focus-visible {
-  outline: 2px solid var(--v2-focus);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
 ::-webkit-scrollbar { width: 12px; height: 12px; }
-::-webkit-scrollbar-track { background: var(--v2-canvas); }
+::-webkit-scrollbar-track { background: var(--paper); }
 ::-webkit-scrollbar-thumb {
-  border: 3px solid var(--v2-canvas);
-  border-radius: var(--v2-radius-pill);
-  background: color-mix(in srgb, var(--v2-text-secondary) 45%, var(--v2-canvas));
+  border: 3px solid var(--paper);
+  border-radius: 999px;
+  background: #b9c4d3;
 }
-::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--v2-text-secondary) 65%, var(--v2-canvas)); }
+::-webkit-scrollbar-thumb:hover { background: #9faec1; }
 
 h1,
 h2,
