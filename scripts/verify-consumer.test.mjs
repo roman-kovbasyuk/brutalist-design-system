@@ -5,13 +5,15 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { createFixtureManifest, assertPortableConsumerSource } from './verify-consumer.mjs'
 
-test('creates an isolated fixture manifest that depends on the packed artifact', () => {
-  const manifest = createFixtureManifest('/tmp/brutalist-design-system-0.1.0.tgz')
+test('uses the packed tarball and the project dependency declarations in the isolated fixture', () => {
+  const root = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const manifest = createFixtureManifest('/tmp/brutalist-design-system.tgz', root)
 
   assert.equal(manifest.private, true)
-  assert.equal(manifest.dependencies['brutalist-design-system'], 'file:/tmp/brutalist-design-system-0.1.0.tgz')
-  assert.equal(manifest.dependencies.react, '19.2.8')
-  assert.equal(manifest.devDependencies.vite, '8.2.2')
+  assert.equal(manifest.dependencies['brutalist-design-system'], 'file:/tmp/brutalist-design-system.tgz')
+  assert.equal(manifest.dependencies.react, root.dependencies.react)
+  assert.equal(manifest.devDependencies['@types/react'], root.devDependencies['@types/react'])
+  assert.equal(manifest.devDependencies.vite, root.devDependencies.vite)
 })
 
 test('rejects consumer source that reaches into this repository', () => {

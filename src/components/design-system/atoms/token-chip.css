@@ -5,7 +5,7 @@
   max-width: 100%;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-button.v2-token-chip {
+.system-screen--v2 .ds-button.v2-token-chip {
   max-width: 100%;
   min-width: 0;
   min-height: calc(var(--v2-control-height-compact) / 2);
@@ -19,7 +19,7 @@
   text-align: left;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-button.v2-token-chip code {
+.system-screen--v2 .ds-button.v2-token-chip code {
   min-width: 0;
   color: inherit;
   font-size: inherit;
@@ -28,7 +28,7 @@
 
 .v2-token-chip svg { width: 8px; height: 8px; flex-shrink: 0; }
 
-:is(.system-screen--v2, .bs-root) .v2-button.v2-token-chip:not(:disabled):hover {
+.system-screen--v2 .ds-button.v2-token-chip:not(:disabled):hover {
   background: var(--v2-accent);
   box-shadow: none;
   transform: none;

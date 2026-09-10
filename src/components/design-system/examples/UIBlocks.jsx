@@ -65,7 +65,7 @@ export function PromptInputBlock() {
         <button type="button" className="v2-block-icon" aria-label="Attach prompt files" onClick={() => picker.current?.click()}><Paperclip size={20} aria-hidden="true" /></button>
         <SelectMenu label="Prompt model" value={model} options={['Studio', 'Creative', 'Precise']} onChange={setModel} />
         <SelectMenu label="Prompt effort" value={effort} options={['Quick', 'Balanced', 'Thorough']} onChange={setEffort} />
-        <button type="submit" className="v2-button v2-button--primary v2-block-send" disabled={!busy && !message.trim()} aria-label={busy ? 'Stop generation' : 'Send prompt'}>{busy ? <Square size={20} aria-hidden="true" /> : <ArrowUp size={20} aria-hidden="true" />}</button>
+        <button type="submit" className="ds-button ds-button--primary v2-block-send" disabled={!busy && !message.trim()} aria-label={busy ? 'Stop generation' : 'Send prompt'}>{busy ? <Square size={20} aria-hidden="true" /> : <ArrowUp size={20} aria-hidden="true" />}</button>
       </div>
     </div>
     <p className="v2-block-status" role="status">{status}</p>
@@ -95,7 +95,7 @@ export function SchedulingBlock() {
       <div className="v2-block-row-heading"><h4>Pick a day</h4><span>September 2026</span></div>
       <fieldset className="v2-block-days"><legend className="v2-block-sr">Available review days</legend>{availableDays.map((item) => <label key={item.day}><input type="radio" name={`${id}-day`} aria-label={`September ${item.day}`} checked={day === item.day} disabled={!item.times.length} onChange={() => { setDay(item.day); setTime(''); setConfirmed(false) }} /><span><small>{item.label}</small><strong>{item.day}</strong><small>{item.times.length ? `${item.times.length} free` : 'Full'}</small></span></label>)}</fieldset>
       <fieldset className="v2-block-times"><legend>Times on September {day}</legend>{selected.times.map((slot) => <label key={slot}><input type="radio" name={`${id}-time`} aria-label={slot} checked={time === slot} onChange={() => { setTime(slot); setConfirmed(false) }} /><span>{slot}</span></label>)}</fieldset>
-      <div className="v2-block-footer"><p role="status">{confirmed ? `Demo booking confirmed: September ${day} at ${time}.` : time ? `September ${day} at ${time}` : 'Select a time to continue.'}</p><button type="button" className="v2-button v2-button--primary" disabled={!time || confirmed} onClick={() => setConfirmed(true)}>{confirmed ? <><Check size={16} aria-hidden="true" />Confirmed</> : 'Confirm time'}</button></div>
+      <div className="v2-block-footer"><p role="status">{confirmed ? `Demo booking confirmed: September ${day} at ${time}.` : time ? `September ${day} at ${time}` : 'Select a time to continue.'}</p><button type="button" className="ds-button ds-button--primary" disabled={!time || confirmed} onClick={() => setConfirmed(true)}>{confirmed ? <><Check size={16} aria-hidden="true" />Confirmed</> : 'Confirm time'}</button></div>
     </div>
   </div>
 }

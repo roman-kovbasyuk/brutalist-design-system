@@ -30,3 +30,10 @@ button.ds-inline-text-value { min-height: var(--v2-control-height-compact); curs
 @media (hover: none), (pointer: coarse) { .ds-action-card__actions, .ds-selection-tile__action { opacity: 1; pointer-events: auto; } }
 @media (max-width: 600px) { .ds-action-card { padding: var(--v2-space-4); } }
 @media (prefers-reduced-motion: reduce) { .ds-action-card__actions, .ds-selection-tile, .ds-selection-tile__action { transition: none; } .ds-selection-tile:not(:disabled):hover { box-shadow: none; transform: none; } }
+.ds-action-card[data-dismissing] { opacity: .35; transform: translateX(var(--v2-space-1)); }
+.ds-action-card[data-exiting] { opacity: 0; transform: translateX(var(--v2-space-2)); }
+.ds-action-card { transition: background-color var(--v2-duration-fast) var(--v2-ease), opacity var(--v2-duration-fast) var(--v2-ease), transform var(--v2-duration-fast) var(--v2-ease); }
+.ds-action-card__content h3 { margin: 0; font-size: var(--v2-text-h3); line-height: var(--v2-line-h3); font-weight: var(--v2-weight-heading); }
+.ds-action-card__content p { margin: 0; font-size: var(--v2-text-body); line-height: var(--v2-line-body); }
+.ds-inline-text-editor__note { font-size: var(--v2-text-meta); }
+@media (prefers-reduced-motion: reduce) { .ds-action-card { transition: none; } .ds-action-card[data-dismissing], .ds-action-card[data-exiting] { transform: none; } }

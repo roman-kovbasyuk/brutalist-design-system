@@ -109,7 +109,7 @@ describe('DesignSystemScreen', () => {
   })
 
   test('keeps design-system token chips readable', () => {
-    expect(designSystemStyles).toMatch(/\.v2-button\.v2-token-chip\s*{[^}]*font-size:\s*11px;/)
+    expect(designSystemStyles).toMatch(/\.ds-button\.v2-token-chip\s*{[^}]*font-size:\s*11px;/)
   })
 
   test('demonstrates compact navigation, table, cards, and action reflow', async () => {
@@ -210,7 +210,7 @@ describe('DesignSystemScreen', () => {
     }
     expect(library.querySelectorAll('details, summary')).toHaveLength(0)
     const links = [...library.querySelectorAll('.ds-tree-item')]
-    expect(links).toHaveLength(29)
+    expect(links).toHaveLength(24)
     for (const link of links) {
       const target = document.querySelector(link.getAttribute('href'))
       expect(target).toBeVisible()
@@ -238,7 +238,7 @@ describe('DesignSystemScreen', () => {
     await user.type(search, 'no-such-component')
     expect(within(library).queryAllByRole('link', { name: /./ })).toHaveLength(5)
     await user.clear(search)
-    expect(library.querySelectorAll('.ds-tree-item')).toHaveLength(29)
+    expect(library.querySelectorAll('.ds-tree-item')).toHaveLength(24)
   })
 
   test('keeps the documented 48px page role at every breakpoint', () => {
@@ -456,7 +456,7 @@ describe('DesignSystemScreen', () => {
   test('binds motion specimens to the timing and reduced-motion contract', () => {
     render(<DesignSystemScreen />)
 
-    expect(screen.getByRole('button', { name: 'Preview button lift' })).toHaveClass('v2-button')
+    expect(screen.getByRole('button', { name: 'Preview button lift' })).toHaveClass('ds-button')
     expect(screen.getByRole('button', { name: 'Preview card shadow' })).toHaveClass('v2-motion-card')
     expect(designSystemStyles).toMatch(
       /\.system-screen--v2 \.v2-motion-card\s*{[^}]*transition:[^;]*var\(--v2-duration-fast\)/,
@@ -469,7 +469,7 @@ describe('DesignSystemScreen', () => {
       /\.system-screen--v2 \*,\s*\.system-screen--v2 \*::before,\s*\.system-screen--v2 \*::after\s*{[^}]*animation:\s*none !important;[^}]*scroll-behavior:\s*auto !important;/,
     )
     expect(designSystemStyles).toMatch(
-      /\.system-screen--v2 \.v2-button[^}]*\.system-screen--v2 \.v2-motion-card[^}]*{[^}]*box-shadow:\s*none;[^}]*transform:\s*none;/,
+      /\.system-screen--v2 \.ds-button[^}]*\.system-screen--v2 \.v2-motion-card[^}]*{[^}]*box-shadow:\s*none;[^}]*transform:\s*none;/,
     )
     expect(designSystemStyles).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.system-screen--v2 \.v2-motion-card:hover\s*{[^}]*border-color:\s*var\(--v2-accent\);/,
@@ -572,7 +572,7 @@ describe('DesignSystemScreen', () => {
 
   test('defines hover and press feedback for every interactive control family', () => {
     for (const selector of [
-      '.v2-button:not(:disabled):hover',
+      '.ds-button:not(:disabled):hover',
       '.v2-choice-group label:hover',
       '.v2-check-control:hover',
       '.v2-switch:hover',

@@ -8,7 +8,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const fixtureSource = join(repositoryRoot, 'fixtures/package-consumer')
 const packageName = 'brutalist-design-system'
 
-export function createFixtureManifest(tarballPath) {
+export function createFixtureManifest(tarballPath, rootManifest) {
   return {
     name: 'design-system-package-consumer-fixture',
     private: true,
@@ -19,15 +19,12 @@ export function createFixtureManifest(tarballPath) {
     },
     dependencies: {
       [packageName]: `file:${tarballPath}`,
-      react: '19.2.8',
-      'react-dom': '19.2.8',
+      react: rootManifest.dependencies.react,
+      'react-dom': rootManifest.dependencies['react-dom'],
     },
     devDependencies: {
-      '@types/react': '19.2.18',
-      '@types/react-dom': '19.2.7',
-      '@vitejs/plugin-react': '6.1.1',
-      typescript: '7.0.2',
-      vite: '8.2.2',
+      ...Object.fromEntries(['@types/react', '@types/react-dom', '@vitejs/plugin-react', 'typescript', 'vite']
+        .map(name => [name, rootManifest.devDependencies[name]])),
     },
   }
 }
@@ -66,22 +63,20 @@ function main() {
 
   const workspace = mkdtempSync(join(tmpdir(), 'brutalist-design-system-consumer-'))
   const fixtureRoot = join(workspace, 'fixture')
-  const npmCache = join(workspace, 'npm-cache')
-  const npmOptions = { env: { ...process.env, npm_config_cache: npmCache } }
+  const npmOptions = { env: { ...process.env, npm_config_cache: join(workspace, 'npm-cache') } }
   try {
-    const packageManifest = JSON.parse(read(join(distLibrary, 'package.json')))
-    run('npm', ['pack', distLibrary, '--pack-destination', workspace], { cwd: repositoryRoot, ...npmOptions })
-    const tarball = join(workspace, `${packageName}-${packageManifest.version}.tgz`)
-    if (!existsSync(tarball)) throw new Error('npm pack did not create the design system tarball.')
-
+    run('npm', ['pack', distLibrary, '--pack-destination', workspace, '--ignore-scripts'], { cwd: repositoryRoot, ...npmOptions })
+    const libraryManifest = JSON.parse(read(join(distLibrary, 'package.json')))
+    const tarball = join(workspace, `${packageName}-${libraryManifest.version}.tgz`)
+    if (!existsSync(tarball)) throw new Error('npm pack did not create the library tarball.')
     cpSync(fixtureSource, fixtureRoot, { recursive: true })
     assertFixtureUsesPublicApi(fixtureRoot)
-    writeFileSync(join(fixtureRoot, 'package.json'), `${JSON.stringify(createFixtureManifest(tarball), null, 2)}\n`)
+    const rootManifest = JSON.parse(read(join(repositoryRoot, 'package.json')))
+    writeFileSync(join(fixtureRoot, 'package.json'), `${JSON.stringify(createFixtureManifest(tarball, rootManifest), null, 2)}\n`)
 
-    // The fixture must be offline and cannot reuse a source alias. Copying the already-installed
-    // tooling keeps the proof deterministic while npm installs the packed library into this app.
-    cpSync(join(repositoryRoot, 'node_modules'), join(fixtureRoot, 'node_modules'), { recursive: true, dereference: true })
-    run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--offline', '--legacy-peer-deps'], { cwd: fixtureRoot, ...npmOptions })
+    // A fresh install checks packed contents and dependency declarations. It intentionally
+    // requires registry access: copying host modules would hide missing dependencies.
+    run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: fixtureRoot, ...npmOptions })
     const installedPackage = join(fixtureRoot, 'node_modules', packageName)
     if (!existsSync(join(installedPackage, 'index.js')) || !existsSync(join(installedPackage, 'styles.css'))) {
       throw new Error('Fixture did not install the package public JavaScript and stylesheet entries.')

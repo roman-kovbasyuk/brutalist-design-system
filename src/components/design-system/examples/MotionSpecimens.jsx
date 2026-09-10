@@ -105,7 +105,7 @@ export function MotionSpecimens() {
               <span className="v2-demo-label">Dropdown</span>
               <div className="v2-dropdown">
                 <button
-                  className="v2-button v2-button--secondary"
+                  className="ds-button ds-button--secondary"
                   type="button"
                   aria-expanded={isDropdownOpen}
                   aria-controls="v2-asset-actions"
@@ -133,7 +133,7 @@ export function MotionSpecimens() {
             <div className="v2-overlay-demo" data-component-reference="MotionSpecimens — Tooltip (.v2-tooltip)">
               <span className="v2-demo-label">Tooltip</span>
               <button
-                className="v2-button v2-button--secondary"
+                className="ds-button ds-button--secondary"
                 type="button"
                 aria-describedby="v2-motion-tooltip"
                 aria-expanded={isTooltipVisible}
@@ -150,7 +150,7 @@ export function MotionSpecimens() {
             <div className="v2-overlay-demo" data-component-reference="MotionSpecimens — Toast (.v2-overlay-toast)">
               <span className="v2-demo-label">Toast</span>
               <button
-                className="v2-button v2-button--primary"
+                className="ds-button ds-button--primary"
                 type="button"
                 onClick={() => setIsToastVisible(true)}
               >
@@ -161,7 +161,7 @@ export function MotionSpecimens() {
                 <div className="v2-toast v2-overlay-toast" role="status" aria-label="Motion preference saved">
                   <span><strong>Motion preference saved</strong><small>Reduced motion is respected automatically.</small></span>
                   <button
-                    className="v2-button v2-button--icon"
+                    className="ds-button ds-button--icon"
                     type="button"
                     aria-label="Dismiss notification"
                     onClick={() => setIsToastVisible(false)}
@@ -184,7 +184,7 @@ export function MotionSpecimens() {
               <span><strong>Delete campaign draft?</strong><small>This removes the local draft only.</small></span>
               <div className="v2-confirmation-panel__actions">
                 <button
-                  className="v2-button v2-button--secondary"
+                  className="ds-button ds-button--secondary"
                   type="button"
                   onClick={() => setIsInlineConfirmationOpen(false)}
                   ref={inlineCancelRef}
@@ -192,7 +192,7 @@ export function MotionSpecimens() {
                   Keep draft
                 </button>
                 <button
-                  className="v2-button v2-button--danger"
+                  className="ds-button ds-button--danger"
                   type="button"
                   onClick={() => setIsInlineConfirmationOpen(false)}
                 >
@@ -202,7 +202,7 @@ export function MotionSpecimens() {
             </div>
           ) : (
             <button
-              className="v2-button v2-button--danger"
+              className="ds-button ds-button--danger"
               type="button"
               onClick={() => setIsInlineConfirmationOpen(true)}
               ref={inlineTriggerRef}
@@ -219,7 +219,7 @@ export function MotionSpecimens() {
           description="The initiating control regains focus when the modal closes."
         >
           <button
-            className="v2-button v2-button--danger"
+            className="ds-button ds-button--danger"
             type="button"
             ref={dialogTriggerRef}
             onClick={() => setIsDialogOpen(true)}
@@ -250,14 +250,14 @@ export function MotionSpecimens() {
               </p>
               <div className="v2-modal__actions">
                 <button
-                  className="v2-button v2-button--secondary"
+                  className="ds-button ds-button--secondary"
                   type="button"
                   ref={cancelButtonRef}
                   onClick={closeDialog}
                 >
                   Cancel
                 </button>
-                <button className="v2-button v2-button--danger" type="button" onClick={closeDialog}>
+                <button className="ds-button ds-button--danger" type="button" onClick={closeDialog}>
                   Delete asset
                 </button>
               </div>
@@ -278,7 +278,7 @@ export function MotionSpecimens() {
           <div className="v2-motion-lab">
             <div className="v2-motion-sample" data-component-reference={'AppButton variant="primary"'}>
               <span className="v2-demo-label">Button lift · 150ms</span>
-              <button className="v2-button v2-button--primary" type="button">
+              <button className="ds-button ds-button--primary" type="button">
                 Preview button lift
               </button>
               <small>Hover lifts; keyboard focus adds an outline; press returns to the surface.</small>

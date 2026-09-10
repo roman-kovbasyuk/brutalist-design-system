@@ -1,5 +1,7 @@
 > Historical visual direction. Superseded for the active Studio application by the root DESIGN.md on 6 September 2026. Retained for legacy consumers and migration context.
 
+> Historical design-system migration record. Product paths and consumer claims below describe the original host application, which is not part of this standalone workspace. For current boundaries, see [component ownership](../../src/components/design-system/README.md) and [validation](validation.md).
+
 # Lingu Studio Design System
 
 ## Direction

@@ -31,4 +31,8 @@
   .ds-button { transition-property: background-color, color, border-color; }
   .ds-button:not(:disabled):not([aria-disabled='true']):is(:hover, :active) { box-shadow: none; transform: none; }
   .ds-button__spinner { animation: none; }
+  .ds-button--primary:not(:disabled):not([aria-disabled='true']):hover { background: color-mix(in srgb, var(--v2-accent) 72%, var(--v2-surface)); }
+  .ds-button--secondary:not(:disabled):not([aria-disabled='true']):hover { background: var(--v2-canvas); }
+  .ds-button--danger:not(:disabled):not([aria-disabled='true']):hover { border-color: var(--v2-ink); background: var(--v2-ink); }
 }
+.ds-button.ds-text-action { font-size: var(--v2-text-small); font-weight: var(--v2-weight-text); padding-inline: var(--v2-space-1); text-decoration: underline; text-underline-offset: .2em; }

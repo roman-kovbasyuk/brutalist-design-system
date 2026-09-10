@@ -22,4 +22,6 @@ jobs:
       - run: npm run test:run
       - run: npm run build:library
       - run: npm run verify:package
+      - run: npm run test:scripts
+      - run: npm run verify:consumer
       - run: npm run build

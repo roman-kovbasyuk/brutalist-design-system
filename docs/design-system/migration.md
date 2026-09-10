@@ -1,5 +1,7 @@
 # Migration map and compatibility
 
+> Historical design-system migration record. Product paths and consumer claims below describe the original host application, which is not part of this standalone workspace. For current boundaries, see [component ownership](../../src/components/design-system/README.md) and [validation](validation.md).
+
 All paths below are repository-relative. Reversible moves retain the original module as a re-export of the **same component**, preserving component identity and old consumers. This work introduces no removed export, renamed state value, route change or backend mutation. HMR may reset a currently open demo's local state; persistent campaign data is unaffected.
 
 | Current component / location | Target location / name | Action | Reason |

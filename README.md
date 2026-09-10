@@ -1,32 +1,52 @@
 # Brutalist Design System
 
-This repository is now a **design-system-only workspace**.
+A standalone React design-system library and interactive workbench. The workbench runs at [Design System](http://127.0.0.1:5178/design-system).
 
-It keeps only the UI foundations and component blocks in `src/`:
+## Run locally
 
-- `src/components/design-system/` (atoms / molecules / organisms / templates / examples)
-- `src/components/ui/` (shared UI primitives used by examples)
-- `src/screens/` (design-system shell and catalog view)
-- `src/styles/` and `src/lib/` utilities used by the design system
-
-Everything else from the legacy product app has been removed.
-
-## Getting started
-
-```bash
-npm install
-npm run dev
+```sh
+npm ci
+npm run dev -- --host 127.0.0.1 --port 5178
 ```
 
-Use this URL for the running app:
+## Repository boundaries
 
-- `http://127.0.0.1:5177/design-system`
+- `src/components/design-system/index.ts`, `basics/`, `components/`, and `ui-blocks/`: public library.
+- `atoms/`, `molecules/`, and `organisms/`: retained local APIs and compatibility adapters; not all are package exports.
+- `examples/`, `workbench/`, `src/screens/`, and app styles: interactive documentation and specimen layouts.
+- `fixtures/package-consumer/` and `scripts/`: package build and isolated consumer verification.
+- `docs/`: design-system reference and relevant historical plans, including pending Figma work.
+- `observatory/`: retained project-local task tracking infrastructure.
 
-## Verification
+Legacy campaign application assets, unrelated projects and agent-plugin bundles have been removed. Sample campaign wording in specimens is illustrative data, not a shipped product workflow.
 
-- `npm run build`
-- `npm run test:run`
+## Verify
 
-If you want to run this as a reusable design-system package in the future,
-keep the design system screen as the only route and add your consumer app
-on top as a separate entrypoint.
+```sh
+npm run typecheck
+npm run test:run
+npm run build:library
+npm run verify:package
+npm run test:scripts
+npm run verify:consumer
+npm run build
+```
+
+The consumer check packs `dist-library/`, installs the tarball and declared dependencies into a fresh temporary directory, then typechecks and builds it without source aliases or copied host modules. It requires npm registry access.
+
+Task-tracker verification is separate: `npm --prefix observatory run harness`.
+
+## Consume the library
+
+Build with `npm run build:library`, then run `npm pack ./dist-library` to create an installable tarball. The repository root is private; the generated artifact is the consumer package.
+
+```tsx
+import { DesignSystemRoot, AppButton } from 'brutalist-design-system'
+import 'brutalist-design-system/styles.css'
+
+export function App() {
+  return <DesignSystemRoot><AppButton variant="primary">Save</AppButton></DesignSystemRoot>
+}
+```
+
+See [getting started](docs/design-system/getting-started.md), [component ownership](src/components/design-system/README.md), and [validation](docs/design-system/validation.md).

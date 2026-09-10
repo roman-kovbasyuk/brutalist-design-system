@@ -1,5 +1,7 @@
 # Banner Studio application design-system audit
 
+> Historical design-system migration record. Product paths and consumer claims below describe the original host application, which is not part of this standalone workspace. For current boundaries, see [component ownership](../../src/components/design-system/README.md) and [validation](validation.md).
+
 Audited 6 September 2026 against `http://127.0.0.1:5176/design-system` and its live source in the `codex/integrated-mvp` worktree. Figma was excluded at the user's request. This is a code and browser audit, not a claim of WCAG conformance.
 
 ## Outcome and scope

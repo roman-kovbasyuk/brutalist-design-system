@@ -1,6 +1,6 @@
-# Banner Studio application design system
+# Brutalist Design System
 
-This reference follows the active `/mvp` app and `/design-system` catalog. The earlier Inter/indigo direction is retained in [legacy visual reference](docs/design-system/legacy-visual-reference.md). Product documentation that still describes the original prototype requires a separate product review.
+This reference defines the active `/design-system` catalog and reusable library.
 
 The application is an Operate surface: stable actions, readable state, clear workflow order, and quiet chrome around creative artwork. Preserve the current Avenir-family typography, cyan action color, black rules, 4px corners and deliberate hard interactive shadows.
 
@@ -19,11 +19,11 @@ Canonical values live in `src/components/design-system/foundations/tokens.css`, 
 | Shape | 4px standard radius; pills for tabs/status; 1px structural border; thicker control/focus borders must be documented by role |
 | Elevation / motion | 4px hard offset for interactive surfaces; feedback 150ms, disclosure 200ms, cubic-bezier(0.4, 0, 0.2, 1); reduced motion removes spatial movement |
 
-Only the light application theme is supported. The SettingsBlock dark preview does not enable an app theme. Banner palettes/fonts/animation are creative content and do not inherit application appearance.
+Only the light application theme is supported. The SettingsBlock dark preview does not enable an app theme. Content-specific palettes, fonts, and animation do not inherit application appearance.
 
 ## Ownership and usage
 
-Use atomic imports from `src/components/design-system/atoms`, `molecules` and `organisms`. Existing flat entry points remain compatibility exports. Example code lives in `examples`; template candidates are documented in `templates` without inventing a reusable shell API. `studio/` retains campaign, review and version rules.
+Use atomic imports from `src/components/design-system/atoms`, `molecules` and `organisms`. Existing flat entry points remain compatibility exports. Example code lives in `examples`; template candidates are documented in `templates` without inventing a reusable shell API.
 
 Shared exports: AppButton; TokenChip; TokenCopyTarget; PillTabs/PillTabPanel; WorkflowSteps; SelectMenu; PromptComposer. All others must be checked in the catalog before assuming a reusable contract. SelectMenu is currently adopted by catalog examples, not the active app. AppButton emphasis and icon shape are independent; states are native CSS/ARIA behavior rather than enumerated visual variants.
 

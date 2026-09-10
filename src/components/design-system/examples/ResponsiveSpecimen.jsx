@@ -7,7 +7,7 @@ export function ResponsiveSpecimen() {
   return (
     <>
       <div className="v2-button-row">
-        <button className="v2-button v2-button--secondary" type="button" aria-pressed={compact} aria-controls="v2-responsive-preview" onClick={() => setCompact((current) => !current)}>
+        <button className="ds-button ds-button--secondary" type="button" aria-pressed={compact} aria-controls="v2-responsive-preview" onClick={() => setCompact((current) => !current)}>
           Preview compact layout
         </button>
         <span className="v2-field__help">Navigation wraps, cards stack, and tables scroll within the frame.</span>
@@ -36,8 +36,8 @@ export function ResponsiveSpecimen() {
             </table>
           </div>
           <div className="v2-responsive-actions">
-            <button className="v2-button v2-button--primary" type="button" onClick={() => setSaved(true)}>Save responsive draft</button>
-            <button className="v2-button v2-button--secondary" type="button" onClick={() => setSaved(false)}>Reset preview</button>
+            <button className="ds-button ds-button--primary" type="button" onClick={() => setSaved(true)}>Save responsive draft</button>
+            <button className="ds-button ds-button--secondary" type="button" onClick={() => setSaved(false)}>Reset preview</button>
           </div>
           <p className="v2-field__help" role="status">{saved ? 'Draft saved in this preview.' : 'Changes stay local to this preview.'}</p>
         </div>

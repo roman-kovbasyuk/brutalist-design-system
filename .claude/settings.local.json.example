@@ -1,6 +1,0 @@
-{
-  "env": {
-    "APIFY_TOKEN": "your-apify-token-here",
-    "FIGMA_TOKEN": "your-figma-token-here"
-  }
-}

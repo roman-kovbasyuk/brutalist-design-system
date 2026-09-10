@@ -7,6 +7,8 @@ export type ActionCardProps = HTMLAttributes<HTMLElement> & {
   actions?: ReactNode
   persistentAction?: ReactNode
   highlighted?: boolean
+  dismissing?: boolean
+  exiting?: boolean
   children: ReactNode
 }
 
@@ -17,12 +19,16 @@ export function ActionCard({
   actions,
   persistentAction,
   highlighted = false,
+  dismissing = false,
+  exiting = false,
   children,
   className = '',
   ...props
 }: ActionCardProps) {
   return <article {...props} aria-label={props['aria-label'] ?? label}
-    className={`ds-action-card ${className}`.trim()} data-highlighted={highlighted || undefined}>
+    className={`ds-action-card ${className}`.trim()} data-highlighted={highlighted || undefined}
+    data-dismissing={dismissing || undefined} data-exiting={exiting || undefined}
+    aria-hidden={exiting || props['aria-hidden']} inert={exiting || props.inert}>
     <header className="ds-action-card__header">
       <div className="ds-action-card__meta"><span>{label}</span>{status}</div>
       {(actions || persistentAction) && <div className="ds-action-card__controls">

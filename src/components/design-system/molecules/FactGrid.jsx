@@ -1,8 +1,9 @@
-import './fact-grid.css'
+import { FactGrid as PublicFactGrid } from '../components/content/FactGrid'
+import '../components/content/content.css'
 
-/** Responsive labelled facts. Values may be read-only text or shared editors. */
-export function FactGrid({ items, label = 'Details' }) {
-  return <div className="v2-fact-grid-container"><dl className="v2-fact-grid" aria-label={label}>{items.map(item => <div key={item.id} data-emphasis={item.emphasis || undefined}>
-    <dt>{item.label}</dt><dd>{item.heading ? <h2>{item.content}</h2> : item.content}</dd>
-  </div>)}</dl></div>
+/** Compatibility adapter for the original content/heading item shape. */
+export function FactGrid({ items, ...props }) {
+  return <PublicFactGrid {...props} items={items.map(({ content, heading, ...item }) => ({
+    ...item, value: item.value ?? (heading ? <h2>{content}</h2> : content),
+  }))} />
 }

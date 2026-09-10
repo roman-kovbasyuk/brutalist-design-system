@@ -1,8 +1,0 @@
-.v2-fact-grid-container { container-type: inline-size; }
-.v2-fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; border: 1px solid var(--v2-ink); gap: 1px; background: var(--v2-ink); }
-@container (max-width: 480px) { .v2-fact-grid { grid-template-columns: minmax(0, 1fr); } }
-.v2-fact-grid > div { min-width: 0; padding: var(--v2-space-6); background: var(--v2-surface); color: var(--v2-ink); }
-.v2-fact-grid > div[data-emphasis] { background: var(--v2-accent); }
-.v2-fact-grid dt { margin-bottom: var(--v2-space-2); font-size: var(--v2-text-meta); }
-.v2-fact-grid dd { margin: 0; font-size: var(--v2-text-body); overflow-wrap: anywhere; }
-.v2-fact-grid dd h2 { margin: 0; font-size: var(--v2-text-h2); line-height: var(--v2-line-h2); font-weight: var(--v2-weight-heading); }

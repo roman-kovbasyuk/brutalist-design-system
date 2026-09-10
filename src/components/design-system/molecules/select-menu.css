@@ -1,9 +1,9 @@
-:is(.system-screen--v2, .bs-root) .v2-menu-select {
+.system-screen--v2 .v2-menu-select {
   position: relative;
   min-width: 0;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-select-trigger {
+.system-screen--v2 .v2-select-trigger {
   box-sizing: border-box;
   display: flex;
   min-height: 48px;
@@ -22,15 +22,15 @@
   cursor: pointer;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-select-trigger svg {
+.system-screen--v2 .v2-select-trigger svg {
   transition: transform var(--v2-duration-disclosure) ease-out;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-select-trigger[aria-expanded="true"] svg {
+.system-screen--v2 .v2-select-trigger[aria-expanded="true"] svg {
   transform: rotate(180deg);
 }
 
-:is(.system-screen--v2, .bs-root) .v2-floating-listbox {
+.system-screen--v2 .v2-floating-listbox {
   position: absolute;
   z-index: 100;
   inset: calc(100% + var(--v2-space-2)) 0 auto;
@@ -45,7 +45,7 @@
   transform-origin: top;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-listbox-option {
+.system-screen--v2 .v2-listbox-option {
   display: flex;
   min-height: 52px;
   align-items: center;
@@ -63,12 +63,12 @@
   cursor: pointer;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-listbox-option[aria-selected="true"] {
+.system-screen--v2 .v2-listbox-option[aria-selected="true"] {
   border-color: var(--v2-border);
   background: var(--v2-accent);
 }
 
-:is(.system-screen--v2, .bs-root) .v2-listbox-option:not([aria-selected="true"]):hover {
+.system-screen--v2 .v2-listbox-option:not([aria-selected="true"]):hover {
   border-color: transparent;
   background: color-mix(in srgb, var(--v2-accent) 24%, var(--v2-surface));
 }
@@ -83,10 +83,10 @@
     transform: translateY(0) scaleY(1);
   }
 }
-:is(.system-screen--v2, .bs-root) .v2-floating-listbox { max-height: min(20rem, 50vh); overflow-y: auto; }
-:is(.system-screen--v2, .bs-root) .v2-menu-select :focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: 0 0 0 2px var(--v2-ink); }
-:is(.system-screen--v2, .bs-root) .v2-select-trigger:disabled { cursor: not-allowed; opacity: .45; }
+.system-screen--v2 .v2-floating-listbox { max-height: min(20rem, 50vh); overflow-y: auto; }
+.system-screen--v2 .v2-menu-select :focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: 0 0 0 2px var(--v2-ink); }
+.system-screen--v2 .v2-select-trigger:disabled { cursor: not-allowed; opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
-  :is(.system-screen--v2, .bs-root) .v2-floating-listbox { animation: none; }
-  :is(.system-screen--v2, .bs-root) .v2-select-trigger svg { transition: none; }
+  .system-screen--v2 .v2-floating-listbox { animation: none; }
+  .system-screen--v2 .v2-select-trigger svg { transition: none; }
 }

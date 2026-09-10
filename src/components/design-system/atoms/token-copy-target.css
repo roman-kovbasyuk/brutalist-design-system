@@ -13,7 +13,7 @@
   cursor: default !important;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-button.v2-token-copy-target__button {
+.system-screen--v2 .ds-button.v2-token-copy-target__button {
   display: block;
   width: 100%;
   min-width: 0;
@@ -25,8 +25,8 @@
   text-align: inherit;
 }
 
-:is(.system-screen--v2, .bs-root) .v2-button.v2-token-copy-target__button:hover,
-:is(.system-screen--v2, .bs-root) .v2-button.v2-token-copy-target__button:active {
+.system-screen--v2 .ds-button.v2-token-copy-target__button:hover,
+.system-screen--v2 .ds-button.v2-token-copy-target__button:active {
   box-shadow: none;
   transform: none;
 }
@@ -59,7 +59,7 @@
 .v2-token-copy-target__feedback:empty { display: none; }
 
 .v2-token-copy-target--inline { display: inline-block; max-width: 100%; }
-:is(.system-screen--v2, .bs-root) .v2-token-copy-target--inline .v2-button.v2-token-copy-target__button {
+.system-screen--v2 .v2-token-copy-target--inline .ds-button.v2-token-copy-target__button {
   display: inline;
   width: auto;
   min-height: 0;

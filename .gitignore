@@ -1,27 +1,14 @@
 # Secrets / machine-local
-.claude/settings.local.json
-CLAUDE.local.md
 .env
+.env.*
+!.env.example
 
-# Raw scraped media (large, regenerable)
-projects/*/01-research/raw/
-projects/*/01-research-static/raw/
-
-# OS noise
+# OS and generated files
 .DS_Store
 Thumbs.db
-
-# Python bytecode (regenerable, version/platform-specific — shouldn't be committed)
-__pycache__/
-*.pyc
-
-# Lingu Studio web app
 node_modules/
 dist/
+dist-library/
 .worktrees/
 .superpowers/sdd/
-.studio-demo-assets/
-.impeccable/review/
-docs-site/.vitepress/cache/
-dist-library/
 /observatory/data/
