@@ -21,6 +21,29 @@ export function Example() {
 }
 `
 
+const tabSource = () => `import { useState } from 'react'
+import { DesignSystemRoot, Tab, TabPanel } from 'brutalist-design-system'
+import 'brutalist-design-system/styles.css'
+
+const items = [
+  { value: 'preview', label: 'Preview' },
+  { value: 'code', label: 'Code' },
+  { value: 'notes', label: 'Notes' },
+]
+
+export function Example() {
+  const [value, setValue] = useState('preview')
+  return <DesignSystemRoot>
+    <Tab items={items} value={value} onValueChange={setValue}
+      ariaLabel="Specimen view" idPrefix="specimen-view" />
+    {items.map(item => <TabPanel key={item.value} value={item.value}
+      activeValue={value} idPrefix="specimen-view">
+      <p>{item.label} content</p>
+    </TabPanel>)}
+  </DesignSystemRoot>
+}
+`
+
 export const metadata: EntryMetadata[] = [
   {
     id: 'app-button', familyId: 'buttons', name: 'AppButton', purpose: 'Triggers an application action with the shared neobrutalist treatment.', maturity: 'beta',
@@ -31,7 +54,16 @@ export const metadata: EntryMetadata[] = [
   entry('text-field', 'inputs', 'TextField', 'src/components/design-system/components/forms/TextField.tsx', 'Text inputs', { invalid: false }, [{ key: 'invalid', label: 'Show error', type: 'boolean', shareable: true }]),
   entry('choice-fields', 'inputs', 'CheckboxField', 'src/components/design-system/components/forms/CheckboxField.tsx', 'Choices', { checked: true }, [{ key: 'checked', label: 'Checked', type: 'boolean', shareable: true }]),
   entry('combobox', 'selection', 'Combobox', 'src/components/design-system/components/selection/Combobox.tsx', 'Search and select'),
-  entry('tabs', 'navigation', 'Tabs', 'src/components/design-system/components/navigation/Tabs.tsx', 'Views and progress', { tab: 'preview' }, [{ key: 'tab', label: 'Active tab', type: 'select', choices: ['preview', 'code', 'notes'], shareable: true }]),
+  {
+    ...entry('tabs', 'navigation', 'Tab', 'src/components/design-system/components/navigation/Tab.tsx', 'Views and progress'),
+    exports: ['Tab', 'TabPanel'],
+    purpose: 'Select a local content panel with the raised pill category control.',
+    usage: 'Pair each item with a TabPanel using the same value and a unique group idPrefix. Tabs remains a compatibility wrapper.',
+    keyboard: 'Left/Right wrap and activate enabled tabs; Home/End select the first/last enabled tab.',
+    constraints: ['Item values must be unique.', 'Keep the controlled value on an enabled item.', 'Use links for route navigation.'],
+    examples: [{ id: 'tabs-default', title: 'Default Tab', group: 'Views and progress', defaults: { tab: 'preview' }, initialDraft: {},
+      controls: [{ key: 'tab', label: 'Active tab', type: 'select', choices: ['preview', 'code', 'notes'], shareable: true }], getSource: tabSource }],
+  },
   entry('breadcrumbs', 'navigation', 'Breadcrumbs', 'src/components/design-system/components/navigation/Breadcrumbs.tsx', 'Wayfinding'),
   entry('dialog', 'overlays', 'Dialog', 'src/components/design-system/components/overlays/overlays.tsx', 'Dialogs and drawers', { open: false }, [{ key: 'open', label: 'Open', type: 'boolean', shareable: false }]),
   entry('popover', 'overlays', 'Popover', 'src/components/design-system/components/overlays/overlays.tsx', 'Contextual help', { open: false }, [{ key: 'open', label: 'Open', type: 'boolean', shareable: false }]),

@@ -1,7 +1,7 @@
 import { AppButton } from '../../components/design-system/components/actions/AppButton'
 import { CheckboxField, TextField } from '../../components/design-system/components/forms'
 import { Combobox } from '../../components/design-system/components/selection'
-import { Breadcrumbs, Tabs } from '../../components/design-system/components/navigation'
+import { Breadcrumbs, Tab, TabPanel } from '../../components/design-system/components/navigation'
 import { Dialog, Popover } from '../../components/design-system/components/overlays'
 import { Alert, Progress } from '../../components/design-system/components/feedback'
 import { Table } from '../../components/design-system/components/data'
@@ -35,7 +35,11 @@ export function ComboboxExample({ draft, onDraftChange }: ExampleProps) {
 }
 export function TabsExample({ options, onDraftChange }: ExampleProps) {
   const value = typeof options.tab === 'string' ? options.tab : 'preview'
-  return <Tabs ariaLabel="Specimen view" items={[{ value: 'preview', label: 'Preview' }, { value: 'code', label: 'Code' }, { value: 'notes', label: 'Notes' }]} value={value} onValueChange={(tab) => onDraftChange({ tab })} />
+  const items = [{ value: 'preview', label: 'Preview' }, { value: 'code', label: 'Code' }, { value: 'notes', label: 'Notes' }]
+  return <div>
+    <Tab ariaLabel="Specimen view" idPrefix="workbench-tab" items={items} value={value} onValueChange={(tab) => onDraftChange({ tab })} />
+    {items.map(item => <TabPanel key={item.value} idPrefix="workbench-tab" value={item.value} activeValue={value}><p>{item.label} content</p></TabPanel>)}
+  </div>
 }
 export function BreadcrumbsExample() { return <Breadcrumbs items={[{ label: 'Library', href: '#library' }, { label: 'Campaigns', href: '#campaigns' }, { label: 'Summer launch' }]} /> }
 export function DialogExample({ options, onDraftChange }: ExampleProps) {

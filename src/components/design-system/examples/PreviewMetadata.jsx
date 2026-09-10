@@ -11,7 +11,7 @@ export const cardEntries = {
   'Pickers and selection': 'SelectMenu',
   'Status language': 'StatusLabel and progress',
   'Workflow steps': 'WorkflowSteps',
-  'Tabs and view controls': 'PillTabs + PillTabPanel',
+  'Tabs and view controls': 'Tab',
   'Menu and supporting information': 'Overlays and feedback',
 }
 export const sectionEntries = { 1: 'Application tokens', 9: 'Catalog specimens', 11: 'PromptComposer' }
@@ -21,7 +21,7 @@ const tokens = {
   AppButton: ['--v2-accent', '--v2-control-height', '--v2-radius'],
   TokenChip: ['--v2-canvas', '--v2-control-height-compact', '--v2-radius-pill'],
   TokenCopyTarget: ['--v2-surface', '--v2-border', '--v2-control-height-compact'],
-  'PillTabs + PillTabPanel': ['--v2-surface', '--v2-control-height-compact', '--v2-radius-pill'],
+  Tab: ['--v2-surface', '--v2-control-height-compact', '--v2-radius-pill'],
   SelectMenu: ['--v2-surface', '--v2-border', '--v2-control-height'],
   WorkflowSteps: ['--v2-accent', '--v2-text-secondary', '--v2-control-height-compact'],
   PromptComposer: ['--v2-surface', '--v2-border', '--v2-control-height'],

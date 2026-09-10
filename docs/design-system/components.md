@@ -99,16 +99,16 @@ Button, Input, Textarea, Badge, Alert, Separator, Skeleton, RadioGroup, Table an
 
 Related controls with one shared interaction contract.
 
-### PillTabs + PillTabPanel
+### Tab + TabPanel
 
-**Shared** · [Source](../../src/components/design-system/molecules/PillTabs.jsx)
+**Shared** · [Source](../../src/components/design-system/components/navigation/Tab.tsx)
 
 Choose one content panel with keyboard navigation and stable relationships.
 
-- **Properties:** tabs: unique string labels; value; onChange(label); ariaLabel; idPrefix. Panel: tab, value, same idPrefix, children, className.
+- **Properties:** items: {value, label, disabled?}[]; value; onValueChange(value); ariaLabel; idPrefix; className. Panel: value, activeValue, same idPrefix, children, className.
 - **States:** Selected/unselected, hover, focus; ArrowLeft/Right wrap; Home/End; automatic activation.
-- **Usage/dependencies:** TemplateLibrary and NavigationSpecimens. Provide one panel per tab and a unique idPrefix per tab group.
-- **Constraints:** For local content with immediate updates. No disabled/vertical/dynamic-tab support yet. Do not use tabs for routes or table density; use links or a segmented control.
+- **Usage/dependencies:** The category example reproduces TemplateLibrary. Provide one panel per item and a unique idPrefix per tab group. The public package exports Tab and TabPanel; Tabs is a compatibility wrapper. Legacy PillTabs/PillTabPanel imports remain available within the source tree.
+- **Constraints:** Horizontal local content with immediate updates. Item values must be unique, and the caller keeps selection on an enabled item. Disabled tabs remain visible and are skipped by keyboard navigation. Do not use tabs for routes or table density; use links or a segmented control.
 
 ### SelectMenu
 

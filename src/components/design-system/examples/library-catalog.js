@@ -140,12 +140,12 @@ export const libraryCatalog = [
     constraints: 'Do not replace automatically: asChild, Radix composition, and sidebar dependencies require explicit migration. Table is an unstyled structural primitive, not a data-table organism.',
   },
   {
-    name: 'PillTabs + PillTabPanel', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/PillTabs.jsx', demo: 3, previewHref: '#components-tabs-and-view-controls',
+    name: 'Tab', level: 'molecules', status: 'Shared', source: 'src/components/design-system/components/navigation/Tab.tsx', demo: 3, previewHref: '#tab-example',
     purpose: 'Choose one content panel with keyboard navigation and stable relationships.',
-    properties: 'tabs: unique string labels; value; onChange(label); ariaLabel; idPrefix. Panel: tab, value, same idPrefix, children, className.',
+    properties: 'items: {value, label, disabled?}[]; value; onValueChange(value); ariaLabel; idPrefix; className. TabPanel: value, activeValue, same idPrefix, children, className. Tabs remains a compatibility export.',
     states: 'Selected/unselected, hover, focus; ArrowLeft/Right wrap; Home/End; automatic activation.',
-    usage: 'TemplateLibrary and NavigationSpecimens. Provide one panel per tab and a unique idPrefix per tab group.',
-    constraints: 'For local content with immediate updates. No disabled/vertical/dynamic-tab support yet. Do not use tabs for routes or table density; use links or a segmented control.',
+    usage: 'TabExample reproduces the TemplateLibrary category control. Provide one panel per item and a unique idPrefix per tab group; item values must be unique.',
+    constraints: 'Horizontal local content with immediate updates. Disabled items stay visible and are skipped by keyboard navigation. The caller owns selection. Use links for routes and a segmented control for settings.',
   },
   {
     name: 'SelectMenu', level: 'molecules', status: 'Shared', source: 'src/components/design-system/molecules/SelectMenu.jsx', demo: 2, previewHref: '#components-dropdowns',
