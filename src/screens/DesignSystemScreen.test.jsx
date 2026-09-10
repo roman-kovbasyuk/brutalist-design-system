@@ -59,6 +59,11 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.ds-library-tree\s*{[^}]*margin-top:\s*36px;/)
   })
 
+  test('keeps the library search focus highlight on its wrapper', () => {
+    expect(designSystemStyles).toMatch(/\.ds-search:focus-within\s*{[^}]*outline:\s*2px solid var\(--v2-accent\);[^}]*box-shadow:\s*0 0 0 2px var\(--v2-ink\) !important;/)
+    expect(designSystemStyles).toMatch(/\.ds-search input:focus-visible\s*{[^}]*outline:\s*0;[^}]*box-shadow:\s*none !important;/)
+  })
+
   test('presents button actions in equal grid cells with surface copy behavior', async () => {
     const user = userEvent.setup()
     render(<DesignSystemScreen />)
