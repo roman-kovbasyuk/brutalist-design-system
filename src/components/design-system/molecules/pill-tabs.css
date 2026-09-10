@@ -25,11 +25,11 @@
     box-shadow var(--v2-duration-disclosure) var(--v2-ease);
 }
 
-.v2-pill-tabs button:hover {
+.v2-pill-tabs button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--v2-accent) 24%, var(--v2-surface));
 }
 
-.v2-pill-tabs button:active {
+.v2-pill-tabs button:active:not(:disabled) {
   transform: translateY(1px) scale(0.98);
 }
 
@@ -56,6 +56,7 @@
 .v2-pill-tabs { align-items: center; max-width: 100%; overflow-x: auto; }
 .v2-pill-tabs button { flex-shrink: 0; white-space: nowrap; min-height: var(--v2-control-height-compact); }
 .v2-pill-tabs button:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: 0 0 0 2px var(--v2-ink); }
+.v2-pill-tabs button:disabled { cursor: not-allowed; color: var(--v2-text-secondary); }
 @media (prefers-reduced-motion: reduce) {
   .v2-pill-tabs button { animation: none; transition: none; }
   .v2-pill-tabs button[aria-selected="true"], .v2-pill-tabs button:active { animation: none; transform: none; box-shadow: none; }

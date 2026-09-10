@@ -19,6 +19,7 @@ import { SpecimenGrid } from './SpecimenGrid.jsx'
 import { SpecimenSection } from './SpecimenSection.jsx'
 import { SelectMenu } from '../molecules/SelectMenu.jsx'
 import { TokenCopyTarget } from '../atoms/TokenCopyTarget.jsx'
+import { TabExample } from './TabExample.jsx'
 
 function ButtonCell({ copyValue, className = '', children }) {
   return (
@@ -245,6 +246,7 @@ export function NavigationSpecimens() {
 
       <SpecimenCard title="Tabs and view controls" description="Pills mark tabs; segmented controls remain structural and compact.">
         <SpecimenGrid>
+          <TabExample />
           <div data-component-reference="NavigationSpecimens — Segmented control (.v2-segmented-control)">
             <span className="v2-demo-label">Layout density</span>
             <div className="v2-segmented-control" role="group" aria-label="Layout density">
