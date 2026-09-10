@@ -7,7 +7,7 @@ import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 import { PillTabs, PillTabPanel } from '../components/design-system/molecules/PillTabs.jsx'
 import { useState } from 'react'
 
-const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/charts/charts.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
+const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/charts/charts.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css', 'src/components/design-system/examples/library-index.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
 const componentCopy = reference => `Use this component ${reference} from the app design system (brutalist design system)`
 
 describe('DesignSystemScreen', () => {
@@ -53,6 +53,10 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toContain('.system-screen--v2 .v2-spacing-step__measure')
     expect(designSystemStyles).toContain('width: max(8px, calc(var(--v2-spacing-value) * 1.5))')
     expect(designSystemStyles).toContain('border-bottom: 1px solid var(--v2-border)')
+  })
+
+  test('uses 36px spacing between grouped library navigation sections', () => {
+    expect(designSystemStyles).toMatch(/\.ds-tree-group \+ \.ds-tree-group\s*{[^}]*margin-top:\s*36px;/)
   })
 
   test('presents button actions in equal grid cells with surface copy behavior', async () => {
