@@ -1,5 +1,10 @@
 [
   {
+    "page": "Banner Studio templates",
+    "section": "Banner editor",
+    "anchor": "http://127.0.0.1:5176/mvp/templates?category=ads&banner=bold-announcement#banner-editor-heading"
+  },
+  {
     "page": "Observatory",
     "section": "Kanban board",
     "anchor": "#kanban-board"

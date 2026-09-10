@@ -1,5 +1,4 @@
 import { Children } from 'react'
-import { Copy } from 'lucide-react'
 import { TokenCopyTarget } from '../atoms/TokenCopyTarget.jsx'
 import './specimen-grid.css'
 
@@ -7,10 +6,9 @@ import './specimen-grid.css'
 export function SpecimenGridCells({ children }) {
   return Children.toArray(children).map((child, index) => {
     const reference = child.props?.['data-component-reference']
-    return <div className="ds-specimen-grid__cell" data-component-reference={reference} key={child.key ?? index}>
+    return <TokenCopyTarget surface component copyValue={reference} label={reference} className="ds-specimen-grid__cell" key={child.key ?? index}>
       {child}
-      {reference && <TokenCopyTarget className="ds-component-copy" copyValue={reference} label={reference}><Copy aria-hidden="true" size={14} /></TokenCopyTarget>}
-    </div>
+    </TokenCopyTarget>
   })
 }
 

@@ -132,8 +132,8 @@ export const uiBlockCatalog = [
   ...chartBlockCatalog,
 ]
 
-export function UIBlocks() {
-  const groups = [...new Set(uiBlockCatalog.map(block => block.group))].sort((a, b) => a.localeCompare(b))
+export function UIBlocks({ catalog = uiBlockCatalog, title = 'UI blocks', index = 10 }) {
+  const groups = [...new Set(catalog.map(block => block.group))].sort((a, b) => a.localeCompare(b))
   useEffect(() => {
     // This catalog mounts after the route's lazy import; restore its deep link.
     const frame = requestAnimationFrame(() => {
@@ -142,13 +142,13 @@ export function UIBlocks() {
     })
     return () => cancelAnimationFrame(frame)
   }, [])
-  return <SpecimenSection index={10} title="UI blocks" className="v2-section--blocks">
+  return <SpecimenSection index={index} title={title} className="v2-section--blocks">
     <div className="v2-ui-block-groups">
       {groups.map(group => <section className="v2-ui-block-group" data-chart-group={chartBlockCatalog.some(block => block.group === group) || undefined} key={group} aria-labelledby={`ui-block-group-${group.toLowerCase().replaceAll(' ', '-')}`}>
         <div className="v2-ui-block-group__panel">
           <h3 id={`ui-block-group-${group.toLowerCase().replaceAll(' ', '-')}`}>{group}</h3>
           <div className="v2-ui-block-grid">
-            {uiBlockCatalog.filter(block => block.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(block => <TokenCopyTarget className="v2-ui-block-cell" id={`ds-${block.id}`} key={block.id}
+            {catalog.filter(block => block.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(block => <TokenCopyTarget component className="v2-ui-block-cell" id={`ds-${block.id}`} key={block.id}
               copyValue={block.component} label={`${block.name} UI block`}
               preview={<div className="v2-ui-block-cell__preview">{block.render()}</div>}>
               <strong>{block.name}</strong>
@@ -158,4 +158,8 @@ export function UIBlocks() {
       </section>)}
     </div>
   </SpecimenSection>
+}
+
+export function DataVisualization() {
+  return <UIBlocks catalog={chartBlockCatalog} title="Data visualization" index={11} />
 }

@@ -1,6 +1,6 @@
-import { icons, MoreHorizontal } from 'lucide-react'
+import { icons, MoreHorizontal, Trash2 } from 'lucide-react'
 
-export const iconComponents = { ...icons, MoreHorizontal }
+export const iconComponents = { ...icons, MoreHorizontal, Trash2 }
 
 export const basicGroups = [
   ['color', 'Color'], ['typography', 'Typography'], ['spacing', 'Spacing'],

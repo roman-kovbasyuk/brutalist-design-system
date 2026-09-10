@@ -8,14 +8,21 @@ import { PillTabs, PillTabPanel } from '../components/design-system/molecules/Pi
 import { useState } from 'react'
 
 const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/charts/charts.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
+const componentCopy = reference => `Use this component ${reference} from the app design system (brutalist design system)`
 
 describe('DesignSystemScreen', () => {
-  test('renders a root overview with links to each design-system section', () => {
+  test('renders the home summary, search, and latest updates', async () => {
+    const user = userEvent.setup()
+    history.replaceState({}, '', '/design-system')
     render(<DesignSystemScreen overviewOnRoot />)
-    expect(screen.getByRole('heading', { name: 'Choose a section to explore' })).toBeVisible()
-    expect(screen.getByRole('link', { name: /Basics.*Open section/ })).toHaveAttribute('href', '/design-system?section=basics')
-    expect(screen.getByRole('link', { name: /Components.*Open section/ })).toHaveAttribute('href', '/design-system?section=components')
-    expect(screen.getByRole('link', { name: /UI blocks.*Open section/ })).toHaveAttribute('href', '/design-system?section=ui-blocks')
+    expect(screen.getByRole('heading', { name: 'Design system' })).toBeVisible()
+    expect(screen.getByText('Basics assets')).toBeVisible()
+    expect(screen.getByText('Changes last week')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Latest updates' })).toBeVisible()
+    const search = screen.getByRole('searchbox', { name: 'Search the design system' })
+    await user.type(search, 'dropdown')
+    const result = (await screen.findAllByText('Dropdowns'))[0]
+    expect(result.closest('a')).toHaveAttribute('href', '/?section=components#components-dropdowns')
     expect(screen.queryByRole('heading', { name: 'Foundations' })).not.toBeInTheDocument()
   })
 
@@ -48,7 +55,7 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toContain('border-bottom: 1px solid var(--v2-border)')
   })
 
-  test('presents button actions in equal grid cells with copy affordances', async () => {
+  test('presents button actions in equal grid cells with surface copy behavior', async () => {
     const user = userEvent.setup()
     render(<DesignSystemScreen />)
 
@@ -56,8 +63,8 @@ describe('DesignSystemScreen', () => {
     expect(buttons.querySelector('.v2-button-grid')).toBeInTheDocument()
     expect(buttons.querySelectorAll('.v2-button-cell')).toHaveLength(7)
 
-    await user.click(within(buttons).getByRole('button', { name: 'Copy AppButton variant="primary"' }))
-    expect(await navigator.clipboard.readText()).toBe('AppButton variant="primary"')
+    await user.click(within(buttons).getByRole('button', { name: 'Create campaign' }).closest('.v2-button-cell'))
+    expect(await navigator.clipboard.readText()).toBe(componentCopy('AppButton variant="primary"'))
     expect(screen.getByText('Copied', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
   })
 
@@ -216,11 +223,11 @@ describe('DesignSystemScreen', () => {
     expect(buttonLink).toHaveAttribute('aria-current', 'location')
     const search = within(library).getByRole('searchbox', { hidden: true })
     await user.type(search, 'PromptComposer')
-    expect(within(library).getAllByRole('link', { name: /./ })).toHaveLength(5)
+    expect(within(library).getAllByRole('link', { name: /./ })).toHaveLength(6)
     expect(within(library).getByRole('link', { name: 'Prompt Composer' })).toBeVisible()
     await user.clear(search)
     await user.type(search, 'no-such-component')
-    expect(within(library).queryAllByRole('link', { name: /./ })).toHaveLength(4)
+    expect(within(library).queryAllByRole('link', { name: /./ })).toHaveLength(5)
     await user.clear(search)
     expect(library.querySelectorAll('.ds-tree-item')).toHaveLength(29)
   })
@@ -408,6 +415,7 @@ describe('DesignSystemScreen', () => {
     await user.click(within(confirmation).getByRole('button', { name: 'Keep draft' }))
     expect(screen.queryByRole('group', { name: 'Confirm draft deletion' })).not.toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'About motion feedback' }))
     const tooltip = screen.getByRole('tooltip')
     expect(tooltip).toHaveTextContent('Motion never hides an action or status.')
     expect(screen.getByRole('button', { name: 'About motion feedback' })).toHaveAttribute(

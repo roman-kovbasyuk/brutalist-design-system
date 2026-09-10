@@ -50,7 +50,7 @@ export function BasicsCatalog({ query = '' }) {
   const icons = basicsManifest.icons.filter(item => matchesIcon(item, query))
   const iconResults = icons.filter(item => matchesIcon(item, iconQuery))
   const searchingIcons = Boolean(query.trim() || iconQuery.trim())
-  const visibleIcons = searchingIcons ? iconResults.slice(0, 100) : iconNames.map(name => basicsManifest.icons.find(item => item.name === name))
+  const visibleIcons = searchingIcons ? iconResults.slice(0, 100) : iconNames.map(name => basicsManifest.icons.find(item => item.name === name)).filter(Boolean)
   const normalized = query.trim().toLowerCase()
 
   useEffect(() => {
@@ -104,9 +104,9 @@ export function BasicsCatalog({ query = '' }) {
       if (id === 'layout') return <Group key={id} id={id} name={name}><div className="ds-basic-grid">{components.map(item => {
         const Layout = layoutComponents[item.name]
         const children = item.name === 'Divider' ? undefined : [1, 2, 3].map(n => <span className="ds-basic-layout__item" key={n}>{n}</span>)
-        return <TokenCopyTarget surface copyValue={item.id} label={item.id} key={item.id} className="ds-basic-layout-specimen">
+        return <TokenCopyTarget surface component copyValue={item.id} label={item.id} key={item.id} className="ds-basic-layout-specimen">
           <div className="ds-basic-layout"><Layout {...(item.name === 'Grid' ? { minItemWidth: 48 } : {})} {...(item.name === 'ScrollArea' ? { label: 'Scrollable example', style: { maxHeight: 84 } } : {})}>{children}</Layout></div>
-          <TokenCopyTarget copyValue={item.id} label={`${item.id} component ID`} className="ds-basic-reference"><span className="ds-basic-reference__name">{item.name}</span></TokenCopyTarget>
+          <TokenCopyTarget component copyValue={item.id} label={`${item.id} component ID`} className="ds-basic-reference"><span className="ds-basic-reference__name">{item.name}</span></TokenCopyTarget>
         </TokenCopyTarget>
       })}</div></Group>
       if (id === 'icons') return <Group key={id} id={id} name="Icons (Lucide Icons)">

@@ -4,6 +4,8 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import ApplicationDesignSystemPage from '../../../screens/ApplicationDesignSystemPage.jsx'
 import { basicsManifest } from './BasicsCatalog.jsx'
 
+const componentCopy = reference => `Use this component ${reference} from the app design system (brutalist design system)`
+
 // Vitest stubs CSS imports; this reference deliberately consumes the stylesheet as data.
 vi.mock('../basics/tokens.css?raw', async () => {
   const { readFileSync } = await import('node:fs')
@@ -43,6 +45,16 @@ test('searches actual specimens by token, copies the exact ID, and clears search
   expect(screen.getByRole('heading', { name: 'Color' })).toBeVisible()
 })
 
+test('filters the sidebar tree for sections that provide grouped navigation items', async () => {
+  const user = userEvent.setup()
+  history.replaceState({}, '', '/design-system?section=data-visualization')
+  render(<ApplicationDesignSystemPage />)
+  await user.click(screen.getByRole('button', { name: 'Search library' }))
+  await user.type(screen.getByPlaceholderText('Find a name or token'), 'token burn')
+  expect(screen.getByRole('link', { name: 'Hourly token burn' })).toBeVisible()
+  expect(screen.queryByRole('link', { name: 'Area chart' })).not.toBeInTheDocument()
+})
+
 test('copies typography recipes and layout and icon IDs that resolve in the reference', async () => {
   const user = userEvent.setup()
   render(<ApplicationDesignSystemPage />)
@@ -50,7 +62,7 @@ test('copies typography recipes and layout and icon IDs that resolve in the refe
   expect(await navigator.clipboard.readText()).toContain('var(--v2-text-h1) / var(--v2-line-h1)')
   await user.click(screen.getByRole('button', { name: 'Copy Stack component ID' }))
   expect(basicsManifest.components.find(item => item.id === 'Stack').source).toContain('/Stack.tsx')
-  expect(await navigator.clipboard.readText()).toBe('Stack')
+  expect(await navigator.clipboard.readText()).toBe(componentCopy('Stack'))
   await user.click(screen.getByRole('button', { name: 'Copy lucide:Search and --v2-icon-md', exact: true }))
   expect(await navigator.clipboard.readText()).toBe('lucide:Search\n--v2-icon-md')
   expect(basicsManifest.icons.find(item => item.id === 'lucide:Search').import).toContain('lucide-react')

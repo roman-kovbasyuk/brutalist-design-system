@@ -5,7 +5,6 @@ import {
   Check,
   ChevronRight,
   Circle,
-  Copy,
   FileUp,
   MoreHorizontal,
   Play,
@@ -18,13 +17,11 @@ import { SpecimenCard } from './SpecimenCard.jsx'
 import { SpecimenGrid } from './SpecimenGrid.jsx'
 import { SpecimenSection } from './SpecimenSection.jsx'
 import { SelectMenu } from '../molecules/SelectMenu.jsx'
-import { TokenCopyTarget } from '../atoms/TokenCopyTarget.jsx'
 
 function ButtonCell({ copyValue, className = '', children }) {
   return (
     <div className={`v2-button-cell ${className}`.trim()} data-component-reference={copyValue}>
       {children}
-      <TokenCopyTarget className="ds-component-copy" copyValue={copyValue} label={copyValue}><Copy aria-hidden="true" size={14} /></TokenCopyTarget>
     </div>
   )
 }

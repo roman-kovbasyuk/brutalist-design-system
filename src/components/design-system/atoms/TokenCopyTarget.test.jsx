@@ -21,3 +21,16 @@ it('tracks the pointer and copies from a specimen cell while preserving live con
   await user.click(screen.getByRole('button', { name: 'Copy Nested' }))
   await waitFor(async () => expect(await navigator.clipboard.readText()).toBe('nested-id'))
 })
+
+it('adds the AI-ready design-system instruction to component references only', async () => {
+  const user = userEvent.setup()
+  render(<>
+    <TokenCopyTarget component copyValue={'AppButton variant="danger"'} label="Delete button">Delete</TokenCopyTarget>
+    <TokenCopyTarget copyValue="--v2-accent" label="Accent token">Accent</TokenCopyTarget>
+  </>)
+
+  await user.click(screen.getByRole('button', { name: 'Copy Delete button' }))
+  expect(await navigator.clipboard.readText()).toBe('Use this component AppButton variant="danger" from the app design system (brutalist design system)')
+  await user.click(screen.getByRole('button', { name: 'Copy Accent token' }))
+  expect(await navigator.clipboard.readText()).toBe('--v2-accent')
+})

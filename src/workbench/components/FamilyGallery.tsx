@@ -36,13 +36,13 @@ function ExampleTile({ entry, example }: { entry: Entry; example: Example }) {
   return <article className="ds-example-tile" data-example={`${entry.id}/${example.id}`}>
     <div className="ds-example-tile__heading">
       <h3>{example.title}</h3>
-      <p><TokenCopyTarget copyValue={entry.id} label={`${entry.name} component ID`} inline>{entry.name}</TokenCopyTarget></p>
+      <p><TokenCopyTarget component copyValue={entry.id} label={`${entry.name} component ID`} inline>{entry.name}</TokenCopyTarget></p>
     </div>
     <div className="ds-example-tile__preview">
       <Component options={optionsFor(example)} draft={example.initialDraft} onDraftChange={() => undefined} />
     </div>
     <dl className="ds-example-tile__references">
-      <div><dt>Component ID</dt><dd><TokenCopyTarget copyValue={entry.id} label={`component ID ${entry.id}`} inline><code>{entry.id}</code></TokenCopyTarget></dd></div>
+      <div><dt>Component ID</dt><dd><TokenCopyTarget component copyValue={entry.id} label={`component ID ${entry.id}`} inline><code>{entry.id}</code></TokenCopyTarget></dd></div>
       {tokens.length > 0 && <div><dt>Tokens</dt><dd>{tokens.map((token) => <TokenCopyTarget key={token} copyValue={token} label={`token ${token}`} inline><code>{token}</code></TokenCopyTarget>)}</dd></div>}
     </dl>
   </article>

@@ -19,12 +19,20 @@ export function MotionSpecimens() {
   const [isInlineConfirmationOpen, setIsInlineConfirmationOpen] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isToastVisible, setIsToastVisible] = useState(false)
+  const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const dialogTriggerRef = useRef(null)
   const dialogRef = useRef(null)
   const cancelButtonRef = useRef(null)
   const inlineTriggerRef = useRef(null)
   const inlineCancelRef = useRef(null)
   const restoreInlineFocusRef = useRef(false)
+
+  useEffect(() => {
+    if (!isTooltipVisible) return undefined
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setIsTooltipVisible(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [isTooltipVisible])
 
   useEffect(() => {
     if (isInlineConfirmationOpen) {
@@ -128,13 +136,15 @@ export function MotionSpecimens() {
                 className="v2-button v2-button--secondary"
                 type="button"
                 aria-describedby="v2-motion-tooltip"
+                aria-expanded={isTooltipVisible}
+                onClick={() => setIsTooltipVisible((current) => !current)}
               >
                 <Info aria-hidden="true" size={18} />
                 About motion feedback
               </button>
-              <span className="v2-tooltip" id="v2-motion-tooltip" role="tooltip">
+              {isTooltipVisible && <span className="v2-tooltip" id="v2-motion-tooltip" role="tooltip">
                 Motion never hides an action or status.
-              </span>
+              </span>}
             </div>
 
             <div className="v2-overlay-demo" data-component-reference="MotionSpecimens — Toast (.v2-overlay-toast)">

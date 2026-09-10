@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Blocks, LayoutTemplate, Search, Shapes, SlidersHorizontal } from 'lucide-react'
+import { BarChart3, Blocks, LayoutTemplate, Search, Shapes, SlidersHorizontal } from 'lucide-react'
 import { libraryCatalog } from './library-catalog.js'
 import { previewId } from './PreviewMetadata.jsx'
 import { Switch } from '../atoms/Switch.jsx'
@@ -11,6 +11,7 @@ const categories = [
   { name: 'Basics', key: 'basics', levels: ['foundations', 'atoms'], icon: SlidersHorizontal },
   { name: 'Components', key: 'components', levels: ['molecules'], icon: Blocks },
   { name: 'UI blocks', key: 'ui-blocks', levels: ['organisms', 'templates', 'examples'], icon: LayoutTemplate },
+  { name: 'Data visualization', key: 'data-visualization', levels: ['data-visualization'], icon: BarChart3 },
 ]
 
 function formatDisplayName(name) {
@@ -29,7 +30,12 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
   const [active, setActive] = useState(() => window.location.hash)
   const filtered = useMemo(() => libraryCatalog.filter(entry =>
     `${entry.name} ${entry.purpose}`.toLowerCase().includes(query.trim().toLowerCase())), [query])
-  const groupedNavigation = navigationItems?.some(item => item.group)
+  const visibleNavigationItems = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    if (!navigationItems || !term) return navigationItems
+    return navigationItems.filter((item) => `${item.name} ${item.group || ''}`.toLowerCase().includes(term))
+  }, [navigationItems, query])
+  const groupedNavigation = visibleNavigationItems?.some(item => item.group)
 
   function updateQuery(value) {
     setQuery(value)
@@ -91,7 +97,8 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
       <h2 id="ds-index-heading" className="ds-visually-hidden">Library</h2>
       <nav className="ds-section-navigation" aria-label="Design system sections">
         {categories.map(({ name, key, icon: Icon }) => {
-          const href = sitePath(`/design-system?section=${key}`)
+          const sectionRoute = window.location.pathname.startsWith('/design-system') ? '/design-system' : '/'
+          const href = sitePath(`${sectionRoute}?section=${key}`)
           return <a
             key={name}
             href={href}
@@ -110,10 +117,10 @@ export function LibraryIndex({ activeCategory = 'Basics', onCategoryChange, hide
       </nav>
       {!hideComponentTree && activeCategory !== 'overview' && <>
         <nav className="ds-library-tree" aria-label="Library components">
-          {navigationItems ? (groupedNavigation ? [...new Set(navigationItems.map(item => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b)).map(group => <div className="ds-tree-group" key={group}>
+          {navigationItems ? (visibleNavigationItems.length === 0 ? <p className="ds-index-empty">No matching items.</p> : groupedNavigation ? [...new Set(visibleNavigationItems.map(item => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b)).map(group => <div className="ds-tree-group" key={group}>
             <h3>{group}</h3>
-            {navigationItems.filter(item => item.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)}
-          </div>) : navigationItems.map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)) : categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
+            {visibleNavigationItems.filter(item => item.group === group).sort((a, b) => a.name.localeCompare(b.name)).map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)}
+          </div>) : visibleNavigationItems.map(item => <a key={item.id} href={item.href} className="ds-tree-item" aria-current={active === item.href ? 'location' : undefined} onClick={() => { updateQuery(''); setActive(item.href) }}>{item.name}</a>)) : categories.flatMap(group => (activeCategory === 'all' || activeCategory === group.name ? group.levels : [])
             .flatMap(level => filtered.filter(entry => entry.level === level))
           ).sort((a, b) => a.name.localeCompare(b.name)).map(entry => {
             const href = entry.previewHref || `#${previewId(entry.name)}`

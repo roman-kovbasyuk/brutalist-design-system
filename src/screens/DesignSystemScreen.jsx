@@ -12,10 +12,11 @@ import {
 } from '../components/design-system/examples/DataSpecimens.jsx'
 import { MotionSpecimens } from '../components/design-system/examples/MotionSpecimens.jsx'
 import { SpecimenSection } from '../components/design-system/examples/SpecimenSection.jsx'
-import { UIBlocks, uiBlockCatalog } from '../components/design-system/examples/UIBlocks.jsx'
+import { DataVisualization, UIBlocks, uiBlockCatalog } from '../components/design-system/examples/UIBlocks.jsx'
 import { BasicsCatalog } from '../components/design-system/examples/BasicsCatalog.jsx'
 import { componentGroups } from '../components/design-system/examples/component-groups.js'
 import { basicGroups } from '../components/design-system/foundations/basics-catalog.js'
+import { DesignSystemOverview } from '../components/design-system/examples/DesignSystemOverview.jsx'
 import '../styles/design-system.css'
 import { sitePath } from './site-path.js'
 
@@ -57,19 +58,19 @@ export function DesignSystemScreen({ overviewOnRoot = false }) {
 
 function DesignSystemContent({ overviewOnRoot = false }) {
   const [basicsQuery, setBasicsQuery] = useState('')
-  const [activeCategory, setActiveCategory] = useState(() => new URLSearchParams(window.location.search).get('section') === 'components' ? 'Components' : new URLSearchParams(window.location.search).get('section') === 'ui-blocks' ? 'UI blocks' : new URLSearchParams(window.location.search).get('section') === 'basics' ? 'Basics' : 'all')
+  const [activeCategory, setActiveCategory] = useState(() => new URLSearchParams(window.location.search).get('section') === 'components' ? 'Components' : new URLSearchParams(window.location.search).get('section') === 'ui-blocks' ? 'UI blocks' : new URLSearchParams(window.location.search).get('section') === 'data-visualization' ? 'Data visualization' : new URLSearchParams(window.location.search).get('section') === 'basics' ? 'Basics' : 'all')
 
   useEffect(() => {
     const syncSection = () => {
       const section = new URLSearchParams(window.location.search).get('section')
-      setActiveCategory(section === 'components' ? 'Components' : section === 'ui-blocks' ? 'UI blocks' : section === 'basics' ? 'Basics' : 'all')
+      setActiveCategory(section === 'components' ? 'Components' : section === 'ui-blocks' ? 'UI blocks' : section === 'data-visualization' ? 'Data visualization' : section === 'basics' ? 'Basics' : 'all')
     }
     window.addEventListener('popstate', syncSection)
     return () => window.removeEventListener('popstate', syncSection)
   }, [])
 
   function selectCategory(category) {
-    const section = category === 'Components' ? 'components' : category === 'UI blocks' ? 'ui-blocks' : 'basics'
+    const section = category === 'Components' ? 'components' : category === 'UI blocks' ? 'ui-blocks' : category === 'Data visualization' ? 'data-visualization' : 'basics'
     const url = new URL(window.location.href)
     url.searchParams.set('section', section)
     url.searchParams.delete('mode')
@@ -84,25 +85,10 @@ function DesignSystemContent({ overviewOnRoot = false }) {
   return (
     <div className="ds-workspace">
       <LibraryIndex activeCategory={isOverview ? 'overview' : activeCategory} onCategoryChange={selectCategory}
-        navigationItems={activeCategory === 'Basics' ? basicGroups.map(group => ({ ...group, href: `#basics-${group.id}` })) : activeCategory === 'Components' ? componentGroups : activeCategory === 'UI blocks' ? uiBlockCatalog.map(block => ({ id: block.id, name: block.name, group: block.group, href: `#ds-${block.id}` })) : undefined}
+        navigationItems={activeCategory === 'Basics' ? basicGroups.map(group => ({ ...group, href: `#basics-${group.id}` })) : activeCategory === 'Components' ? componentGroups : ['UI blocks', 'Data visualization'].includes(activeCategory) ? uiBlockCatalog.filter(block => activeCategory === 'Data visualization' ? ['Charts', 'Metric widgets', 'Pie charts', 'Token burn'].includes(block.group) : !['Charts', 'Metric widgets', 'Pie charts', 'Token burn'].includes(block.group)).map(block => ({ id: block.id, name: block.name, group: block.group, href: `#ds-${block.id}` })) : undefined}
         onQueryChange={activeCategory === 'Basics' ? setBasicsQuery : undefined} />
       <div className="system-screen--v2 ds-catalog" id="ds-catalog">
-      {isOverview && <section className="ds-overview" aria-labelledby="ds-overview-title">
-        <div className="ds-overview__intro">
-          <span className="ds-overview__eyebrow">Reference library</span>
-          <h2 id="ds-overview-title">Choose a section to explore</h2>
-          <p>Start with shared foundations, browse reusable components, or see complete UI blocks in context.</p>
-        </div>
-        <div className="ds-overview__cards">
-          {[['Basics', 'Foundations, tokens, controls, and shared visual values.', 'basics'], ['Components', 'Reusable interaction patterns and component states.', 'components'], ['UI blocks', 'Responsive compositions and complete interface examples.', 'ui-blocks']].map(([title, description, section]) => (
-            <a key={section} href={sitePath(`/design-system?section=${section}`)} className="ds-overview__card">
-              <span>{title}</span>
-              <p>{description}</p>
-              <small>Open section →</small>
-            </a>
-          ))}
-        </div>
-      </section>}
+      {isOverview && <DesignSystemOverview />}
 
       {activeCategory === 'Basics' && <BasicsCatalog query={basicsQuery} />}
       {!isOverview && activeCategory === 'all' && <SpecimenSection
@@ -183,12 +169,13 @@ function DesignSystemContent({ overviewOnRoot = false }) {
         {activeCategory === 'all' && <SpecimenSection index={9} title="Responsive behavior" description="Reference reflows for compact and mobile workspaces.">
           <ResponsiveSpecimen />
         </SpecimenSection>}
-        <UIBlocks />
+        <UIBlocks catalog={activeCategory === 'UI blocks' ? uiBlockCatalog.filter(block => !['Charts', 'Metric widgets', 'Pie charts', 'Token burn'].includes(block.group)) : uiBlockCatalog} />
         {activeCategory === 'all' && <>
           <PromptComposerExample />
           <LibraryComponentPreviews />
         </>}
       </>}
+      {activeCategory === 'Data visualization' && <DataVisualization />}
       </div>
     </div>
   )

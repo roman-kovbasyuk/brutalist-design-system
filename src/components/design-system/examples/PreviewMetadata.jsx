@@ -31,7 +31,7 @@ export function PreviewMetadata({ name, title, description, compact = false, cop
   const entry = libraryCatalog.find(item => item.name === name)
   if (!entry) return null
   return <header className="ds-preview-metadata" id={previewId(name)} tabIndex={-1}>
-    {!compact && <h3><TokenCopyTarget copyValue={copyId ? `${title} — component group` : entry.name} label={copyId ? `${title} group` : entry.name} inline>{title || entry.name}</TokenCopyTarget></h3>}
+    {!compact && <h3><TokenCopyTarget component copyValue={copyId ? `${title} — component group` : entry.name} label={copyId ? `${title} group` : entry.name} inline>{title || entry.name}</TokenCopyTarget></h3>}
     <details className="ds-preview-reference">
       <summary>Reference<span className="ds-reference-name">: {entry.name}</span></summary>
       <div className="ds-preview-reference__body">

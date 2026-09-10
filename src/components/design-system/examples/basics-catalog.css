@@ -59,6 +59,17 @@
 .ds-basic-reference__name { font-weight: 600; }
 .ds-basic-demo { display: grid; place-items: center; width: 100%; min-height: 116px; background: var(--v2-canvas); border-radius: var(--v2-radius); margin-bottom: var(--v2-space-2); }
 .ds-basic-object { display: grid; place-items: center; width: 80px; height: 48px; border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
+.ds-basic-object--motion { will-change: transform; }
+.ds-basic-reference:hover .ds-basic-object--motion,
+.ds-basic-reference:focus-within .ds-basic-object--motion { animation: ds-basic-motion-preview 1.2s var(--v2-ease) infinite; }
+@keyframes ds-basic-motion-preview {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-6px) scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-basic-reference:hover .ds-basic-object--motion,
+  .ds-basic-reference:focus-within .ds-basic-object--motion { animation: none; }
+}
 .ds-basic-aliases { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .ds-basics .ds-basic-alias .v2-token-copy-target__button { display: flex; flex-direction: column; align-items: flex-start; gap: var(--v2-space-1); padding: var(--v2-space-2) 0; border-radius: var(--v2-radius); text-align: left; }
 .ds-basic-note { margin-bottom: var(--v2-space-4); font-size: var(--v2-text-small); }

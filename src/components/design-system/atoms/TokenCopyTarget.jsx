@@ -23,7 +23,7 @@ async function copyText(value) {
 }
 
 /** A visual token sample that copies an exact value without showing the token name. */
-export function TokenCopyTarget({ copyValue, label, children, className = '', inline = false, preview = undefined, id = undefined, surface = false, style = undefined, chip = false }) {
+export function TokenCopyTarget({ copyValue, label, children, className = '', inline = false, preview = undefined, id = undefined, surface = false, style = undefined, chip = false, component = false }) {
   const { enabled } = useCopyMode()
   const [state, setState] = useState('idle')
   const [pointer, setPointer] = useState({ active: false, x: 0, y: 0 })
@@ -45,6 +45,11 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
     return sample?.dataset.componentReference || copyValue
   }
 
+  function copyValueAt(target) {
+    const reference = referenceAt(target)
+    return component ? `Use this component ${reference} from the app design system (brutalist design system)` : reference
+  }
+
   useEffect(() => () => {
     request.current += 1
     clearTimeout(timer.current)
@@ -56,7 +61,7 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
     clearTimeout(timer.current)
     setState('copying')
     try {
-      const value = referenceAt(event.target)
+      const value = copyValueAt(event.target)
       await copyText(value)
       if (request.current !== attempt) return
       setCopiedValue(value)
@@ -77,7 +82,7 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
       setPointer(current => ({ ...current, active: false }))
       return
     }
-    setPointer({ active: event.pointerType !== 'touch', x: event.clientX, y: event.clientY, value: referenceAt(event.target), interactive: Boolean(isPreviewControl(event.target)) })
+    setPointer({ active: event.pointerType !== 'touch', x: event.clientX, y: event.clientY, value: copyValueAt(event.target), interactive: Boolean(isPreviewControl(event.target)) })
   }
 
   const Wrapper = surface ? 'div' : preview ? 'article' : 'span'
@@ -92,7 +97,7 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
       onFocus={event => {
         if (!enabled || pointer.active) return
         const rect = event.currentTarget.getBoundingClientRect()
-        setPointer({ active: true, keyboard: true, x: rect.left + rect.width / 2, y: rect.bottom, value: copyValue })
+        setPointer({ active: true, keyboard: true, x: rect.left + rect.width / 2, y: rect.bottom, value: component ? `Use this component ${copyValue} from the app design system (brutalist design system)` : copyValue })
       }}
       onBlur={() => setPointer(current => current.keyboard ? { ...current, active: false } : current)}
       onClick={copy}>

@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it } from 'vitest'
 import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 
+const componentCopy = reference => `Use this component ${reference} from the app design system (brutalist design system)`
+
 afterEach(() => localStorage.removeItem('ds-click-to-copy'))
 
 it('turns copying and feedback off across tabs while keeping previews interactive', async () => {
@@ -12,7 +14,7 @@ it('turns copying and feedback off across tabs while keeping previews interactiv
   const toggle = screen.getByRole('switch', { name: 'Click to copy' })
   expect(toggle).toHaveAttribute('aria-checked', 'true')
   await user.click(toggle)
-  const copy = screen.getByRole('button', { name: 'Copy AppButton variant="danger"' })
+  const copy = screen.getByRole('button', { name: 'Delete draft' }).closest('.v2-button-cell')
   await navigator.clipboard.writeText('unchanged')
   await user.hover(copy)
   await user.click(copy)
@@ -37,5 +39,5 @@ it('turns copying and feedback off across tabs while keeping previews interactiv
   expect(screen.getByRole('switch', { name: 'Click to copy' })).toHaveAttribute('aria-checked', 'false')
   await user.click(screen.getByRole('switch', { name: 'Click to copy' }))
   await user.click(screen.getByRole('button', { name: 'Copy Prompt input UI block' }))
-  expect(await navigator.clipboard.readText()).toBe('PromptInputBlock')
+  expect(await navigator.clipboard.readText()).toBe(componentCopy('PromptInputBlock'))
 })

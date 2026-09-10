@@ -6,9 +6,9 @@ export function SpecimenCard({ title, description, children, className = '', id,
   const entry = cardEntries[title]
   const group = componentGroups.find(group => group.name === title)
   return (
-    <TokenCopyTarget surface copyValue={copyValue} label={title} id={id || group?.id} style={{ order: componentGroups.findIndex(group => group.name === title) }} className={`v2-specimen-card ${className}`.trim()}>
+    <TokenCopyTarget surface component copyValue={copyValue} label={title} id={id || group?.id} style={{ order: componentGroups.findIndex(group => group.name === title) }} className={`v2-specimen-card ${className}`.trim()}>
       {entry ? <PreviewMetadata name={entry} title={title} description={description} copyId={group?.id} /> : <div className="v2-specimen-card__heading">
-        <h3>{group ? <TokenCopyTarget copyValue={copyValue} label={`${title} group`} inline>{title}</TokenCopyTarget> : title}</h3>
+        <h3>{group ? <TokenCopyTarget component copyValue={copyValue} label={`${title} group`} inline>{title}</TokenCopyTarget> : title}</h3>
 
       </div>}
       <div className="v2-specimen-card__body">{children}</div>

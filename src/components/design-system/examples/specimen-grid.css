@@ -17,9 +17,6 @@
   border-right: var(--v2-border-width) solid var(--v2-border);
   border-bottom: var(--v2-border-width) solid var(--v2-border);
 }
-.system-screen--v2 .ds-specimen-grid__cell[data-component-reference] {
-  padding-bottom: calc(var(--v2-space-6) + 24px);
-}
 .ds-specimen-grid__cell > * { min-width: 0; max-width: 100%; }
 .ds-catalog .ds-specimen-grid__cell > :is(.v2-overlay-demo, .v2-progress-example, .v2-control-block) {
   padding: 0;

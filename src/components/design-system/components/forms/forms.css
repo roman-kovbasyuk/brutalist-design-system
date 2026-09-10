@@ -31,6 +31,7 @@
 
 .ds-choice-field__label, .ds-switch-field__label { display: inline-flex; align-items: center; gap: var(--v2-space-2); cursor: pointer; font-weight: 600; }
 .ds-choice-field__control { accent-color: var(--v2-accent); inline-size: 1.25rem; block-size: 1.25rem; margin: 0; }
+.ds-choice-field[data-mixed] .ds-choice-field__label { opacity: .65; }
 .ds-radio-group { margin: 0; padding: 0; border: 0; }
 .ds-radio-group__options { display: grid; gap: var(--v2-space-2); }
 
