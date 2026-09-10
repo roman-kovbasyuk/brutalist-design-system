@@ -55,8 +55,8 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toContain('border-bottom: 1px solid var(--v2-border)')
   })
 
-  test('uses 36px spacing between grouped library navigation sections', () => {
-    expect(designSystemStyles).toMatch(/\.ds-tree-group \+ \.ds-tree-group\s*{[^}]*margin-top:\s*36px;/)
+  test('uses 36px spacing between the category navigation and library tree', () => {
+    expect(designSystemStyles).toMatch(/\.ds-library-tree\s*{[^}]*margin-top:\s*36px;/)
   })
 
   test('presents button actions in equal grid cells with surface copy behavior', async () => {

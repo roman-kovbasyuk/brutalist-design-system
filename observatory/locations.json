@@ -138,5 +138,10 @@
     "page": "Design System",
     "section": "UI blocks / Token burn",
     "anchor": "http://127.0.0.1:5178/?section=ui-blocks#ds-token-burn-hourly"
+  },
+  {
+    "page": "Design System",
+    "section": "Data visualization",
+    "anchor": "http://127.0.0.1:5178/?section=data-visualization#ds-chart-area"
   }
 ]
