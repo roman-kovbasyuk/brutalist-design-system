@@ -27,7 +27,7 @@ it('names and copies the specific button variant, including changing loading sta
   render(<ControlSpecimens />)
   const danger = screen.getByRole('button', { name: 'Delete draft' }).closest('.v2-button-cell')
   await user.hover(danger)
-  expect(document.querySelector('.v2-token-copy-target__feedback--visible').textContent).toBe(componentCopy('AppButton variant="danger"'))
+  expect(document.querySelector('.v2-token-copy-target__feedback--visible').textContent).toBe('AppButton variant="danger"')
   await user.click(danger)
   expect(await navigator.clipboard.readText()).toBe(componentCopy('AppButton variant="danger"'))
   await user.click(screen.getByRole('button', { name: 'Unavailable' }).closest('.v2-button-cell'))
@@ -46,7 +46,7 @@ it('distinguishes dropdown patterns and preserves typing and selection', async (
   const cells = dropdowns.querySelectorAll('.ds-specimen-grid__cell')
   for (const [index, cell] of [...cells].entries()) {
     await user.hover(cell)
-    expect(document.querySelector('.v2-token-copy-target__feedback--visible').textContent).toBe(componentCopy(refs[index]))
+    expect(document.querySelector('.v2-token-copy-target__feedback--visible').textContent).toBe(refs[index])
     await user.click(cell)
     expect(await navigator.clipboard.readText()).toBe(componentCopy(refs[index]))
   }

@@ -50,6 +50,10 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
     return component ? `Use this component ${reference} from the app design system (brutalist design system)` : reference
   }
 
+  function feedbackValueAt(target) {
+    return component ? referenceAt(target) : copyValueAt(target)
+  }
+
   useEffect(() => () => {
     request.current += 1
     clearTimeout(timer.current)
@@ -82,7 +86,7 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
       setPointer(current => ({ ...current, active: false }))
       return
     }
-    setPointer({ active: event.pointerType !== 'touch', x: event.clientX, y: event.clientY, value: copyValueAt(event.target), interactive: Boolean(isPreviewControl(event.target)) })
+    setPointer({ active: event.pointerType !== 'touch', x: event.clientX, y: event.clientY, value: copyValueAt(event.target), displayValue: feedbackValueAt(event.target), interactive: Boolean(isPreviewControl(event.target)) })
   }
 
   const Wrapper = surface ? 'div' : preview ? 'article' : 'span'
@@ -97,7 +101,7 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
       onFocus={event => {
         if (!enabled || pointer.active) return
         const rect = event.currentTarget.getBoundingClientRect()
-        setPointer({ active: true, keyboard: true, x: rect.left + rect.width / 2, y: rect.bottom, value: component ? `Use this component ${copyValue} from the app design system (brutalist design system)` : copyValue })
+        setPointer({ active: true, keyboard: true, x: rect.left + rect.width / 2, y: rect.bottom, value: copyValueAt(event.currentTarget), displayValue: feedbackValueAt(event.currentTarget) })
       }}
       onBlur={() => setPointer(current => current.keyboard ? { ...current, active: false } : current)}
       onClick={copy}>
@@ -106,7 +110,7 @@ export function TokenCopyTarget({ copyValue, label, children, className = '', in
     {preview}
     {createPortal(<span className={`v2-token-copy-target__feedback${enabled && pointer.active ? ' v2-token-copy-target__feedback--visible' : ''}`.trim()}
       role="status" aria-atomic="true" style={{ '--copy-x': `${pointer.x}px`, '--copy-y': `${pointer.y}px` }}>
-      {enabled && pointer.active && (state === 'copied' && copiedValue === pointer.value && !pointer.interactive ? <><Check size={14} aria-hidden="true" /> Copied</> : state === 'error' ? 'Could not copy. Try again.' : pointer.value)}
+      {enabled && pointer.active && (state === 'copied' && copiedValue === pointer.value && !pointer.interactive ? <><Check size={14} aria-hidden="true" /> Copied</> : state === 'error' ? 'Could not copy. Try again.' : pointer.displayValue)}
     </span>, document.body)}
   </Wrapper>
 }

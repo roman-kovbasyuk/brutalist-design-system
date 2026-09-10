@@ -29,7 +29,11 @@ it('adds the AI-ready design-system instruction to component references only', a
     <TokenCopyTarget copyValue="--v2-accent" label="Accent token">Accent</TokenCopyTarget>
   </>)
 
-  await user.click(screen.getByRole('button', { name: 'Copy Delete button' }))
+  const deleteCopy = screen.getByRole('button', { name: 'Copy Delete button' })
+  await user.hover(deleteCopy)
+  expect(screen.getByText('AppButton variant="danger"')).toBeVisible()
+  expect(screen.queryByText('Use this component AppButton variant="danger" from the app design system (brutalist design system)')).not.toBeInTheDocument()
+  await user.click(deleteCopy)
   expect(await navigator.clipboard.readText()).toBe('Use this component AppButton variant="danger" from the app design system (brutalist design system)')
   await user.click(screen.getByRole('button', { name: 'Copy Accent token' }))
   expect(await navigator.clipboard.readText()).toBe('--v2-accent')
