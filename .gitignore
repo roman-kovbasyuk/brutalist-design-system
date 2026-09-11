@@ -11,4 +11,5 @@ dist/
 dist-library/
 .worktrees/
 .superpowers/sdd/
-/observatory/data/
+# Local monitoring tooling
+/observatory/
