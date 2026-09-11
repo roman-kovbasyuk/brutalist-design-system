@@ -1,4 +1,7 @@
-.ds-workbench { min-height: 100dvh; }
+.ds-workbench.ds-workspace { min-height: 100dvh; padding-left: var(--ds-sidebar-width); }
+@media (max-width: 900px) {
+  .ds-workbench.ds-workspace { padding-left: 0; }
+}
 .ds-workbench__main { min-width: 0; }
 .ds-workbench__families { display: flex; flex-wrap: wrap; gap: var(--v2-space-2); margin-top: var(--v2-space-8); }
 .ds-workbench__families .ds-tree-item { width: auto; }

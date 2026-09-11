@@ -1,32 +1,18 @@
 import type { EntryMetadata, Values } from './types'
 
-const source = (name: string, props = '') => (_options: Values) => `import { ${name} } from '@brutalist/design-system'
-
-export function Example() {
-  return <${name}${props ? ` ${props}` : ''} />
-}
-`
-
 const entry = (id: string, familyId: string, name: string, path: string, group: string, defaults: Values = {}, controls: EntryMetadata['examples'][number]['controls'] = []): EntryMetadata => ({
   id, familyId, name, purpose: `A portable ${name} specimen for application interfaces.`, maturity: 'beta', source: path,
   exports: [name], dependencies: [], tokens: ['--v2-accent', '--v2-control-height', '--v2-radius'],
   usage: `Use ${name} when this interaction or presentation is needed.`, keyboard: 'Uses native semantics and keyboard behavior.', constraints: ['Keep data and mutations owned by the application.'],
-  examples: [{ id: `${id}-default`, title: `Default ${name}`, group, defaults, initialDraft: {}, controls, getSource: source(name) }],
+  examples: [{ id: `${id}-default`, title: `Default ${name}`, group, defaults, initialDraft: {}, controls }],
 })
-
-const appButtonSource = (options: Values) => `import { AppButton } from '@brutalist/design-system'
-
-export function Example() {
-  return <AppButton variant=${JSON.stringify(options.variant ?? 'primary')}>Continue</AppButton>
-}
-`
 
 export const metadata: EntryMetadata[] = [
   {
     id: 'app-button', familyId: 'buttons', name: 'AppButton', purpose: 'Triggers an application action with the shared neobrutalist treatment.', maturity: 'beta',
     source: 'src/components/design-system/components/actions/AppButton.tsx', exports: ['AppButton'], dependencies: ['lucide-react'], tokens: ['--v2-accent', '--v2-control-height', '--v2-radius'],
     usage: 'Use for actions. Use an anchor for navigation.', keyboard: 'Enter and Space activate native buttons.', constraints: ['Icon-only buttons need an accessible name.', 'Busy prevents repeated activation.'],
-    examples: [{ id: 'primary', title: 'Primary', group: 'Emphasis', defaults: { variant: 'primary' }, initialDraft: {}, controls: [{ key: 'variant', label: 'Variant', type: 'select', choices: ['primary', 'secondary', 'danger', 'quiet'], shareable: true }], getSource: appButtonSource }],
+    examples: [{ id: 'primary', title: 'Primary', group: 'Emphasis', defaults: { variant: 'primary' }, initialDraft: {}, controls: [{ key: 'variant', label: 'Variant', type: 'select', choices: ['primary', 'secondary', 'danger', 'quiet'], shareable: true }] }],
   },
   entry('text-field', 'inputs', 'TextField', 'src/components/design-system/components/forms/TextField.tsx', 'Text inputs', { invalid: false }, [{ key: 'invalid', label: 'Show error', type: 'boolean', shareable: true }]),
   entry('choice-fields', 'inputs', 'CheckboxField', 'src/components/design-system/components/forms/CheckboxField.tsx', 'Choices', { checked: true }, [{ key: 'checked', label: 'Checked', type: 'boolean', shareable: true }]),

@@ -37,7 +37,6 @@ const entry: Entry = {
       initialDraft: {},
       controls: [{ key: 'variant', label: 'Variant', type: 'select', choices: ['primary', 'danger'], shareable: true }],
       Component: ButtonPreview,
-      getSource: (options) => `button(${options.variant})`,
     },
     {
       id: 'disabled',
@@ -47,7 +46,6 @@ const entry: Entry = {
       initialDraft: {},
       controls: [],
       Component: ButtonPreview,
-      getSource: () => 'button(disabled)',
     },
   ],
 }

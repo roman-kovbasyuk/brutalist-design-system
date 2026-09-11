@@ -5,7 +5,108 @@ import { Breadcrumbs } from './Breadcrumbs'
 import { Pagination } from './Pagination'
 import { SegmentedControl } from './SegmentedControl'
 import { Stepper } from './Stepper'
-import { Tabs } from './Tabs'
+import { useState } from 'react'
+import { Tabs, TabPanel } from './Tabs'
+import { PillTabs, PillTabPanel } from '../../molecules/PillTabs.jsx'
+
+function TabContractExample({ prefix = 'details' }: { prefix?: string }) {
+  const [value, setValue] = useState('usage')
+  return <>
+    <Tabs idPrefix={prefix} ariaLabel="Details" value={value} onValueChange={setValue} items={[
+      { value: 'usage', label: 'How to use' },
+      { value: 'locked', label: 'Unavailable', disabled: true },
+      { value: 'first', label: 'Example' },
+      { value: 'second', label: 'Example' },
+    ]} />
+    <TabPanel idPrefix={prefix} value="usage" activeValue={value}>Instructions</TabPanel>
+    <TabPanel idPrefix={prefix} value="locked" activeValue={value}>Locked content</TabPanel>
+    <TabPanel idPrefix={prefix} value="first" activeValue={value}>First example</TabPanel>
+    <TabPanel idPrefix={prefix} value="second" activeValue={value}>Second example</TabPanel>
+  </>
+}
+
+describe('tab identity and compatibility', () => {
+  it('keeps exact legacy label selection when slugs collide', async () => {
+    function Example() {
+      const [value, setValue] = useState('Foo Bar')
+      return <><PillTabs tabs={['Foo Bar', 'foo-bar']} value={value} onChange={setValue} ariaLabel="Legacy collision" />
+        <PillTabPanel tab="Foo Bar" value={value}>First</PillTabPanel>
+        <PillTabPanel tab="foo-bar" value={value}>Second</PillTabPanel></>
+    }
+    render(<Example />)
+    expect(screen.getAllByRole('tab', { selected: true })).toHaveLength(1)
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('First')
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'foo-bar' }))
+    expect(screen.getAllByRole('tab', { selected: true })).toHaveLength(1)
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Second')
+  })
+
+  it('preserves punctuation in legacy slug IDs', () => {
+    render(<><PillTabs tabs={['R&D']} value="R&D" onChange={() => {}} ariaLabel="Legacy punctuation" idPrefix="legacy" />
+      <PillTabPanel tab="R&D" value="R&D" idPrefix="legacy">Research</PillTabPanel></>)
+    expect(screen.getByRole('tab')).toHaveAttribute('id', 'legacy-r&d-tab')
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'legacy-r&d-panel')
+  })
+
+  it('connects differently labelled values to their actual panels', () => {
+    render(<TabContractExample />)
+    const tab = screen.getByRole('tab', { name: 'How to use' })
+    const panel = screen.getByRole('tabpanel')
+    expect(document.getElementById(tab.getAttribute('aria-controls')!)).toBe(panel)
+    expect(document.getElementById(panel.getAttribute('aria-labelledby')!)).toBe(tab)
+    expect(panel).toHaveAccessibleName('How to use')
+  })
+
+  it('distinguishes duplicate labels and shows the selected value panel', async () => {
+    const user = userEvent.setup()
+    render(<TabContractExample />)
+    const tabs = screen.getAllByRole('tab', { name: 'Example' })
+    expect(tabs[0].id).not.toBe(tabs[1].id)
+    await user.click(tabs[1])
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Second example')
+  })
+
+  it('keeps disabled tabs visible and skips them during keyboard navigation', async () => {
+    const user = userEvent.setup()
+    render(<TabContractExample />)
+    const disabled = screen.getByRole('tab', { name: 'Unavailable' })
+    expect(disabled).toBeDisabled()
+    await user.click(disabled)
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Instructions')
+    await user.click(screen.getByRole('tab', { name: 'How to use' }))
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getAllByRole('tab', { name: 'Example' })[0]).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Second example')
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'How to use' })).toHaveFocus()
+    await user.keyboard('{ArrowLeft}{Home}')
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Instructions')
+  })
+
+  it('keeps supplied group prefixes distinct', () => {
+    render(<><TabContractExample prefix="left" /><TabContractExample prefix="right" /></>)
+    const tabs = screen.getAllByRole('tab', { name: 'How to use' })
+    expect(tabs[0].id).not.toBe(tabs[1].id)
+    for (const tab of tabs) expect(document.getElementById(tab.getAttribute('aria-controls')!)).toBeVisible()
+  })
+
+  it('preserves legacy label callbacks and slug-based panel relationships', async () => {
+    function LegacyExample() {
+      const [value, setValue] = useState('First view')
+      return <><PillTabs idPrefix="legacy" ariaLabel="Legacy" tabs={['First view', 'Other view']} value={value} onChange={setValue} />
+        <PillTabPanel idPrefix="legacy" tab="First view" value={value}>First</PillTabPanel>
+        <PillTabPanel idPrefix="legacy" tab="Other view" value={value}>Other</PillTabPanel></>
+    }
+    const user = userEvent.setup()
+    render(<LegacyExample />)
+    await user.click(screen.getByRole('tab', { name: 'Other view' }))
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Other')
+    expect(screen.getByRole('tab', { name: 'Other view' })).toHaveAttribute('aria-controls', 'legacy-other-view-panel')
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'legacy-other-view-tab')
+  })
+})
 
 describe('portable navigation controls', () => {
   it('keeps tab selection and arrow-key focus in one accessible tablist', async () => {

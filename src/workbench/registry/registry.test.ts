@@ -40,7 +40,7 @@ describe('design-system registry', () => {
       {
         id: 'button', familyId: 'buttons', name: 'Button', purpose: 'Trigger work.', maturity: 'beta',
         source: 'src/Button.tsx', exports: ['Button'], dependencies: [], tokens: [], usage: 'Use it.', keyboard: 'Enter.', constraints: [],
-        examples: [{ id: 'primary', title: 'Primary', group: 'Missing group', defaults: { variant: 'tertiary' }, initialDraft: {}, controls: [{ key: 'variant', label: 'Variant', type: 'select', choices: ['primary'], shareable: true }], getSource: () => '' }],
+        examples: [{ id: 'primary', title: 'Primary', group: 'Missing group', defaults: { variant: 'tertiary' }, initialDraft: {}, controls: [{ key: 'variant', label: 'Variant', type: 'select', choices: ['primary'], shareable: true }] }],
       },
       {
         id: 'button', familyId: 'unknown', name: 'Button again', purpose: 'Duplicate.', maturity: 'beta',

@@ -32,9 +32,13 @@ npm run verify:consumer
 npm run build
 ```
 
-The consumer check packs `dist-library/`, installs the tarball and declared dependencies into a fresh temporary directory, then typechecks and builds it without source aliases or copied host modules. It requires npm registry access.
+The consumer check packs `dist-library/`, installs the tarball and declared dependencies into a fresh temporary directory, then typechecks, verifies rendered tab/panel relationships, and builds it without source aliases or copied host modules. It requires npm registry access.
 
-Task-tracker verification is separate: `npm --prefix observatory run harness`.
+Task-tracker verification is separate. Install its own declared dependencies with `npm install --prefix observatory --ignore-scripts --package-lock=false`, then run `npm --prefix observatory run harness`. The harness needs permission to start local HTTP servers; a restricted sandbox may prevent it from running.
+
+## Workbench behavior
+
+Gallery controls are local interactive previews. Drafts are isolated per specimen and reset when leaving a family. Files are never uploaded; AI actions do not send requests or apply changes. The gallery exposes component IDs and tokens, not an options editor or source-code generator.
 
 ## Consume the library
 

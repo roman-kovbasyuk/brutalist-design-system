@@ -30,9 +30,11 @@
   color: var(--v2-surface);
 }
 
-.v2-pill-tabs button:active {
+.v2-pill-tabs button:active:not(:disabled) {
   transform: translateY(1px) scale(0.98);
 }
+
+.v2-pill-tabs button:disabled { opacity: .45; cursor: not-allowed; }
 
 .v2-pill-tabs button[aria-selected="true"] {
   border-color: var(--v2-border);

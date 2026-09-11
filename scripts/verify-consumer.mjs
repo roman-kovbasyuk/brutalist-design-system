@@ -16,6 +16,7 @@ export function createFixtureManifest(tarballPath, rootManifest) {
     scripts: {
       build: 'vite build',
       typecheck: 'tsc --noEmit',
+      verify: 'node verify.mjs',
     },
     dependencies: {
       [packageName]: `file:${tarballPath}`,
@@ -82,6 +83,7 @@ function main() {
       throw new Error('Fixture did not install the package public JavaScript and stylesheet entries.')
     }
     run('npm', ['run', 'typecheck'], { cwd: fixtureRoot })
+    run('npm', ['run', 'verify'], { cwd: fixtureRoot })
     run('npm', ['run', 'build'], { cwd: fixtureRoot })
     console.log('Packed consumer fixture verified without source aliases.')
   } finally {

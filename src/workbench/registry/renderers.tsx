@@ -1,11 +1,12 @@
+import { useId, useState } from 'react'
 import { AppButton } from '../../components/design-system/components/actions/AppButton'
 import { CheckboxField, TextField } from '../../components/design-system/components/forms'
 import { Combobox } from '../../components/design-system/components/selection'
-import { Breadcrumbs, Tabs } from '../../components/design-system/components/navigation'
+import { Breadcrumbs, Tabs, TabPanel } from '../../components/design-system/components/navigation'
 import { Dialog, Popover } from '../../components/design-system/components/overlays'
 import { Alert, Progress } from '../../components/design-system/components/feedback'
 import { Table } from '../../components/design-system/components/data'
-import { FileDropzone } from '../../components/design-system/components/files'
+import { FileDropzone, FileList } from '../../components/design-system/components/files'
 import { AITaskStatus } from '../../components/design-system/components/ai'
 import { ActionCard, SelectionTile } from '../../components/design-system/components/content'
 import { SettingsForm } from '../../components/design-system/ui-blocks/settings/SettingsForm'
@@ -34,8 +35,12 @@ export function ComboboxExample({ draft, onDraftChange }: ExampleProps) {
   return <Combobox label="Visual direction" options={choices} value={value} onValueChange={(next) => onDraftChange({ value: next ?? '' })} clearable />
 }
 export function TabsExample({ options, onDraftChange }: ExampleProps) {
+  const idPrefix = useId()
   const value = typeof options.tab === 'string' ? options.tab : 'preview'
-  return <Tabs ariaLabel="Specimen view" items={[{ value: 'preview', label: 'Preview' }, { value: 'code', label: 'Code' }, { value: 'notes', label: 'Notes' }]} value={value} onValueChange={(tab) => onDraftChange({ tab })} />
+  return <><Tabs idPrefix={idPrefix} ariaLabel="Specimen view" items={[{ value: 'preview', label: 'Preview' }, { value: 'code', label: 'Code' }, { value: 'notes', label: 'Notes' }]} value={value} onValueChange={(tab) => onDraftChange({ tab })} />
+    <TabPanel idPrefix={idPrefix} value="preview" activeValue={value}>A visual preview belongs in this panel.</TabPanel>
+    <TabPanel idPrefix={idPrefix} value="code" activeValue={value}>Implementation details belong in this panel.</TabPanel>
+    <TabPanel idPrefix={idPrefix} value="notes" activeValue={value}>Supporting notes belong in this panel.</TabPanel></>
 }
 export function BreadcrumbsExample() { return <Breadcrumbs items={[{ label: 'Library', href: '#library' }, { label: 'Campaigns', href: '#campaigns' }, { label: 'Summer launch' }]} /> }
 export function DialogExample({ options, onDraftChange }: ExampleProps) {
@@ -51,7 +56,11 @@ export function AlertExample({ options }: ExampleProps) {
 }
 export function ProgressExample({ options }: ExampleProps) { return <Progress label="Uploading assets" value={typeof options.value === 'number' ? options.value : 60} /> }
 export function TableExample() { return <Table label="Creative assets" rows={rows} getRowId={(row) => row.id} columns={[{ id: 'name', header: 'Name', cell: (row) => row.name }, { id: 'state', header: 'State', cell: (row) => row.state }]} /> }
-export function FileDropzoneExample() { return <FileDropzone label="Add source files" description="PNG, JPG, or PDF up to your application limit." onFilesChange={() => undefined} /> }
+export function FileDropzoneExample() {
+  const [files, setFiles] = useState<File[]>([])
+  return <><FileDropzone label="Add source files" description="Local preview only. No files are uploaded." onFilesChange={setFiles} />
+    <FileList files={files} onRemove={(index) => setFiles((current) => current.filter((_, position) => position !== index))} /></>
+}
 export function AITaskStatusExample({ options }: ExampleProps) {
   const status = ['queued', 'running', 'succeeded', 'failed'].includes(String(options.state)) ? String(options.state) as 'queued' | 'running' | 'succeeded' | 'failed' : 'running'
   return <AITaskStatus status={status} label="Generate visual directions" progress={status === 'running' ? 60 : undefined} />
@@ -61,11 +70,23 @@ export function SelectionTileExample({ options, onDraftChange }: ExampleProps) {
 export function SettingsFormExample() { return <SettingsForm initialValue={{ name: 'Studio workspace', language: 'English', notifications: true }} onSave={async () => ({ ok: true })} /> }
 export function AppLayoutExample() { return <AppLayout navigation={<nav><strong>Studio</strong><a href="#assets">Assets</a></nav>} header={<strong>Campaign library</strong>} inspector={<p>Inspector</p>}><p>Application content belongs in this slot.</p></AppLayout> }
 export function ItemBrowserExample({ draft, onDraftChange }: ExampleProps) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [opened, setOpened] = useState('')
   const query = typeof draft.query === 'string' ? draft.query : ''
-  return <ItemBrowser items={rows.map((row) => ({ id: row.id, title: row.name, status: row.state }))} total={2} query={query} onQueryChange={(next) => onDraftChange({ query: next })} page={1} pageCount={1} onPageChange={() => undefined} view="list" onViewChange={() => undefined} selectedIds={[]} onSelectionChange={() => undefined} onOpen={() => undefined} />
+  const items = rows.filter((row) => row.name.toLowerCase().includes(query.trim().toLowerCase()))
+    .map((row) => ({ id: row.id, title: row.name, status: row.state }))
+  return <><ItemBrowser items={items} total={items.length} query={query} onQueryChange={(next) => onDraftChange({ query: next })}
+    page={1} pageCount={1} onPageChange={() => undefined} view={draft.view === 'grid' ? 'grid' : 'list'}
+    onViewChange={(view) => onDraftChange({ view })} selectedIds={selectedIds} onSelectionChange={setSelectedIds}
+    onOpen={(id) => setOpened(rows.find((row) => row.id === id)?.name ?? '')} />
+    {opened && <p role="status" aria-label="Item preview">Preview: {opened}. No external item was opened.</p>}</>
 }
 export function ItemDetailExample() { return <ItemDetail item={{ id: 'poster', revision: 'v3', title: 'Launch poster', description: 'A high-contrast campaign visual.' }} onSave={async () => ({ ok: true })} readOnly preview={<div>Preview area</div>} /> }
 export function AIWorkspaceExample({ draft, onDraftChange }: ExampleProps) {
   const prompt = typeof draft.prompt === 'string' ? draft.prompt : 'Create three bold launch directions.'
-  return <AIWorkspace prompt={prompt} onPromptChange={(next) => onDraftChange({ prompt: next })} state="ready" message="Directions are ready" result={<p>Three distinct concepts are available.</p>} onSubmit={() => undefined} onApply={() => undefined} />
+  const message = typeof draft.message === 'string' ? draft.message : 'Sample result — no AI request has been sent.'
+  return <AIWorkspace prompt={prompt} onPromptChange={(next) => onDraftChange({ prompt: next })} state="ready" message={message}
+    result={<p>Illustrative result: three distinct concepts.</p>}
+    onSubmit={() => onDraftChange({ message: 'Preview only: no AI request was sent.' })}
+    onApply={() => onDraftChange({ message: 'Preview only: no changes were applied.' })} />
 }

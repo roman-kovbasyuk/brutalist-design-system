@@ -24,7 +24,6 @@ export type Example = {
   initialDraft: Values
   controls: Control[]
   Component: ComponentType<ExampleProps>
-  getSource(options: Values): string
 }
 
 export type Entry = {
