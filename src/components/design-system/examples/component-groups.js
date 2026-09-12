@@ -1,9 +1,9 @@
 export const componentGroups = [
-  'Buttons', 'Table', 'Content objects', 'Disclosure', 'Dropdowns', 'Feedback states',
-  'Fields', 'Inline confirmation', 'Interaction laboratory',
-  'Menu and supporting information', 'Modal confirmation',
-  'Progress and activity', 'Sidebar row', 'Status language',
-  'Tabs and view controls', 'Value controls', 'Wayfinding', 'Workflow steps',
+  'Buttons', 'Table', 'Dropdowns', 'Feedback states',
+  'Fields', 'Radiobuttons', 'Checklist', 'Toggles', 'Inline confirmation', 'Interaction laboratory',
+  'Modals & tooltips',
+  'Progress and activity',
+  'Panel', 'Tags', 'Tabs and view controls', 'Text with inline editing', 'Value controls', 'Wayfinding', 'Workflow steps',
 ].sort((a, b) => a.localeCompare(b)).map(name => ({
   name, id: `components-${name.toLowerCase().replaceAll(' ', '-')}`,
   get href() { return `#${this.id}` },

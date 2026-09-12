@@ -6,7 +6,6 @@ import { TokenCopyTarget } from '../components/design-system/atoms/TokenCopyTarg
 import { CopyModeProvider } from '../components/design-system/atoms/CopyMode.jsx'
 import { ControlSpecimens, NavigationSpecimens } from '../components/design-system/examples/ControlSpecimens.jsx'
 import {
-  ContentObjectSpecimens,
   DataSpecimens,
   FeedbackSpecimens,
 } from '../components/design-system/examples/DataSpecimens.jsx'
@@ -17,6 +16,9 @@ import { BasicsCatalog } from '../components/design-system/examples/BasicsCatalo
 import { componentGroups } from '../components/design-system/examples/component-groups.js'
 import { basicGroups } from '../components/design-system/foundations/basics-catalog.js'
 import { DesignSystemOverview } from '../components/design-system/examples/DesignSystemOverview.jsx'
+import { TagSpecimens } from '../components/design-system/examples/TagSpecimens.jsx'
+import { InlineTextSpecimens } from '../components/design-system/examples/InlineTextSpecimens.jsx'
+import { PanelSpecimens } from '../components/design-system/examples/PanelSpecimens.jsx'
 import '../styles/design-system.css'
 import { sitePath } from './site-path.js'
 
@@ -31,15 +33,16 @@ const colors = [
 ]
 
 const typeRoles = [
-  { name: 'H1', key: 'h1', size: 48, line: 52, weight: 500 },
-  { name: 'H2', key: 'h2', size: 32, line: 36, weight: 500 },
-  { name: 'H3', key: 'h3', size: 24, line: 28, weight: 500 },
-  { name: 'H4', key: 'h4', size: 20, line: 24, weight: 500 },
-  { name: 'H5', key: 'h5', size: 18, line: 24, weight: 500 },
-  { name: 'Lead L', key: 'lead-large', size: 24, line: 36, weight: 500 },
-  { name: 'Lead M', key: 'lead-medium', size: 20, line: 28, weight: 500 },
-  { name: 'Body', key: 'body', size: 16, line: 22, weight: 500 },
-  { name: 'Small', key: 'small', size: 14, line: 20, weight: 400 },
+  { name: 'H1', key: 'h1', size: 48, line: 52, weight: 500, weightToken: '--v2-weight-heading' },
+  { name: 'H2', key: 'h2', size: 32, line: 36, weight: 500, weightToken: '--v2-weight-heading' },
+  { name: 'H3', key: 'h3', size: 24, line: 28, weight: 500, weightToken: '--v2-weight-heading' },
+  { name: 'H4', key: 'h4', size: 20, line: 24, weight: 500, weightToken: '--v2-weight-heading' },
+  { name: 'H5', key: 'h5', size: 18, line: 24, weight: 600, weightToken: '--v2-weight-heading-strong' },
+  { name: 'H6', key: 'h6', size: 16, line: 22, weight: 600, weightToken: '--v2-weight-heading-strong' },
+  { name: 'Lead L', key: 'lead-large', size: 24, line: 36, weight: 500, weightToken: '--v2-weight-heading' },
+  { name: 'Lead M', key: 'lead-medium', size: 20, line: 28, weight: 500, weightToken: '--v2-weight-heading' },
+  { name: 'Body', key: 'body', size: 16, line: 22, weight: 500, weightToken: '--v2-weight-heading' },
+  { name: 'Small', key: 'small', size: 14, line: 20, weight: 500, weightToken: '--v2-weight-heading' },
 ]
 
 const spacingSteps = [
@@ -81,6 +84,14 @@ function DesignSystemContent({ overviewOnRoot = false }) {
   }
 
   const isOverview = overviewOnRoot && activeCategory === 'all'
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(window.location.hash.slice(1))
+      target?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [activeCategory])
 
   return (
     <div className="ds-workspace">
@@ -124,7 +135,7 @@ function DesignSystemContent({ overviewOnRoot = false }) {
             {typeRoles.map((role) => (
               <TokenCopyTarget
                 key={role.name}
-                copyValue={`font: var(${role.weight === 500 ? '--v2-weight-heading' : '--v2-weight-text'}) var(--v2-text-${role.key}) / var(--v2-line-${role.key}) var(--v2-font);`}
+                copyValue={`font: var(${role.weightToken}) var(--v2-text-${role.key}) / var(--v2-line-${role.key}) var(--v2-font);`}
                 label={`${role.name} typography token`}
                 className={`v2-type-sample v2-type-sample--${role.key}`}
               >
@@ -161,8 +172,10 @@ function DesignSystemContent({ overviewOnRoot = false }) {
         <ControlSpecimens />
         <NavigationSpecimens />
         <FeedbackSpecimens />
+        <PanelSpecimens />
+        <TagSpecimens />
+        <InlineTextSpecimens />
         <DataSpecimens />
-        <ContentObjectSpecimens />
         <MotionSpecimens />
       </div>}
       {!isOverview && (activeCategory === 'UI blocks' || activeCategory === 'all') && <>

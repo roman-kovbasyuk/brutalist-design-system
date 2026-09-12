@@ -10,7 +10,10 @@ import './basics-catalog.css'
 export const basicsManifest = createBasicsManifest(tokenCss)
 const byId = Object.fromEntries(basicsManifest.tokens.map(token => [token.id, token]))
 const palette = ['canvas', 'surface', 'ink', 'accent', 'success', 'danger', 'text-secondary', 'muted']
-const typeKeys = ['h1', 'h2', 'h3', 'h4', 'h5', 'lead-large', 'lead-medium', 'body', 'small']
+const typeKeys = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'lead-large', 'lead-medium', 'body', 'small']
+const strongHeadingRoles = new Set(['h5', 'h6', 'h7'])
+const annotatedTypographyRoles = new Set(['lead-large', 'lead-medium', 'body', 'small'])
+const annotatedTypographyCopy = 'Applicable practically for any use case, where you have repetitive similar design templates and tasks. We ensure control quality on both generation and tweaking phases'
 const layoutComponents = { Stack, Inline, Grid, Container, Divider, ScrollArea, Surface }
 const iconSizeOptions = [
   { value: '--v2-icon-sm', label: '16' },
@@ -91,10 +94,10 @@ export function BasicsCatalog({ query = '' }) {
           <div className="v2-type-grid">{roles.map(key => {
             const size = byId[`--v2-text-${key}`].resolved
             const line = Math.round(parseFloat(size) * Number(byId[`--v2-line-${key}`].resolved))
-            const weight = key === 'small' ? '--v2-weight-text' : '--v2-weight-heading'
+            const weight = strongHeadingRoles.has(key) ? '--v2-weight-heading-strong' : '--v2-weight-heading'
             const recipe = `font: var(${weight}) var(--v2-text-${key}) / var(--v2-line-${key}) var(--v2-font);`
             return <TokenCopyTarget key={key} copyValue={recipe} label={`${key} typography`} className={`v2-type-sample v2-type-sample--${key}`}>
-              <span className="v2-type-sample__name" style={{ font: `var(${weight}) var(--v2-text-${key}) / var(--v2-line-${key}) var(--v2-font)` }}>{({ 'lead-large': 'Lead 1', 'lead-medium': 'Lead 2', body: 'Body', small: 'Small' })[key] ?? key.toUpperCase()}</span><span className="v2-type-sample__copy" style={{ font: `var(${weight}) var(--v2-text-${key}) / var(--v2-line-${key}) var(--v2-font)` }}>Avenir</span><small className="v2-type-sample__value">{size} / {line}px · {byId[weight].resolved}</small>
+              <span className="v2-type-sample__name" style={{ font: `var(${weight}) var(--v2-text-${key}) / var(--v2-line-${key}) var(--v2-font)` }}>{({ 'lead-large': 'Lead 1', 'lead-medium': 'Lead 2', body: 'Body', small: 'Small' })[key] ?? key.toUpperCase()}</span><span className="v2-type-sample__copy" style={{ font: `var(${weight}) var(--v2-text-${key}) / var(--v2-line-${key}) var(--v2-font)` }}>{annotatedTypographyRoles.has(key) ? annotatedTypographyCopy : 'Avenir'}</span><small className="v2-type-sample__value">{size} / {line}px · {byId[weight].resolved}</small>
             </TokenCopyTarget>
           })}</div>
           <div className="ds-basic-aliases">{groupTokens.filter(token => normalized || token.id === '--v2-font').map(token => <TokenCopyTarget key={token.id} copyValue={token.id} label={token.id} className="ds-basic-alias"><code>{token.id}</code><small>{token.resolved}</small></TokenCopyTarget>)}</div>
@@ -116,6 +119,7 @@ export function BasicsCatalog({ query = '' }) {
       </Group>
       return <Group key={id} id={id} name={name}>
         {id === 'motion' && <p className="ds-basic-note">Hover or focus a sample to preview. Reduced motion follows your device setting.</p>}
+        {id === 'elevation' && <p className="ds-basic-note">Elevation is reserved for wrapper panels; icon tiles retain lift to signal interaction.</p>}
         <div className="ds-basic-grid">{groupTokens.filter(token => !token.id.startsWith('--v2-z-')).map(token => <TokenReference key={token.id} token={token}>
           <span className="ds-basic-demo" aria-hidden="true"><span className={`ds-basic-object${id === 'motion' ? ' ds-basic-object--motion' : ''}`} style={
             id === 'elevation' ? { boxShadow: token.id.includes('shadow') ? `var(${token.id})` : undefined } :

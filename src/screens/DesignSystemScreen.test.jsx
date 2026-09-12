@@ -7,7 +7,8 @@ import { DesignSystemScreen } from './DesignSystemScreen.jsx'
 import { PillTabs, PillTabPanel } from '../components/design-system/molecules/PillTabs.jsx'
 import { useState } from 'react'
 
-const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/charts/charts.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css', 'src/components/design-system/examples/library-index.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
+const designSystemStyles = ['src/styles/design-system.css', 'src/components/design-system/charts/charts.css', 'src/components/design-system/molecules/pill-tabs.css', 'src/components/design-system/molecules/select-menu.css', 'src/components/design-system/atoms/token-copy-target.css', 'src/components/design-system/atoms/token-chip.css', 'src/components/design-system/components/forms/forms.css', 'src/components/design-system/components/overlays/overlays.css', 'src/components/design-system/components/content/content.css', 'src/components/design-system/examples/library-index.css', 'src/components/design-system/examples/basics-catalog.css', 'src/components/design-system/basics/layout/layout.css'].map(path => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
+const workflowStyles = readFileSync(join(process.cwd(), 'src/components/design-system/workflow-steps.css'), 'utf8')
 const componentCopy = reference => `Use this component ${reference} from the app design system (brutalist design system)`
 
 describe('DesignSystemScreen', () => {
@@ -37,6 +38,78 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample \.v2-token-copy-target__button\s*{[^}]*grid-template-columns:\s*92px minmax\(0, 1fr\) auto;/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-swatch:nth-child\(4\) \.v2-color-swatch__sample\s*{[^}]*border-bottom:\s*0;/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-section--unwrapped\s*{[^}]*border:\s*0;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-tag-grid\s*{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+    expect(designSystemStyles).toMatch(/\.ds-tag--filled\.ds-tag--neutral\s*{[^}]*background:\s*var\(--v2-surface\);/)
+  })
+
+  test('keeps catalog typography on the Basics font token', () => {
+    expect(designSystemStyles).not.toContain('system-ui')
+    expect(designSystemStyles).toMatch(/\.system-screen--v2\s*{[^}]*font-family:\s*var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 code\s*{[^}]*font-family:\s*var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.ds-dialog,[\s\S]*font-family:\s*var\(--v2-font\);/)
+  })
+
+  test('elevates only the explicitly marked form wrapper', () => {
+    expect(designSystemStyles).toMatch(/\.ds-form-section--elevated\s*{[^}]*box-shadow:\s*var\(--v2-shadow-small\);/)
+  })
+
+  test('keeps token samples flat while allowing icon tiles to lift', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.ds-button\.v2-token-copy-target__button:not\(:disabled\):not\(\[aria-disabled='true'\]\):is\(:hover, :active\)\s*{[^}]*box-shadow:\s*none;[^}]*transform:\s*none;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.ds-basics \.ds-basic-group:focus-within\s*{[^}]*box-shadow:\s*var\(--v2-shadow-interactive\)/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.ds-basics \.ds-basic-group:hover\s*{[^}]*box-shadow:\s*var\(--v2-shadow-interactive\)/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.ds-basics \.ds-basic-icon-tile \.v2-token-copy-target__button:not\(:disabled\):not\(\[aria-disabled='true'\]\):hover\s*{[^}]*box-shadow:\s*var\(--v2-shadow-interactive\)/)
+  })
+
+  test('removes quiet-button underlines from inline Basic font samples', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-token-copy-target--inline \.ds-button\.v2-token-copy-target__button\s*{[^}]*text-decoration:\s*none;/)
+  })
+
+  test('keeps inline field actions flush on the block axis', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-inline-action\s*{[^}]*padding-block:\s*0;/)
+  })
+
+  test('renders the campaign color as a filled circle without a native square stroke', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-input--swatch input\[type="color"\]\s*{[^}]*border:\s*0;[^}]*border-radius:\s*50%;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-color-input--swatch input\[type="color"\]::-(?:webkit-color-swatch|moz-color-swatch)\s*{[^}]*border:\s*0;[^}]*border-radius:\s*50%;/)
+  })
+
+  test('exposes button anatomy toggles and copies the selected state', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+    const buttons = screen.getByRole('heading', { name: 'Buttons' }).closest('.v2-specimen-card')
+    expect(within(buttons).getByRole('switch', { name: 'Left icon' })).toBeChecked()
+    expect(within(buttons).getByRole('switch', { name: 'Right icon' })).toBeChecked()
+    expect(within(buttons).getByRole('switch', { name: 'Caption' })).toBeChecked()
+
+    const primary = within(buttons).getByRole('button', { name: 'Create campaign' }).closest('.v2-button-cell')
+    const danger = within(buttons).getByRole('button', { name: 'Delete draft' }).closest('.v2-button-cell')
+    const buttonCells = [...buttons.querySelectorAll('.v2-button-grid .ds-button')]
+      .map((button) => button.closest('.v2-button-cell'))
+    expect(buttonCells).toHaveLength(6)
+    for (const cell of buttonCells) {
+      expect(cell).toHaveAttribute('data-component-reference', expect.stringContaining('leftIcon'))
+      expect(cell).toHaveAttribute('data-component-reference', expect.stringContaining('rightIcon'))
+    }
+    expect(primary).toHaveAttribute('data-component-reference', 'AppButton variant="primary" leftIcon rightIcon caption')
+
+    await user.click(within(buttons).getByRole('switch', { name: 'Right icon' }))
+    expect(primary).toHaveAttribute('data-component-reference', 'AppButton variant="primary" leftIcon caption')
+    expect(within(buttons).queryByRole('button', { name: 'Create campaign' })).toBeInTheDocument()
+    expect(primary.querySelector('svg.lucide-arrow-right')).not.toBeInTheDocument()
+    expect(primary.querySelector('svg.lucide-arrow-left')).toBeInTheDocument()
+
+    await user.click(within(buttons).getByRole('switch', { name: 'Caption' }))
+    expect(primary).toHaveAttribute('data-component-reference', 'AppButton variant="primary" leftIcon')
+    expect(primary.querySelector('.ds-button')).toHaveTextContent('')
+
+    await user.click(within(buttons).getByRole('switch', { name: 'Left icon' }))
+    expect(primary).toHaveAttribute('data-component-reference', 'AppButton variant="primary"')
+    expect(primary.querySelector('svg.lucide-arrow-left')).not.toBeInTheDocument()
+    expect(danger).toHaveAttribute('data-component-reference', 'AppButton variant="danger"')
+    expect(danger.querySelector('svg')).not.toBeInTheDocument()
+
+    const loading = within(buttons).getByRole('button', { name: 'Generating…' }).closest('.v2-button-cell')
+    expect(loading.querySelector('.ds-button__spinner')).not.toBeInTheDocument()
   })
 
   test('uses doubled padding for comparable foundation and specimen blocks', () => {
@@ -70,10 +143,11 @@ describe('DesignSystemScreen', () => {
 
     const buttons = screen.getByRole('heading', { name: 'Buttons' }).closest('.v2-specimen-card')
     expect(buttons.querySelector('.v2-button-grid')).toBeInTheDocument()
-    expect(buttons.querySelectorAll('.v2-button-cell')).toHaveLength(7)
+    expect(buttons.querySelectorAll('.v2-button-cell')).toHaveLength(6)
+    expect(within(buttons).queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
 
     await user.click(within(buttons).getByRole('button', { name: 'Create campaign' }).closest('.v2-button-cell'))
-    expect(await navigator.clipboard.readText()).toBe(componentCopy('AppButton variant="primary"'))
+    expect(await navigator.clipboard.readText()).toBe(componentCopy('AppButton variant="primary" leftIcon rightIcon caption'))
     expect(screen.getByText('Copied', { selector: '.v2-token-copy-target__feedback' })).toBeVisible()
   })
 
@@ -102,6 +176,108 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--lead-large p\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\);/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--lead-medium p\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\);/)
     expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-type-sample--body p\s*{[^}]*font-weight:\s*var\(--v2-weight-heading\);/)
+  })
+
+  test('uses Basics typography and no vertical spacing between radio options', () => {
+    expect(designSystemStyles).toMatch(/\.ds-radio-group\s*{[^}]*font:\s*var\(--v2-weight-text\) var\(--v2-text-body\)\s*\/\s*var\(--v2-line-body\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.ds-radio-group__options\s*{[^}]*gap:\s*0;/)
+  })
+
+  test('keeps radio option hover feedback borderless', () => {
+    expect(designSystemStyles).toMatch(/\.ds-radio-group__options \.ds-choice-field__label:not\(:has\(\.ds-choice-field__control:disabled\)\):hover\s*{[^}]*background:\s*color-mix\(in srgb, var\(--v2-accent\) 14%, var\(--v2-surface\)\);/)
+    expect(designSystemStyles).not.toMatch(/\.ds-radio-group__options \.ds-choice-field__label:not\(:has\(\.ds-choice-field__control:disabled\)\):hover\s*{[^}]*border-color:/)
+  })
+
+  test('applies minus three percent tracking to the H1 typography specimen', () => {
+    const rule = designSystemStyles.match(
+      /\.system-screen--v2 \.v2-type-sample--h1 \.v2-type-sample__copy\s*{([^}]*)}/,
+    )?.[1]
+    expect(rule).toMatch(/letter-spacing:\s*-0\.03em;/)
+  })
+
+  test('applies minus two percent tracking to the H2 typography specimen', () => {
+    const rule = designSystemStyles.match(
+      /\.system-screen--v2 \.v2-type-sample--h2 \.v2-type-sample__copy\s*{([^}]*)}/,
+    )?.[1]
+    expect(rule).toMatch(/letter-spacing:\s*-0\.02em;/)
+  })
+
+  test('keeps navigation focused on workflow primitives after removing the sidebar row specimen', () => {
+    expect(designSystemStyles).toMatch(/\.ds-selection-control-stack\s*{[^}]*gap:\s*var\(--v2-space-4\);/)
+    render(<DesignSystemScreen />)
+    expect(screen.getByRole('heading', { name: 'Workflow steps' })).toBeVisible()
+    expect(screen.queryByRole('navigation', { name: 'Sidebar specimen' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Sidebar row' })).not.toBeInTheDocument()
+  })
+
+  test('shows horizontal and vertical workflow step variants', () => {
+    render(<DesignSystemScreen />)
+    const specimen = screen.getByRole('heading', { name: 'Workflow steps' }).closest('.v2-specimen-card')
+    expect(within(specimen).getByText('Horizontal')).toBeVisible()
+    expect(within(specimen).getByText('Vertical')).toBeVisible()
+    expect(within(specimen).getAllByRole('list', { name: 'Campaign workflow' })).toHaveLength(2)
+  })
+
+  test('offers a mobile preview toggle for workflow steps', () => {
+    render(<DesignSystemScreen />)
+    const specimen = screen.getByRole('heading', { name: 'Workflow steps' }).closest('.v2-specimen-card')
+    expect(within(specimen).getByRole('switch', { name: 'Mobile preview' })).toBeInTheDocument()
+    expect(workflowStyles).toMatch(/\.v2-workflow-steps-shell--mobile \.v2-workflow-steps--horizontal\s*{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/)
+  })
+
+  test('renders the Tabs and view controls tab component', () => {
+    render(<DesignSystemScreen />)
+    const specimen = screen.getByRole('heading', { name: 'Tabs and view controls' }).closest('.v2-specimen-card')
+    expect(within(specimen).queryByText('Layout density', { selector: '.v2-demo-label' })).not.toBeInTheDocument()
+    expect(within(specimen).getByRole('tablist', { name: 'View density' })).toBeInTheDocument()
+    expect(within(specimen).getByRole('tab', { name: 'Comfortable' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(specimen).getByRole('tab', { name: 'Spacious' })).toHaveAttribute('aria-selected', 'false')
+    expect(within(specimen).getByRole('switch', { name: 'Compact' })).toBeInTheDocument()
+  })
+
+  test('moves the segmented selection pill across all density options', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+    const specimen = screen.getByRole('heading', { name: 'Tabs and view controls' }).closest('.v2-specimen-card')
+    const spacious = within(specimen).getByRole('tab', { name: 'Spacious' })
+    await user.click(spacious)
+    expect(spacious).toHaveAttribute('aria-selected', 'true')
+    expect(within(specimen).getByRole('tab', { name: 'Comfortable' })).toHaveAttribute('aria-selected', 'false')
+    expect(within(specimen).getByRole('tablist', { name: 'View density' }).querySelectorAll('.v2-segmented-control__indicator')).toHaveLength(1)
+  })
+
+  test('styles tabs, switches, progress text, and pagination with canonical treatments', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-segmented-control\s*{[^}]*border-radius:\s*var\(--v2-radius-pill\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-segmented-control__indicator\s*{[^}]*position:\s*absolute;[^}]*background:\s*var\(--v2-ink\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-segmented-control button:not\(\[aria-selected="true"\]\):hover\s*{[^}]*background:\s*transparent;[^}]*color:\s*var\(--v2-text-secondary\);[^}]*box-shadow:\s*none;[^}]*transform:\s*none;/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-segmented-control\s*{[^}]*grid-template-columns:\s*repeat\(3, max-content\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-segmented-control\s*{[^}]*gap:\s*var\(--v2-space-1\);[^}]*padding:\s*var\(--v2-space-1\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-segmented-control button\s*{[^}]*font:\s*var\(--v2-weight-heading-strong\) var\(--v2-text-h6\) \/ var\(--v2-line-h6\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-segmented-control button\s*{[^}]*transition:[^;]*background-color var\(--v2-duration-fast\)/)
+    expect(designSystemStyles).toMatch(/\.ds-switch-field__track\s*{[^}]*border:\s*1px solid var\(--v2-border\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-progress-example\s*{[^}]*font:\s*var\(--v2-weight-text\) var\(--v2-text-body\) \/ var\(--v2-line-body\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-progress-example__heading strong\s*{[^}]*font:\s*var\(--v2-weight-heading-strong\) var\(--v2-text-h6\) \/ var\(--v2-line-h6\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-progress-example--compact strong\s*{[^}]*font:\s*var\(--v2-weight-heading-strong\) var\(--v2-text-h6\) \/ var\(--v2-line-h6\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-pagination button:hover\s*{[^}]*box-shadow:\s*var\(--v2-shadow-small\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-pagination button:active\s*{[^}]*box-shadow:\s*none;/)
+  })
+
+  test('does not expose a redundant Modal confirmation state control', () => {
+    render(<DesignSystemScreen />)
+    const specimen = screen.getByRole('heading', { name: 'Modals & tooltips' }).closest('.v2-specimen-card')
+    expect(within(specimen).queryByRole('switch', { name: 'Open' })).not.toBeInTheDocument()
+    expect(within(specimen).getByRole('button', { name: 'Open confirmation dialog' })).toBeInTheDocument()
+  })
+
+  test('removes the Menu and supporting information group', () => {
+    render(<DesignSystemScreen />)
+    expect(screen.queryByRole('heading', { name: 'Menu and supporting information' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Menu and supporting information' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open asset actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'About motion feedback' })).not.toBeInTheDocument()
+    const modals = screen.getByRole('heading', { name: 'Modals & tooltips' }).closest('.v2-specimen-card')
+    expect(within(modals).getByRole('button', { name: 'Show success toast' })).toBeInTheDocument()
+    expect(within(modals).getByRole('switch', { name: 'Toast visible' })).toBeInTheDocument()
   })
 
   test('removes the nested focus stroke from the color hex field', () => {
@@ -200,6 +376,109 @@ describe('DesignSystemScreen', () => {
     expect(screen.getByRole('img', { name: 'Token burn by model' })).toBeVisible()
   })
 
+  test('moves Content objects out of Components and into UI blocks', () => {
+    try {
+      history.replaceState({}, '', '/design-system?section=components')
+      const { unmount } = render(<DesignSystemScreen />)
+      expect(document.querySelector('#components-content-objects')).not.toBeInTheDocument()
+      unmount()
+
+      history.replaceState({}, '', '/design-system?section=ui-blocks')
+      render(<DesignSystemScreen />)
+      expect(document.querySelector('#ds-content-objects')).toBeVisible()
+      expect(screen.getByRole('region', { name: 'Content' })).toHaveTextContent('Content objects')
+    } finally {
+      history.replaceState({}, '', '/design-system')
+    }
+  })
+
+  test('removes the Disclosure specimen from the Components catalog', () => {
+    render(<DesignSystemScreen />)
+    expect(document.querySelector('#components-disclosure')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Disclosure', exact: true })).not.toBeInTheDocument()
+  })
+
+  test('renders the Tags group with filled, outline, and status variants', () => {
+    history.replaceState({}, '', '/design-system?section=components')
+    render(<DesignSystemScreen />)
+
+    const tags = document.querySelector('#components-tags')
+    expect(tags).toBeVisible()
+    expect(within(tags).getByText('Default')).toHaveClass('ds-tag--filled', 'ds-tag--neutral')
+    expect(within(tags).getByText('Paid social')).toHaveClass('ds-tag--filled', 'ds-tag--accent')
+    expect(within(tags).queryByText('Draft')).not.toBeInTheDocument()
+    expect(within(tags).getByText('Blocked')).toHaveAttribute('data-tone', 'danger')
+    expect(tags.querySelector('.v2-tag-grid')).toBeInTheDocument()
+    expect(tags.querySelectorAll('.v2-tag-cell')).toHaveLength(2)
+    expect(within(tags).queryByText('Version 04')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Tags', exact: true })).toHaveAttribute('href', '#components-tags')
+    history.replaceState({}, '', '/design-system')
+  })
+
+  test('renders Text with inline editing previews across Basics typography styles', () => {
+    render(<DesignSystemScreen />)
+    const specimen = screen.getByRole('heading', { name: 'Text with inline editing' }).closest('.v2-specimen-card')
+    expect(specimen).toBeVisible()
+  expect(within(specimen).getAllByRole('button', { name: /^Edit / })).toHaveLength(4)
+  expect(within(specimen).getByText('Campaign title')).toBeVisible()
+  expect(within(specimen).getByText('Body copy')).toBeVisible()
+})
+
+  test('renders Panel inside the standard Components specimen wrapper', () => {
+    history.replaceState({}, '', '/design-system?section=components#components-panel')
+    render(<DesignSystemScreen />)
+
+    const specimen = document.querySelector('#components-panel')
+    expect(specimen).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Panel', exact: true })).toHaveAttribute('href', '#components-panel')
+    expect(within(specimen).getByRole('region', { name: 'Campaign brief' })).toHaveTextContent('Shared grouping structure for related controls and information.')
+    history.replaceState({}, '', '/design-system')
+  })
+
+  test('groups native selection controls into dedicated cards instead of Fields', () => {
+    history.replaceState({}, '', '/design-system?section=components')
+    render(<DesignSystemScreen />)
+
+    const fields = document.querySelector('#components-fields')
+    expect(within(fields).queryByRole('radio')).not.toBeInTheDocument()
+    expect(within(fields).queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(within(fields.querySelector('form')).queryByRole('switch')).not.toBeInTheDocument()
+
+    for (const name of ['Radiobuttons', 'Checklist', 'Toggles']) {
+      const card = document.querySelector(`#components-${name.toLowerCase()}`)
+      expect(card).toBeVisible()
+      expect(within(card).getByRole('heading', { name })).toBeVisible()
+    }
+    expect(screen.getByRole('link', { name: 'Radiobuttons', exact: true })).toHaveAttribute('href', '#components-radiobuttons')
+    history.replaceState({}, '', '/design-system')
+  })
+
+  test('toggles radio option counts from the Radiobuttons variants panel', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+    const card = document.querySelector('#components-radiobuttons')
+    const counts = within(card).getByRole('switch', { name: 'Counts' })
+    expect(counts).not.toBeChecked()
+    expect(within(card).queryByText('4', { selector: '.ds-radio-group__option-count' })).not.toBeInTheDocument()
+
+    await user.click(counts)
+    expect(within(card).getByText('4', { selector: '.ds-radio-group__option-count' })).toBeVisible()
+    expect(within(card).getByText('2', { selector: '.ds-radio-group__option-count' })).toBeVisible()
+  })
+
+  test('uses one-pixel dropdown strokes and canonical inline confirmation primitives', async () => {
+    expect(designSystemStyles).toMatch(/\.v2-select-trigger\s*{[^}]*border:\s*1px solid var\(--v2-border\);/)
+    expect(designSystemStyles).toMatch(/\.v2-floating-listbox\s*{[^}]*border:\s*1px solid var\(--v2-border\);/)
+    expect(designSystemStyles).toMatch(/\.v2-confirmation-panel strong\s*{[^}]*font:\s*var\(--v2-weight-heading\) var\(--v2-text-small\)\s*\/\s*var\(--v2-line-small\) var\(--v2-font\);/)
+
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+    await user.click(screen.getByRole('button', { name: 'Open inline confirmation' }))
+    const confirmation = screen.getByRole('group', { name: 'Confirm draft deletion' })
+    expect(within(confirmation).getByRole('button', { name: 'Keep draft' })).toHaveClass('ds-button', 'ds-button--secondary')
+    expect(within(confirmation).getByRole('button', { name: 'Delete draft' })).toHaveClass('ds-button', 'ds-button--danger')
+  })
+
   test('links the separate sidebar to preview metadata and filters across all groups', async () => {
     const user = userEvent.setup()
     render(<DesignSystemScreen />)
@@ -210,7 +489,7 @@ describe('DesignSystemScreen', () => {
     }
     expect(library.querySelectorAll('details, summary')).toHaveLength(0)
     const links = [...library.querySelectorAll('.ds-tree-item')]
-    expect(links).toHaveLength(24)
+    expect(links).toHaveLength(29)
     for (const link of links) {
       const target = document.querySelector(link.getAttribute('href'))
       expect(target).toBeVisible()
@@ -238,7 +517,7 @@ describe('DesignSystemScreen', () => {
     await user.type(search, 'no-such-component')
     expect(within(library).queryAllByRole('link', { name: /./ })).toHaveLength(5)
     await user.clear(search)
-    expect(library.querySelectorAll('.ds-tree-item')).toHaveLength(24)
+    expect(library.querySelectorAll('.ds-tree-item')).toHaveLength(29)
   })
 
   test('keeps the documented 48px page role at every breakpoint', () => {
@@ -253,7 +532,7 @@ describe('DesignSystemScreen', () => {
   })
 
   test('gives every custom dropdown the shared raised menu treatment', () => {
-    expect(designSystemStyles).toMatch(/\.v2-floating-listbox\s*{[^}]*border:\s*2px solid var\(--v2-border\);[^}]*box-shadow:\s*8px 8px 0 var\(--v2-ink\);/)
+    expect(designSystemStyles).toMatch(/\.v2-floating-listbox\s*{[^}]*border:\s*1px solid var\(--v2-border\);[^}]*box-shadow:\s*8px 8px 0 var\(--v2-ink\);/)
     expect(designSystemStyles).toMatch(/\.v2-listbox-option\[aria-selected="true"\]\s*{[^}]*background:\s*var\(--v2-accent\);/)
     expect(designSystemStyles).toMatch(/\.v2-listbox-option:not\(\[aria-selected="true"\]\):hover\s*{[^}]*background:/)
   })
@@ -286,6 +565,22 @@ describe('DesignSystemScreen', () => {
     expect(designSystemStyles).toMatch(/\.v2-stepper input\s*{/) // dedicated steppers retain their arrows
   })
 
+  test('matches dropdown autocomplete disabled styling to other inputs', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-input-shell:has\(input:disabled\)\s*{[^}]*background:\s*var\(--v2-canvas\);[^}]*color:\s*var\(--v2-text-secondary\);[^}]*cursor:\s*not-allowed;/)
+  })
+
+  test('uses the Basics accent for info feedback and Basics typography for validation errors', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-toast--info\s*{[^}]*border-left-color:\s*var\(--v2-accent\);[^}]*color:\s*var\(--v2-accent\);/)
+    expect(designSystemStyles).toMatch(/\.ds-field__error\s*{[^}]*font:\s*var\(--v2-weight-heading\) var\(--v2-text-meta\)\s*\/\s*var\(--v2-line-small\) var\(--v2-font\);/)
+  })
+
+  test('uses one Basics caption style across field labels and upload captions', () => {
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-field label,[\s\S]*\.v2-demo-label\s*{[^}]*font:\s*var\(--v2-weight-heading\) var\(--v2-text-meta\)\s*\/\s*var\(--v2-line-small\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-control-label,[\s\S]*\.v2-control-block legend\s*{[^}]*font:\s*var\(--v2-weight-heading\) var\(--v2-text-meta\)\s*\/\s*var\(--v2-line-small\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.ds-field__label\s*{[^}]*font:\s*var\(--v2-weight-heading\) var\(--v2-text-meta\)\s*\/\s*var\(--v2-line-small\) var\(--v2-font\);/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-file-drop strong\s*{[^}]*font:\s*var\(--v2-weight-heading\) var\(--v2-text-meta\)\s*\/\s*var\(--v2-line-small\) var\(--v2-font\);/)
+  })
+
   test('gives every clickable surface a shared hover and press baseline', () => {
     expect(designSystemStyles).toMatch(/:where\(button, a, summary, input\[type="checkbox"\], input\[type="radio"\], input\[type="color"\], input\[type="range"\]\)/)
     expect(designSystemStyles).toMatch(/:not\(:disabled\):hover\s*{[^}]*filter:\s*brightness\(0\.96\);/)
@@ -294,7 +589,7 @@ describe('DesignSystemScreen', () => {
 
   test('highlights data table rows on hover without changing their layout', () => {
     expect(designSystemStyles).toMatch(/\.v2-data-table tbody tr:hover > \*\s*{[^}]*background:\s*color-mix\(/)
-    expect(designSystemStyles).toMatch(/\.v2-data-table tbody tr:hover > \*\s*{[^}]*box-shadow:\s*inset 0 2px 0 var\(--v2-accent\)/)
+    expect(designSystemStyles).not.toMatch(/\.v2-data-table tbody tr:hover > \*\s*{[^}]*box-shadow:/)
   })
 
   test('keeps foundations focused on shared color, type, and spacing', () => {
@@ -320,48 +615,74 @@ describe('DesignSystemScreen', () => {
 
     await user.click(screen.getByRole('checkbox', { name: 'Include animated formats' }))
     expect(screen.getByRole('checkbox', { name: 'Include animated formats' })).toBeChecked()
-
-    await user.click(screen.getByRole('button', { name: 'Validate brief' }))
     expect(screen.getByText('Add a campaign objective')).toHaveRole('alert')
+    expect(screen.queryByRole('button', { name: 'Validate brief' })).not.toBeInTheDocument()
   })
 
-  test('shows feedback, data, and production object patterns', () => {
+  test('shows feedback, data, and the campaign production object pattern', () => {
     render(<DesignSystemScreen />)
-    expect(screen.getByRole('status', { name: 'Campaign processing' })).toBeVisible()
-    expect(screen.getByRole('progressbar', { name: 'Generation progress' })).toHaveAttribute('aria-valuenow', '64')
     expect(screen.getByRole('table', { name: 'Campaign performance' })).toBeVisible()
-    expect(screen.getByText('Prompt card')).toBeVisible()
-    expect(screen.getByText('Review required')).toBeVisible()
+    expect(screen.getByText('Campaign card')).toBeVisible()
+    expect(screen.queryByText('Prompt card')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review required')).not.toBeInTheDocument()
   })
 
   test('uses truthful noninteractive semantics for inert production objects', () => {
     render(<DesignSystemScreen />)
-    const contentObjects = screen.getByRole('region', { name: 'Content objects' })
+    const contentObjects = document.querySelector('#ds-content-objects')
+    expect(contentObjects).toBeInTheDocument()
 
-    for (const name of ['Campaign card', 'Prompt card', 'Asset tile', 'Banner preview', 'Review required']) {
-      const object = within(contentObjects).getByRole('article', { name })
-      expect(object).toBeVisible()
-      expect(object).not.toHaveAttribute('tabindex')
-      expect(within(object).queryAllByRole('button')).toHaveLength(0)
-    }
+    const objects = within(contentObjects).getAllByRole('article')
+    expect(objects).toHaveLength(1)
+    expect(objects[0]).toHaveAccessibleName('Campaign card')
+    expect(objects[0]).not.toHaveAttribute('tabindex')
+    expect(within(objects[0]).queryAllByRole('button')).toHaveLength(0)
   })
 
-  test('distinguishes generated asset and assembled banner thumbnails', () => {
+  test('does not include secondary production object thumbnails', () => {
+    render(<DesignSystemScreen />)
+    expect(screen.queryByRole('img', { name: 'Generated asset thumbnail' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Assembled banner thumbnail' })).not.toBeInTheDocument()
+  })
+
+  test('uses the canonical Tag treatment for danger status text', () => {
+    expect(designSystemStyles).toMatch(
+      /\.ds-tag--filled\.ds-tag--danger\s*{[^}]*color:\s*var\(--v2-danger\);/,
+    )
+  })
+
+  test('uses canonical Tags for status labels and selected filters', async () => {
+    const user = userEvent.setup()
     render(<DesignSystemScreen />)
 
-    const asset = screen.getByRole('img', { name: 'Generated asset thumbnail' })
-    expect(within(asset).getByText('OSLO / 07:42')).toBeVisible()
-    expect(within(asset).getByText('Generated asset')).toBeVisible()
+    const dataDisplay = document.querySelector('#components-table')
+    expect(within(dataDisplay).getByText('Generating', { selector: '.ds-tag' })).toHaveClass('ds-tag--filled', 'ds-tag--warning')
 
-    const banner = screen.getByRole('img', { name: 'Assembled banner thumbnail' })
-    expect(within(banner).getByText('Speak before you land.')).toBeVisible()
-    expect(within(banner).getByText('Start learning')).toBeVisible()
+    const channelTrigger = screen.getByRole('button', { name: 'Open channel options' })
+    await user.click(channelTrigger)
+    await user.click(within(screen.getByRole('listbox', { name: 'Channel options' })).getByRole('option', { name: 'Email' }))
+    expect(screen.getByText('Email', { selector: '.v2-selection-chip' })).toHaveClass('ds-tag', 'ds-tag-button', 'ds-tag--accent')
   })
 
-  test('uses high-contrast ink for danger status text', () => {
-    expect(designSystemStyles).toMatch(
-      /\.system-screen--v2 \.v2-status-label--danger\s*{[^}]*color:\s*var\(--v2-ink\);/,
-    )
+  test('shows feedback toast variants with the shared heading typography', () => {
+    render(<DesignSystemScreen />)
+    expect(screen.getByText('Campaign saved')).toBeInTheDocument()
+    expect(screen.getByText('Export delayed')).toBeInTheDocument()
+    expect(screen.getByText('Brief needs attention')).toBeInTheDocument()
+    expect(screen.getByText('Draft autosaved')).toBeInTheDocument()
+    expect(designSystemStyles).toMatch(/\.v2-toast strong\s*{[^}]*font:\s*var\(--v2-weight-heading\) var\(--v2-text-h7\)\s*\/\s*var\(--v2-line-h7\) var\(--v2-font\)/)
+    expect(designSystemStyles).toMatch(/\.v2-toast--error\s*{[^}]*border-left-color:\s*var\(--v2-danger\)/)
+    expect(designSystemStyles).toMatch(/\.v2-toast--warning\s*{[^}]*border-left-color:\s*var\(--v2-warning-border\)/)
+    expect(designSystemStyles).toMatch(/\.v2-toast--info\s*{[^}]*border-left-color:\s*var\(--v2-accent\)/)
+    expect(designSystemStyles).toMatch(/\.system-screen--v2 \.v2-alert,\s*\.system-screen--v2 \.v2-empty-state,\s*\.system-screen--v2 \.v2-toast\s*{[^}]*height:\s*auto;/)
+    expect(designSystemStyles).not.toMatch(/\.system-screen--v2 \.v2-toast\s*{[^}]*min-height:\s*88px;/)
+  })
+
+  test('removes the Status language catalog specimen', () => {
+    render(<DesignSystemScreen />)
+    expect(screen.queryByRole('heading', { name: 'Status language' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Status language' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Feedback states' })).toBeVisible()
   })
 
   test('opens and closes the overlay specimens accessibly', async () => {
@@ -379,8 +700,6 @@ describe('DesignSystemScreen', () => {
     ).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
 
-    await user.click(screen.getByText('Disclosure behavior'))
-    expect(screen.getByText('The chevron rotates over 200ms.')).toBeVisible()
   })
 
   test('keeps modal keyboard focus inside and restores its trigger on Escape', async () => {
@@ -404,33 +723,15 @@ describe('DesignSystemScreen', () => {
     expect(trigger).toHaveFocus()
   })
 
-  test('exposes dropdown, confirmation, tooltip, and toast actions without hover', async () => {
+  test('exposes confirmation and toast actions without hover', async () => {
     const user = userEvent.setup()
     render(<DesignSystemScreen />)
-
-    const dropdownTrigger = screen.getByRole('button', { name: 'Open asset actions' })
-    expect(dropdownTrigger).toHaveAttribute('aria-expanded', 'false')
-    await user.click(dropdownTrigger)
-    expect(dropdownTrigger).toHaveAttribute('aria-expanded', 'true')
-    const assetActions = screen.getByRole('group', { name: 'Asset actions' })
-    expect(assetActions).toBeVisible()
-    expect(within(assetActions).getByRole('button', { name: 'Download asset' })).toBeVisible()
-    expect(within(assetActions).getByRole('button', { name: 'Duplicate asset' })).toBeVisible()
-    expect(screen.queryByRole('menu', { name: 'Asset actions' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Open inline confirmation' }))
     const confirmation = screen.getByRole('group', { name: 'Confirm draft deletion' })
     expect(within(confirmation).getByText('Delete campaign draft?')).toBeVisible()
     await user.click(within(confirmation).getByRole('button', { name: 'Keep draft' }))
     expect(screen.queryByRole('group', { name: 'Confirm draft deletion' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'About motion feedback' }))
-    const tooltip = screen.getByRole('tooltip')
-    expect(tooltip).toHaveTextContent('Motion never hides an action or status.')
-    expect(screen.getByRole('button', { name: 'About motion feedback' })).toHaveAttribute(
-      'aria-describedby',
-      tooltip.id,
-    )
 
     await user.click(screen.getByRole('button', { name: 'Show success toast' }))
     const toast = screen.getByRole('status', { name: 'Motion preference saved' })
@@ -439,18 +740,19 @@ describe('DesignSystemScreen', () => {
     expect(screen.queryByRole('status', { name: 'Motion preference saved' })).not.toBeInTheDocument()
   })
 
-  test('keeps open overlay surfaces flat until an interaction supplies elevation', () => {
-    const dropdownSurfaceRule = designSystemStyles.match(
-      /\.system-screen--v2 \.v2-dropdown__popover\s*{([^}]*)}/,
-    )?.[1]
+  test('keeps open modal surfaces flat until an interaction supplies elevation', () => {
     const modalRule = designSystemStyles.match(
       /\.system-screen--v2 \.v2-modal\s*{([^}]*)}/,
     )?.[1]
 
-    expect(dropdownSurfaceRule).toBeDefined()
-    expect(dropdownSurfaceRule).not.toMatch(/box-shadow:/)
     expect(modalRule).toBeDefined()
     expect(modalRule).not.toMatch(/box-shadow:/)
+  })
+
+  test('sizes dropdown list options with the shared compact control token', () => {
+    expect(designSystemStyles).toMatch(
+      /\.system-screen--v2 \.v2-listbox-option\s*{[^}]*min-height:\s*var\(--v2-control-height-compact\);/,
+    )
   })
 
   test('binds motion specimens to the timing and reduced-motion contract', () => {
@@ -548,6 +850,7 @@ describe('DesignSystemScreen', () => {
     expect(screen.getByRole('spinbutton', { name: 'Variation count' })).toHaveValue(4)
     await user.click(screen.getByRole('radio', { name: '4 stars' }))
     expect(screen.getByRole('radio', { name: '4 stars' })).toBeChecked()
+    expect(screen.queryByText('3 of 5', { selector: 'output' })).not.toBeInTheDocument()
 
     const intensity = screen.getByRole('slider', { name: 'Campaign intensity' })
     fireEvent.change(intensity, { target: { value: '61' } })
@@ -568,6 +871,48 @@ describe('DesignSystemScreen', () => {
 
     expect(screen.queryByRole('listbox', { name: 'Channel options' })).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+
+  test('closes the channel listbox when clicking outside the control', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+
+    await user.click(screen.getByRole('button', { name: 'Open channel options' }))
+    expect(screen.getByRole('listbox', { name: 'Channel options' })).toBeVisible()
+    await user.click(screen.getByRole('heading', { name: 'Dropdowns' }))
+
+    expect(screen.queryByRole('listbox', { name: 'Channel options' })).not.toBeInTheDocument()
+  })
+
+  test('supports per-option icons in all dropdown controls with one shared toggle', async () => {
+    const user = userEvent.setup()
+    render(<DesignSystemScreen />)
+
+    const stateGroup = screen.getByRole('group', { name: 'Dropdowns states' })
+    const iconSwitch = within(stateGroup).getByRole('switch', { name: 'Option icons' })
+    expect(iconSwitch).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Primary channel: Paid social' }))
+    expect(within(screen.getByRole('listbox', { name: 'Primary channel' })).getAllByRole('option')[0].querySelectorAll('svg')).toHaveLength(2)
+    await user.keyboard('{Escape}')
+
+    await user.click(iconSwitch)
+    await user.click(screen.getByRole('button', { name: 'Primary channel: Paid social' }))
+    expect(within(screen.getByRole('listbox', { name: 'Primary channel' })).getAllByRole('option')[0].querySelectorAll('svg')).toHaveLength(1)
+  })
+
+  test('places the market autocomplete in the Fields group', () => {
+    render(<DesignSystemScreen />)
+
+    const market = screen.getByRole('combobox', { name: 'Find a market' })
+    expect(market.closest('[id^="components-fields"]')).toBeTruthy()
+    expect(market.closest('[id^="components-dropdowns"]')).toBeNull()
+  })
+
+  test('keeps ScrollArea neutral while revealing its scrollbar on interaction', () => {
+    expect(designSystemStyles).toMatch(/\.ds-scroll-area\s*{[^}]*background:\s*transparent;/)
+    expect(designSystemStyles).toMatch(/\.ds-scroll-area::-webkit-scrollbar-thumb\s*{[^}]*background:\s*transparent;/)
+    expect(designSystemStyles).toMatch(/\.ds-scroll-area:is\(:hover, :focus-visible\)::-webkit-scrollbar-thumb\s*{[^}]*background:\s*var\(--v2-border\)/)
   })
 
   test('defines hover and press feedback for every interactive control family', () => {
