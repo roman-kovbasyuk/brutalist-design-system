@@ -1,3 +1,2 @@
 .ds-settings-form { width: 100%; max-width: 640px; }
-.ds-settings-form .ds-settings-form__section { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.ds-settings-form .ds-settings-form__section > .ds-form-section__title { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ds-settings-form .ds-panel__content { display: grid; gap: var(--v2-space-4); }

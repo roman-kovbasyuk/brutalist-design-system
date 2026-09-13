@@ -23,12 +23,11 @@
 .ds-selection-tile { position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0; padding: 0; overflow: hidden; border: var(--v2-border-width) solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-ink); font: inherit; text-align: start; cursor: pointer; transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease), background-color var(--v2-duration-fast) var(--v2-ease); }
 .ds-panel { min-width: 0; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-large); background: var(--v2-surface); color: var(--v2-ink); transition: transform var(--v2-duration-fast) var(--v2-ease), box-shadow var(--v2-duration-fast) var(--v2-ease); }
 .ds-panel:hover { box-shadow: var(--v2-shadow-interactive); transform: translate(-4px, -4px); }
-.ds-panel__header { padding: var(--v2-space-8); border-bottom: 1px solid var(--v2-border); }
-.ds-panel--empty .ds-panel__header { border-bottom: 0; }
+.ds-panel__header { padding: 0; }
 .ds-panel__header h3, .ds-panel__header p { margin: 0; }
 .ds-panel__header h3 { font: var(--v2-weight-heading) var(--v2-text-h4) / var(--v2-line-h4) var(--v2-font); }
 .ds-panel__header p { margin-top: var(--v2-space-1); color: var(--v2-text-secondary); font: var(--v2-weight-text) var(--v2-text-body) / var(--v2-line-body) var(--v2-font); }
-.ds-panel__content { min-width: 0; padding: var(--v2-space-8); }
+.ds-panel__content { display: grid; gap: var(--v2-space-6); min-width: 0; padding: var(--v2-space-8); }
 .ds-selection-tile__content { display: block; width: 100%; min-width: 0; }
 .ds-selection-tile__caption { display: block; padding: var(--v2-space-3); overflow-wrap: anywhere; }
 .ds-selection-tile__action { position: absolute; inset-block-start: var(--v2-space-3); inset-inline-end: var(--v2-space-3); display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-pill); background: var(--v2-surface); opacity: 0; transition: opacity var(--v2-duration-fast) var(--v2-ease); }

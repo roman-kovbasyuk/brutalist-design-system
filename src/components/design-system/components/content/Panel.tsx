@@ -11,10 +11,12 @@ export type PanelProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
 export function Panel({ title, description, as: Element = 'section', children, className = '', ...props }: PanelProps) {
   const titleId = useId()
   return <Element {...props} className={`ds-panel${children == null ? ' ds-panel--empty' : ''} ${className}`.trim()} aria-labelledby={titleId}>
-    <header className="ds-panel__header">
-      <h3 id={titleId}>{title}</h3>
-      {description && <p>{description}</p>}
-    </header>
-    {children && <div className="ds-panel__content">{children}</div>}
+    <div className="ds-panel__content">
+      <header className="ds-panel__header">
+        <h3 id={titleId}>{title}</h3>
+        {description && <p>{description}</p>}
+      </header>
+      {children}
+    </div>
   </Element>
 }
