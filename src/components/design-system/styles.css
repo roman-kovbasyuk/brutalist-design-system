@@ -13,7 +13,3 @@
 @import './components/content/content.css';
 @import './components/data/table.css';
 @import './ui-blocks/settings/settings-form.css';
-@import './ui-blocks/ai-workspace/ai-workspace.css';
-@import './ui-blocks/app-layout/app-layout.css';
-@import './ui-blocks/item-browser/item-browser.css';
-@import './ui-blocks/item-detail/item-detail.css';
