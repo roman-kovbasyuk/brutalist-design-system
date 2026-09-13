@@ -1,14 +1,16 @@
 import { LoaderCircle } from 'lucide-react'
-import type { AnchorHTMLAttributes, ButtonHTMLAttributes, MouseEvent, ReactNode } from 'react'
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, MouseEvent, ReactNode, Ref } from 'react'
 
 type SharedProps = {
   children: ReactNode
   variant?: 'primary' | 'secondary' | 'danger' | 'quiet' | 'icon'
-  size?: 'default' | 'compact'
+  size?: 'default' | 'compact' | 'small'
   iconOnly?: boolean
   busy?: boolean
+  showBusyIndicator?: boolean
   disabled?: boolean
   className?: string
+  ref?: Ref<HTMLButtonElement | HTMLAnchorElement>
 }
 
 type ButtonProps = SharedProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof SharedProps | 'disabled'> & {
@@ -32,8 +34,10 @@ export function AppButton(props: AppButtonProps) {
       size = 'default',
       iconOnly = false,
       busy = false,
+      showBusyIndicator = true,
       disabled = false,
       className = '',
+      ref,
       onClick,
       ...rest
     } = props
@@ -54,8 +58,8 @@ export function AppButton(props: AppButtonProps) {
       onClick?.(event)
     }
 
-    return <a {...rest} className={classes} data-size={size} aria-busy={busy || undefined}
-      aria-disabled={inactive || undefined} tabIndex={inactive ? -1 : rest.tabIndex} onClick={handleClick}>{busy && <LoaderCircle size={16} className="ds-button__spinner" aria-hidden="true" />}{children}</a>
+    return <a {...rest} ref={ref as Ref<HTMLAnchorElement>} className={classes} data-size={size} aria-busy={busy || undefined}
+      aria-disabled={inactive || undefined} tabIndex={inactive ? -1 : rest.tabIndex} onClick={handleClick}>{busy && showBusyIndicator && <LoaderCircle size={16} className="ds-button__spinner" aria-hidden="true" />}{children}</a>
   }
 
   const {
@@ -64,8 +68,10 @@ export function AppButton(props: AppButtonProps) {
     size = 'default',
     iconOnly = false,
     busy = false,
+    showBusyIndicator = true,
     disabled = false,
     className = '',
+    ref,
     onClick,
     ...rest
   } = props
@@ -78,6 +84,6 @@ export function AppButton(props: AppButtonProps) {
     className,
   ].filter(Boolean).join(' ')
 
-  return <button {...rest} type={props.type ?? 'button'} className={classes} data-size={size}
-    aria-busy={busy || undefined} disabled={inactive} onClick={onClick}>{busy && <LoaderCircle size={16} className="ds-button__spinner" aria-hidden="true" />}{children}</button>
+  return <button {...rest} ref={ref as Ref<HTMLButtonElement>} type={props.type ?? 'button'} className={classes} data-size={size}
+    aria-busy={busy || undefined} disabled={inactive} onClick={onClick}>{busy && showBusyIndicator && <LoaderCircle size={16} className="ds-button__spinner" aria-hidden="true" />}{children}</button>
 }

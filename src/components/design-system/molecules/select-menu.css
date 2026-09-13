@@ -12,7 +12,7 @@
   gap: var(--v2-space-3);
   width: 100%;
   padding: 0 var(--v2-space-4);
-  border: 2px solid var(--v2-border);
+  border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
   color: var(--v2-ink);
@@ -37,7 +37,7 @@
   display: grid;
   overflow: hidden;
   padding: var(--v2-space-3);
-  border: 2px solid var(--v2-border);
+  border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
   box-shadow: 8px 8px 0 var(--v2-ink);
@@ -47,13 +47,13 @@
 
 .system-screen--v2 .v2-listbox-option {
   display: flex;
-  min-height: 52px;
+  min-height: var(--v2-control-height-compact);
   align-items: center;
   justify-content: space-between;
   gap: var(--v2-space-3);
   width: 100%;
   padding: 0 var(--v2-space-4);
-  border: 2px solid transparent;
+  border: 1px solid transparent;
   border-radius: var(--v2-radius);
   background: transparent;
   color: var(--v2-ink);
@@ -62,6 +62,15 @@
   text-align: left;
   cursor: pointer;
 }
+
+.system-screen--v2 .v2-listbox-option__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--v2-space-2);
+}
+
+.system-screen--v2 .v2-listbox-option__label svg { flex: 0 0 auto; }
 
 .system-screen--v2 .v2-listbox-option[aria-selected="true"] {
   border-color: var(--v2-border);

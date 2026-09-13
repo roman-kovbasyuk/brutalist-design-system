@@ -92,21 +92,24 @@ export function Tooltip({ content, children, open, onOpenChange, side = 'top', d
   </TooltipPrimitive.Provider>
 }
 
-export type MenuItem = { id: string; label: ReactNode; disabled?: boolean; danger?: boolean }
+export type MenuItem = { id: string; label: ReactNode; icon?: ReactNode; disabled?: boolean; danger?: boolean }
 export type MenuProps = OpenState & {
   trigger: Trigger
   items: MenuItem[]
   onSelect: (id: string) => void
   ariaLabel?: string
+  side?: 'top' | 'right' | 'bottom' | 'left'
+  align?: 'start' | 'center' | 'end'
+  className?: string
 }
 
 /** A controlled menu for an explicit, short list of actions. */
-export function Menu({ open, onOpenChange, trigger, items, onSelect, ariaLabel = 'Actions' }: MenuProps) {
+export function Menu({ open, onOpenChange, trigger, items, onSelect, ariaLabel = 'Actions', side = 'bottom', align = 'start', className = '' }: MenuProps) {
   return <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
     <OverlayTrigger primitive={DropdownMenu.Trigger}>{trigger}</OverlayTrigger>
     <DropdownMenu.Portal>
-      <DropdownMenu.Content className="ds-menu" align="start" sideOffset={8} aria-label={ariaLabel}>
-        {items.map((item) => <DropdownMenu.Item key={item.id} className={`ds-menu__item${item.danger ? ' ds-menu__item--danger' : ''}`} disabled={item.disabled} onSelect={() => onSelect(item.id)}>{item.label}</DropdownMenu.Item>)}
+      <DropdownMenu.Content className={`ds-menu ${className}`.trim()} align={align} side={side} sideOffset={8} aria-label={ariaLabel}>
+        {items.map((item) => <DropdownMenu.Item key={item.id} className={`ds-menu__item${item.danger ? ' ds-menu__item--danger' : ''}${item.icon ? ' ds-menu__item--with-icon' : ''}`} disabled={item.disabled} onSelect={() => onSelect(item.id)}>{item.icon && <span className="ds-menu__icon" aria-hidden="true">{item.icon}</span>}<span>{item.label}</span></DropdownMenu.Item>)}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
   </DropdownMenu.Root>

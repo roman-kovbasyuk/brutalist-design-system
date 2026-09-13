@@ -13,3 +13,6 @@
 @import './components/content/content.css';
 @import './components/data/table.css';
 @import './ui-blocks/settings/settings-form.css';
+@import './components/shell/sidebar-panel.css';
+@import './molecules/form-field.css';
+@import './molecules/select-menu.css';

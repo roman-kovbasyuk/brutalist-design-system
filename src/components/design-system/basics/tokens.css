@@ -40,6 +40,10 @@
   --v2-line-h4: 1.20000000;
   --v2-text-h5: 18px;
   --v2-line-h5: 1.33333333;
+  --v2-text-h6: 16px;
+  --v2-line-h6: 1.37500000;
+  --v2-text-h7: 14px;
+  --v2-line-h7: 1.42857143;
   --v2-text-lead-large: 24px;
   --v2-line-lead-large: 1.50000000;
   --v2-text-lead-medium: 20px;
@@ -49,6 +53,7 @@
   --v2-text-small: 14px;
   --v2-line-small: 1.42857143;
   --v2-weight-heading: 500;
+  --v2-weight-heading-strong: 600;
   --v2-weight-text: 400;
 
   --v2-text-page: var(--v2-text-h1);
@@ -66,6 +71,7 @@
   --v2-space-16: 64px;
   --v2-control-height: 48px;
   --v2-control-height-compact: 44px;
+  --v2-control-height-small: 32px;
   --v2-icon-sm: 16px;
   --v2-icon-md: 20px;
   --v2-icon-lg: 24px;
@@ -84,4 +90,5 @@
   --v2-duration-fast: 150ms;
   --v2-duration-disclosure: 200ms;
   --v2-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --v2-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }

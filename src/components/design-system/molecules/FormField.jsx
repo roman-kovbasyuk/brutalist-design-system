@@ -1,7 +1,19 @@
 import { useId } from 'react'
 import './form-field.css'
 
+/**
+ * @typedef {{ id: string, describedBy?: string }} FormFieldSlot
+ * @typedef {Omit<import('react').InputHTMLAttributes<HTMLInputElement>, 'children' | 'id'> & {
+ *   label: import('react').ReactNode,
+ *   id?: string,
+ *   hint?: import('react').ReactNode,
+ *   error?: import('react').ReactNode,
+ *   children?: (slot: FormFieldSlot) => import('react').ReactNode,
+ * }} FormFieldProps
+ */
+
 /** Persistent label with canonical helper/error placement, or a shared control slot. */
+/** @param {FormFieldProps} props */
 export function FormField({ label, id: suppliedId, hint, error, children, ...inputProps }) {
   const generatedId = useId()
   const id = suppliedId ?? generatedId

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AppButton, DesignSystemRoot, Stack, Tabs, TabPanel } from 'brutalist-design-system'
+import { AppButton, DesignSystemRoot, Stack, Tabs, TabPanel, SidebarPanel, Form, FormActions } from 'brutalist-design-system'
 import 'brutalist-design-system/styles.css'
 
 export function App() {
@@ -8,6 +8,8 @@ export function App() {
 
   return (
     <DesignSystemRoot>
+      <SidebarPanel brand={{ label: 'Studio' }} primaryAction={{ label: 'Create campaign' }} navigation={[]} projects={[]} />
+      <Form aria-label="Settings"><FormActions><AppButton type="submit">Save</AppButton></FormActions></Form>
       <Stack gap={4} style={{ padding: 24 }}>
         <h1>Package consumer</h1>
         <p>Pressed {count} times.</p>

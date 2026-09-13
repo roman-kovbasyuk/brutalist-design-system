@@ -1,3 +1,5 @@
+export { Form, FormSection, FormActions } from './Form'
+export type { FormProps, FormSectionProps, FormActionsProps } from './Form'
 export { CheckboxField } from './CheckboxField'
 export type { CheckboxFieldProps } from './CheckboxField'
 export { RadioGroup } from './RadioGroup'

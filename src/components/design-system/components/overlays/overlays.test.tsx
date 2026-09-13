@@ -1,9 +1,17 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { Pin } from 'lucide-react'
 import { Dialog, Drawer, Menu, Popover, Tooltip } from './index'
 
 describe('portable overlays', () => {
+  it('uses medium typography for menu items', () => {
+    const styles = readFileSync(join(process.cwd(), 'src/components/design-system/components/overlays/overlays.css'), 'utf8')
+    expect(styles).toMatch(/\.ds-menu__item\s*{[^}]*font-weight:\s*500;/)
+  })
+
   it('keeps dialog state controlled and reports Escape dismissal', async () => {
     const onOpenChange = vi.fn()
     const user = userEvent.setup()
@@ -45,5 +53,18 @@ describe('portable overlays', () => {
 
     await user.click(screen.getByRole('menuitem', { name: 'Duplicate' }))
     expect(onSelect).toHaveBeenCalledWith('duplicate')
+  })
+
+  it('renders an optional leading icon for menu items', () => {
+    render(<Menu open onOpenChange={vi.fn()} trigger="Actions" items={[{ id: 'pin', label: 'Pin', icon: <Pin data-testid="pin-icon" /> }]} onSelect={vi.fn()} />)
+
+    expect(screen.getByTestId('pin-icon')).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Pin' })).toHaveClass('ds-menu__item--with-icon')
+  })
+
+  it('supports an explicit menu side for footer actions', () => {
+    render(<Menu open onOpenChange={vi.fn()} trigger="Account" side="top" items={[{ id: 'settings', label: 'Settings' }]} onSelect={vi.fn()} />)
+
+    expect(screen.getByRole('menu')).toHaveAttribute('data-side', 'top')
   })
 })
