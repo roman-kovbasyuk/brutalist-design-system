@@ -1,5 +1,7 @@
 # External changes protocol
 
+> **Protocol v2 is specified but not implemented** ([design](superpowers/specs/2026-09-17-change-protocol-v2-design.md), accepted 17 September 2026). It makes implementation agent-agnostic, adopts releases through the application's own install command, pushes releases to GitHub and holds breaking changes for owner approval. This page describes the current v1 behaviour.
+
 The protocol is a local CLI and worker for one configured npm application. Requests are automatically approved under `single-app-policy`; the application still receives verification and adoption results. There is no HTTP endpoint, npm publish, remote push, or production deployment.
 
 Configure the application once and run the worker separately:
