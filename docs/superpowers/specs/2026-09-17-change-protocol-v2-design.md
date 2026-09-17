@@ -54,7 +54,7 @@ The v1 pipeline already provides strong guarantees that do not depend on the age
   ],
   "consumer": {
     "application": "automation-studio",
-    "usage": "Four-stage asset creation flow navigation at /mvp/campaign/:id"
+    "usage": "Stage navigation on the project page at /projects/:id/:stage"
   },
   "accessibility": "Keyboard and screen-reader behaviour of links; visible focus."
 }
