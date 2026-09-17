@@ -25,9 +25,3 @@ When a configured npm application requests a shared component change, use the lo
 4. Inspect the durable result with `npm run changes -- get <requestId>` until it is `ready` or `failed`.
 
 The worker gives the implementation agent an isolated worktree, enforces the allowed atomic scope, runs verification, commits the candidate, fast-forward promotes it into the clean `main` checkout, creates the retained package artifact, and adopts that exact artifact in the configured application. Read [the external changes protocol](docs/external-changes.md) before operating the queue. Do not manually stage or commit a worker request, push to a remote, publish to npm, or edit the consuming application as a shortcut; the worker owns promotion and recovery.
-
-<!-- task-observatory:start -->
-## Task Observatory
-
-Before acting on project requests, read and follow [observatory/AGENT-INSTRUCTIONS.md](observatory/AGENT-INSTRUCTIONS.md). Use its CLI to pull existing tasks, record new requests, report progress, and verify completion. Keep credentials and sensitive application data out of task records.
-<!-- task-observatory:end -->
