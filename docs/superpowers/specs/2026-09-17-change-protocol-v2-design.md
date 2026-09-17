@@ -83,11 +83,11 @@ The request waits in `awaiting-implementation` with a prepared candidate worktre
 | Command | Result |
 | --- | --- |
 | `changes list --status awaiting-implementation` | Requests available to claim |
-| `changes claim <id> --by <name>` | Lease (default 2 hours), candidate worktree path, prompt file path, result file path |
+| `changes claim <id> --by <name>` | Claim record, candidate worktree path, prompt file path, result file path |
 | `changes submit <id>` | Implementer has written the result file; the worker continues with `verifying` |
 | `changes release-claim <id>` | Returns the request to the queue |
 
-An expired lease returns the request to `awaiting-implementation`. The candidate worktree is preserved; the next claimant may continue or reset it.
+Claims do not expire. A claimed request stays with its claimant until it is submitted or released with `changes release-claim <id>`; `changes list` shows who holds each claim and since when. After a release, the candidate worktree is preserved; the next claimant may continue or reset it.
 
 ### Push adapters (optional)
 
@@ -123,14 +123,14 @@ The worker never trusts the result. After every implementation, by any mode, it 
 
 - The prompt moves from code into `scripts/changes/prompt.md`, rendered with request data as quoted data.
 - `AGENTS.md` stays the canonical rule set. A `CLAUDE.md` that imports it is added so Claude Code loads the same rules.
-- Observatory reporting becomes optional and adapter-independent: the worker reports progress when an Observatory CLI is configured; implementers are not required to use it.
+- Observatory reporting becomes optional: the worker reports progress only when an Observatory CLI is configured. Implementing agents do not use Observatory, and the Task Observatory section is removed from `AGENTS.md`.
 
 ## Releases
 
 - Promotion to local `main` stays as in v1 (rebase, fast-forward, conflict handling).
 - After promotion the worker pushes `main` and the tag `v<version>` to `origin`. A push failure sets `release-push-failed`, is retryable with `changes retry-release <id>`, and blocks adoption.
 - Release notes are generated from request summaries.
-- Version scheme is an open question (see below); the store's version reservation stays authoritative.
+- Versions follow semantic versioning before 1.0: an additive release increments the patch number, a breaking release (after owner approval) increments the minor number. The store's version reservation stays authoritative and applies this rule.
 
 ## Adoption
 
@@ -170,10 +170,13 @@ Each step keeps existing `npm run test:changes` tests passing and adds its own.
 - A pipeline release installed into Automation Studio passes its `design-system:check`, tests and build, and leaves no absolute paths in its manifests.
 - A second machine can install the released version from GitHub.
 
-## Open questions
+## Decisions
 
-| Question | Options |
+Recorded in Automation Studio's decision log on 17 September 2026.
+
+| Topic | Decision |
 | --- | --- |
-| Version scheme | Keep `0.1.0-atomic.N`; or pre-1.0 semver with patch for additive and minor for breaking |
-| Lease length and renewal | Fixed 2 hours; or renewable with `changes renew <id>` |
-| Where the worker runs | Owner's machine only; or a shared host later |
+| Version scheme | Semantic versions before 1.0: patch for additive, minor for breaking (D25) |
+| Claims in pull mode | Claims do not expire; released explicitly (D27) |
+| Where the worker runs | The owner's machine for the pilot; Observatory reporting optional (D26) |
+| Agents and Observatory | Agents do not use Observatory (D30) |
